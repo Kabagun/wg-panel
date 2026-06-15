@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+
+venv/
+.venv/
+
+data/
+ssl/
+
+.env
+wg-panel.env
+*.pem
+*.key
+*.crt
+*.csr
+*.log
