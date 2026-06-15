@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wg-panel"
+version = "0.1.0"
+description = "Flask web panel for WireGuard device management"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "Flask>=3.0,<4.0",
+]
+
+[project.scripts]
+wg-panel = "wg_panel.runner:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -8,9 +8,10 @@ optional Telegram notifications.
 
 ## What Is Versioned
 
-- `app.py` - small entrypoint.
-- `wg_panel/` - Flask application package.
-- `wireguard/*.sh` - helper scripts used by the panel to add/list/remove peers.
+- `src/wg_panel/` - Flask application package.
+- `scripts/*.sh` - helper scripts used by the panel to add/list/remove peers.
+- `pyproject.toml` - Python package metadata and `wg-panel` entry point.
+- `requirements.txt` - simple deployment install wrapper.
 - `.env.example` - environment file template.
 
 Runtime data is intentionally not versioned:
@@ -37,9 +38,9 @@ python3 -m venv /opt/wg-panel/venv
 Install helper scripts:
 
 ```bash
-install -m 700 /opt/wg-panel/wireguard/add-client.sh /etc/wireguard/add-client.sh
-install -m 700 /opt/wg-panel/wireguard/remove-client.sh /etc/wireguard/remove-client.sh
-install -m 700 /opt/wg-panel/wireguard/list-clients.sh /etc/wireguard/list-clients.sh
+install -m 700 /opt/wg-panel/scripts/add-client.sh /etc/wireguard/add-client.sh
+install -m 700 /opt/wg-panel/scripts/remove-client.sh /etc/wireguard/remove-client.sh
+install -m 700 /opt/wg-panel/scripts/list-clients.sh /etc/wireguard/list-clients.sh
 ```
 
 Create environment file:
@@ -59,6 +60,17 @@ At minimum set:
 
 Start the application through the server's deployment layer. Do not store
 server-specific systemd, nginx, TLS, or domain configuration in this repository.
+The installed entry point is:
+
+```bash
+/opt/wg-panel/venv/bin/wg-panel
+```
+
+For ad-hoc local runs after installation:
+
+```bash
+/opt/wg-panel/venv/bin/python -m wg_panel
+```
 
 ## Checks
 
@@ -71,12 +83,13 @@ journalctl -u wg-panel -n 100 --no-pager
 
 ## Code Layout
 
-- `wg_panel/core.py` - Flask app object, environment config, user storage, shared helpers.
-- `wg_panel/i18n.py` - UI strings and translation helper.
-- `wg_panel/ui.py` - inline HTML/CSS page builders.
-- `wg_panel/auth.py` - login/admin decorators.
-- `wg_panel/wireguard.py` - WireGuard client config helpers.
-- `wg_panel/traffic.py` - traffic counters and device metadata storage.
-- `wg_panel/telegram.py` - Telegram notifications and callback helpers.
-- `wg_panel/routes/` - auth, device, Telegram, traffic, and admin routes.
-- `wg_panel/runner.py` - startup code for redirect server, traffic collector, webhook, and Flask.
+- `src/wg_panel/core.py` - Flask app object, environment config, user storage, shared helpers.
+- `src/wg_panel/i18n.py` - UI strings and translation helper.
+- `src/wg_panel/ui.py` - inline HTML/CSS page builders.
+- `src/wg_panel/auth.py` - login/admin decorators.
+- `src/wg_panel/wireguard.py` - WireGuard client config helpers.
+- `src/wg_panel/traffic.py` - traffic counters and device metadata storage.
+- `src/wg_panel/telegram.py` - Telegram notifications and callback helpers.
+- `src/wg_panel/routes/` - auth, device, Telegram, traffic, and admin routes.
+- `src/wg_panel/runner.py` - startup code for redirect server, traffic collector, webhook, and Flask.
+- `scripts/` - shell helpers installed into `/etc/wireguard`.

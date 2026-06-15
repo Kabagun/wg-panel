@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Flask, request
 
-app = Flask("app", root_path=str(Path(__file__).resolve().parents[1]))
+app = Flask("app", root_path=str(Path(__file__).resolve().parents[2]))
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
