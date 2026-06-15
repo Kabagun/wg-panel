@@ -8,7 +8,8 @@ optional Telegram notifications.
 
 ## What Is Versioned
 
-- `app.py` - Flask application.
+- `app.py` - small entrypoint.
+- `wg_panel/` - Flask application package.
 - `wireguard/*.sh` - helper scripts used by the panel to add/list/remove peers.
 - `systemd/wg-panel.service` - systemd unit template.
 - `nginx/*.conf` - nginx reverse proxy and rate-limit templates.
@@ -89,3 +90,15 @@ curl -fsS http://127.0.0.1:8080/healthz
 wg show
 journalctl -u wg-panel -n 100 --no-pager
 ```
+
+## Code Layout
+
+- `wg_panel/core.py` - Flask app object, environment config, user storage, shared helpers.
+- `wg_panel/i18n.py` - UI strings and translation helper.
+- `wg_panel/ui.py` - inline HTML/CSS page builders.
+- `wg_panel/auth.py` - login/admin decorators.
+- `wg_panel/wireguard.py` - WireGuard client config helpers.
+- `wg_panel/traffic.py` - traffic counters and device metadata storage.
+- `wg_panel/telegram.py` - Telegram notifications and callback helpers.
+- `wg_panel/routes/` - auth, device, Telegram, traffic, and admin routes.
+- `wg_panel/runner.py` - startup code for redirect server, traffic collector, webhook, and Flask.
