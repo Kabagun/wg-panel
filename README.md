@@ -30,7 +30,7 @@ Run as `root` on the VPN server.
 apt-get update
 apt-get install -y python3-venv wireguard qrencode
 
-git clone git@github.com:Kabaye/wg-panel.git /opt/wg-panel
+git clone git@github.com:Kabagun/wg-panel.git /opt/wg-panel
 python3 -m venv /opt/wg-panel/venv
 /opt/wg-panel/venv/bin/pip install -r /opt/wg-panel/requirements.txt
 ```
