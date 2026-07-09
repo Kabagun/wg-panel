@@ -1,5 +1,7 @@
 import ipaddress
 import json
+import os
+import socket
 import threading
 import time
 import urllib.parse
@@ -35,6 +37,8 @@ GEOIP_FIELDS = ",".join(
 
 _geoip_cache = {}
 _geoip_lock = threading.Lock()
+_endpoint_cache = {"time": 0, "ips": []}
+_endpoint_lock = threading.Lock()
 
 
 def get_client_ip(req):
@@ -113,6 +117,8 @@ def build_registration_notification(username, reg_time, req):
     client_ip = get_client_ip(req)
     ip_chain = get_client_ip_chain(req)
     geo = lookup_ip_geo(client_ip)
+    endpoint_ip = get_vpn_endpoint_ip() if not geo else ""
+    endpoint_geo = lookup_ip_geo(endpoint_ip) if endpoint_ip else {}
     ua = summarize_user_agent(req.user_agent.string or "")
 
     lines = [
@@ -138,7 +144,17 @@ def build_registration_notification(username, reg_time, req):
             ]
         )
     else:
-        lines.append("\U0001f4cd Location: `unknown or private IP`")
+        lines.append("\U0001f4cd Location: `private VPN/local IP`")
+        if endpoint_ip:
+            lines.append(f"\U0001f6dc VPN Endpoint: `{_tg_code(endpoint_ip)}`")
+        if endpoint_geo:
+            lines.extend(
+                [
+                    f"\U0001f5fa VPN Location: `{_tg_code(_join_geo(endpoint_geo, ['country', 'countryCode', 'regionName', 'city']))}`",
+                    f"\U0001f3e2 VPN Network: `{_tg_code(_join_geo(endpoint_geo, ['isp', 'org']))}`",
+                    f"\U0001f6f0 VPN ASN: `{_tg_code(_join_geo(endpoint_geo, ['as', 'asname']))}`",
+                ]
+            )
 
     lines.extend(
         [
@@ -148,6 +164,38 @@ def build_registration_notification(username, reg_time, req):
         ]
     )
     return "\n".join(lines)
+
+
+def get_vpn_endpoint_ip():
+    """Return the public VPN endpoint IP from env or WG_PANEL_DOMAIN DNS."""
+    now = time.time()
+    with _endpoint_lock:
+        if _endpoint_cache["ips"] and now - _endpoint_cache["time"] < GEOIP_CACHE_TTL_SECS:
+            return _endpoint_cache["ips"][0]
+
+    candidates = []
+    explicit_ip = os.getenv("WG_PANEL_PUBLIC_IP", "").strip()
+    if explicit_ip:
+        candidates.append(explicit_ip)
+
+    domain = os.getenv("WG_PANEL_DOMAIN", "").strip()
+    if domain and domain != "localhost":
+        try:
+            for result in socket.getaddrinfo(domain, None):
+                candidates.append(result[4][0])
+        except OSError:
+            pass
+
+    ips = []
+    for candidate in candidates:
+        ip = _normalize_ip(candidate)
+        if ip and _is_public_ip(ip) and ip not in ips:
+            ips.append(ip)
+
+    with _endpoint_lock:
+        _endpoint_cache["time"] = now
+        _endpoint_cache["ips"] = ips
+    return ips[0] if ips else ""
 
 
 def summarize_user_agent(raw_user_agent):

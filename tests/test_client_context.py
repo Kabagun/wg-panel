@@ -44,6 +44,8 @@ class DummyRequest:
 class ClientContextTest(unittest.TestCase):
     def setUp(self):
         client_context._geoip_cache.clear()
+        client_context._endpoint_cache["time"] = 0
+        client_context._endpoint_cache["ips"] = []
 
     def test_private_ip_skips_geoip_lookup(self):
         with patch("urllib.request.urlopen") as urlopen:
@@ -94,7 +96,46 @@ class ClientContextTest(unittest.TestCase):
                 DummyRequest(),
             )
 
-        self.assertIn("Location: `unknown or private IP`", message)
+        self.assertIn("Location:", message)
+
+    def test_private_ip_notification_can_include_vpn_endpoint_geoip(self):
+        class Request:
+            remote_addr = "10.0.0.4"
+            headers = {}
+
+            class user_agent:
+                string = DummyRequest.user_agent.string
+
+        def geo(ip):
+            if ip == "203.0.113.10":
+                return {}
+            if ip == "8.8.8.8":
+                return {
+                    "status": "success",
+                    "country": "United States",
+                    "countryCode": "US",
+                    "regionName": "California",
+                    "city": "Mountain View",
+                    "isp": "Google LLC",
+                    "org": "Google Public DNS",
+                    "as": "AS15169 Google LLC",
+                    "asname": "GOOGLE",
+                }
+            return {}
+
+        with patch.dict("os.environ", {"WG_PANEL_PUBLIC_IP": "8.8.8.8"}), patch(
+            "wg_panel.client_context.lookup_ip_geo", side_effect=geo
+        ):
+            message = client_context.build_registration_notification(
+                "pocoyo52",
+                "2026-07-09 15:41 UTC",
+                Request(),
+            )
+
+        self.assertIn("IP: `10.0.0.4`", message)
+        self.assertIn("Location: `private VPN/local IP`", message)
+        self.assertIn("VPN Endpoint: `8.8.8.8`", message)
+        self.assertIn("VPN Location: `United States, US, California, Mountain View`", message)
 
 
 if __name__ == "__main__":

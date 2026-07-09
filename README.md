@@ -55,13 +55,16 @@ chmod 600 /etc/wg-panel/wg-panel.env
 At minimum set:
 
 - `WG_PANEL_DOMAIN`
+- `WG_PANEL_PUBLIC_IP`, optionally, to show VPN endpoint GeoIP when a registration comes from a private VPN/LAN address.
 - `WG_PANEL_ADMIN_PASSWORD` before first startup
 - `WG_PANEL_TRUST_PROXY=1` when the panel is served through nginx or another trusted reverse proxy.
 - `WG_PANEL_TELEGRAM_BOT_TOKEN` and `WG_PANEL_TELEGRAM_CHAT_ID`, if Telegram notifications are needed.
 
 New registration notifications use the trusted proxy address, browser metadata,
-and public IP details from `ip-api.com`. Private or local IPs skip the external
-lookup, and lookup failures do not block registration.
+and public IP details from `ip-api.com`. Private or local client IPs cannot be
+geolocated directly; in that case the notification can show the VPN endpoint
+GeoIP from `WG_PANEL_PUBLIC_IP` or the resolved `WG_PANEL_DOMAIN`. Lookup
+failures do not block registration.
 
 Start the application through the server's deployment layer. Do not store
 server-specific systemd, nginx, TLS, or domain configuration in this repository.
