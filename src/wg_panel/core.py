@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask("app", root_path=str(Path(__file__).resolve().parents[2]))
 app.config.update(
@@ -68,6 +69,7 @@ ENABLE_INTERNAL_TLS          = _env_bool("WG_PANEL_ENABLE_INTERNAL_TLS", True)
 ENABLE_HTTP_REDIRECT         = _env_bool("WG_PANEL_ENABLE_HTTP_REDIRECT", True)
 HTTP_REDIRECT_PORT           = _env_int("WG_PANEL_HTTP_REDIRECT_PORT", 80)
 REDIRECT_SOCKET_TIMEOUT_SECS = _env_float("WG_PANEL_REDIRECT_SOCKET_TIMEOUT", 5.0)
+TRUST_PROXY                  = _env_bool("WG_PANEL_TRUST_PROXY", False)
 
 DOMAIN       = os.getenv("WG_PANEL_DOMAIN", "localhost")
 ADMIN_USER   = os.getenv("WG_PANEL_ADMIN_USER", "admin")
@@ -76,6 +78,9 @@ SSL_CERT     = os.getenv("WG_PANEL_SSL_CERT", f"/etc/letsencrypt/live/{DOMAIN}/f
 SSL_KEY      = os.getenv("WG_PANEL_SSL_KEY", f"/etc/letsencrypt/live/{DOMAIN}/privkey.pem")
 TG_TOKEN     = os.getenv("WG_PANEL_TELEGRAM_BOT_TOKEN", "")
 TG_CHAT_ID   = os.getenv("WG_PANEL_TELEGRAM_CHAT_ID", "")
+
+if TRUST_PROXY:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # ─── Storage ──────────────────────────────────────────────────────────────────
 def load_users():

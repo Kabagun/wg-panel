@@ -56,7 +56,12 @@ At minimum set:
 
 - `WG_PANEL_DOMAIN`
 - `WG_PANEL_ADMIN_PASSWORD` before first startup
+- `WG_PANEL_TRUST_PROXY=1` when the panel is served through nginx or another trusted reverse proxy.
 - `WG_PANEL_TELEGRAM_BOT_TOKEN` and `WG_PANEL_TELEGRAM_CHAT_ID`, if Telegram notifications are needed.
+
+New registration notifications use the trusted proxy address, browser metadata,
+and public IP details from `ip-api.com`. Private or local IPs skip the external
+lookup, and lookup failures do not block registration.
 
 Start the application through the server's deployment layer. Do not store
 server-specific systemd, nginx, TLS, or domain configuration in this repository.
@@ -87,6 +92,7 @@ journalctl -u wg-panel -n 100 --no-pager
 - `src/wg_panel/i18n.py` - UI strings and translation helper.
 - `src/wg_panel/ui.py` - inline HTML/CSS page builders.
 - `src/wg_panel/auth.py` - login/admin decorators.
+- `src/wg_panel/client_context.py` - registration IP, GeoIP, and browser metadata helpers.
 - `src/wg_panel/wireguard.py` - WireGuard client config helpers.
 - `src/wg_panel/traffic.py` - traffic counters and device metadata storage.
 - `src/wg_panel/telegram.py` - Telegram notifications and callback helpers.

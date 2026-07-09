@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import flash, redirect, render_template_string, request, session, url_for
 
+from ..client_context import build_registration_notification
 from ..core import DOMAIN, app, _check, _hash, _lang, _now, load_users, save_users
 from ..i18n import t
 from ..telegram import send_telegram, send_telegram_buttons
@@ -62,11 +63,7 @@ def register():
             save_users(users)
             reg_time = _now()
             send_telegram_buttons(
-                f"\U0001f514 *New VPN registration*\n\n"
-                f"\U0001f464 Username: `{u}`\n"
-                f"\U0001f552 Time: {reg_time}\n"
-                f"\U0001f310 IP: {request.remote_addr}\n"
-                f"\U0001f4f1 Browser: {request.user_agent.string[:60]}",
+                build_registration_notification(u, reg_time, request),
                 [
                     [
                         {"text": "\u2705 Approve 3 devices", "callback_data": f"approve:{u}:3"},
