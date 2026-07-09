@@ -38,12 +38,45 @@ _geoip_lock = threading.Lock()
 
 
 def get_client_ip(req):
-    """Return the client IP Flask sees after optional trusted proxy handling."""
+    """Return the best client IP from trusted proxy headers or Flask."""
+    for raw_ip in _candidate_client_ips(req):
+        if _is_public_ip(raw_ip):
+            return _normalize_ip(raw_ip)
+    raw_ip = next(iter(_candidate_client_ips(req)), "")
+    return _normalize_ip(raw_ip) or "unknown"
+
+
+def get_client_ip_chain(req):
+    """Return normalized IPs seen in proxy headers and Flask, preserving order."""
+    seen = []
+    for raw_ip in _candidate_client_ips(req):
+        ip = _normalize_ip(raw_ip)
+        if ip and ip not in seen:
+            seen.append(ip)
+    return seen
+
+
+def _candidate_client_ips(req):
+    forwarded_for = req.headers.get("X-Forwarded-For", "")
+    for raw_ip in forwarded_for.split(","):
+        raw_ip = raw_ip.strip()
+        if raw_ip:
+            yield raw_ip
+
+    real_ip = req.headers.get("X-Real-IP", "").strip()
+    if real_ip:
+        yield real_ip
+
     raw_ip = (req.remote_addr or "").strip()
+    if raw_ip:
+        yield raw_ip
+
+
+def _normalize_ip(raw_ip):
     try:
         return str(ipaddress.ip_address(raw_ip))
     except ValueError:
-        return raw_ip or "unknown"
+        return raw_ip.strip()
 
 
 def lookup_ip_geo(ip):
@@ -78,6 +111,7 @@ def lookup_ip_geo(ip):
 def build_registration_notification(username, reg_time, req):
     """Build the Telegram text for a new VPN registration."""
     client_ip = get_client_ip(req)
+    ip_chain = get_client_ip_chain(req)
     geo = lookup_ip_geo(client_ip)
     ua = summarize_user_agent(req.user_agent.string or "")
 
@@ -88,6 +122,10 @@ def build_registration_notification(username, reg_time, req):
         f"\U0001f552 Time: `{_tg_code(reg_time)}`",
         f"\U0001f310 IP: `{_tg_code(client_ip)}`",
     ]
+
+    private_ips = [ip for ip in ip_chain if ip != client_ip and not _is_public_ip(ip)]
+    if private_ips:
+        lines.append(f"\U0001f517 Internal IP: `{_tg_code(', '.join(private_ips), 160)}`")
 
     if geo:
         lines.extend(

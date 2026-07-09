@@ -35,6 +35,7 @@ class DummyResponse:
 
 class DummyRequest:
     remote_addr = "8.8.8.8"
+    headers = {}
 
     class user_agent:
         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
@@ -48,6 +49,27 @@ class ClientContextTest(unittest.TestCase):
         with patch("urllib.request.urlopen") as urlopen:
             self.assertEqual(client_context.lookup_ip_geo("127.0.0.1"), {})
             urlopen.assert_not_called()
+
+    def test_client_ip_prefers_public_forwarded_for(self):
+        class Request:
+            remote_addr = "10.0.0.4"
+            headers = {
+                "X-Forwarded-For": "37.214.29.144, 10.0.0.4",
+                "X-Real-IP": "10.0.0.4",
+            }
+
+        self.assertEqual(client_context.get_client_ip(Request()), "37.214.29.144")
+        self.assertEqual(
+            client_context.get_client_ip_chain(Request()),
+            ["37.214.29.144", "10.0.0.4"],
+        )
+
+    def test_client_ip_falls_back_to_private_when_no_public_ip_exists(self):
+        class Request:
+            remote_addr = "10.0.0.4"
+            headers = {"X-Forwarded-For": "10.0.0.4"}
+
+        self.assertEqual(client_context.get_client_ip(Request()), "10.0.0.4")
 
     def test_registration_notification_contains_enriched_ip_context(self):
         with patch("urllib.request.urlopen", return_value=DummyResponse()):
