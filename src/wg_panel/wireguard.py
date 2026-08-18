@@ -21,7 +21,12 @@ def _config_path(wg_name):
 
 def migrate_device_metadata(dry_run=False):
     """Map every legacy config to one exact user/device owner."""
-    ensure_private_dir(CLIENTS_DIR)
+    if not os.path.isdir(CLIENTS_DIR):
+        if dry_run:
+            return {"total": 0, "migrated": 0, "ambiguous": [], "unowned": [], "stale": []}
+        ensure_private_dir(CLIENTS_DIR)
+    elif not dry_run:
+        ensure_private_dir(CLIENTS_DIR)
     users = load_users()
     meta = load_device_meta()
     migrated = 0

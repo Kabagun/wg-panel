@@ -33,6 +33,17 @@ def test_legacy_metadata_migration_and_exact_ownership(monkeypatch, tmp_path):
     assert not wireguard.user_owns_device("ali", "alice-phone")
 
 
+def test_metadata_dry_run_does_not_change_directory_permissions(monkeypatch, tmp_path):
+    clients = configure_paths(monkeypatch, tmp_path, {"alice": {"approved": True}})
+    write_config(clients, "alice-phone")
+    monkeypatch.setattr(
+        wireguard,
+        "ensure_private_dir",
+        lambda _path: (_ for _ in ()).throw(AssertionError("dry run must not chmod")),
+    )
+    assert wireguard.migrate_device_metadata(dry_run=True)["migrated"] == 1
+
+
 def test_ambiguous_dashed_username_migration_aborts(monkeypatch, tmp_path):
     clients = configure_paths(
         monkeypatch,
