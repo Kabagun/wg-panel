@@ -4,7 +4,6 @@ import os
 import socket
 import threading
 import time
-import urllib.parse
 import urllib.request
 
 try:
@@ -14,26 +13,8 @@ except ImportError:  # pragma: no cover - deployment installs the dependency.
 
 
 GEOIP_CACHE_TTL_SECS = 6 * 60 * 60
-GEOIP_URL = "http://ip-api.com/json/{ip}"
-GEOIP_FIELDS = ",".join(
-    [
-        "status",
-        "message",
-        "country",
-        "countryCode",
-        "regionName",
-        "city",
-        "timezone",
-        "isp",
-        "org",
-        "as",
-        "asname",
-        "mobile",
-        "proxy",
-        "hosting",
-        "query",
-    ]
-)
+GEOIP_URL = "https://ipwho.is/{ip}"
+GEOIP_MAX_RESPONSE_BYTES = 64 * 1024
 
 _geoip_cache = {}
 _geoip_lock = threading.Lock()
@@ -42,45 +23,21 @@ _endpoint_lock = threading.Lock()
 
 
 def get_client_ip(req):
-    """Return the best client IP from trusted proxy headers or Flask."""
-    for raw_ip in _candidate_client_ips(req):
-        if _is_public_ip(raw_ip):
-            return _normalize_ip(raw_ip)
-    raw_ip = next(iter(_candidate_client_ips(req)), "")
-    return _normalize_ip(raw_ip) or "unknown"
+    """Return the client IP normalized by Flask/ProxyFix."""
+    return _normalize_ip(req.remote_addr or "") or "unknown"
 
 
 def get_client_ip_chain(req):
-    """Return normalized IPs seen in proxy headers and Flask, preserving order."""
-    seen = []
-    for raw_ip in _candidate_client_ips(req):
-        ip = _normalize_ip(raw_ip)
-        if ip and ip not in seen:
-            seen.append(ip)
-    return seen
-
-
-def _candidate_client_ips(req):
-    forwarded_for = req.headers.get("X-Forwarded-For", "")
-    for raw_ip in forwarded_for.split(","):
-        raw_ip = raw_ip.strip()
-        if raw_ip:
-            yield raw_ip
-
-    real_ip = req.headers.get("X-Real-IP", "").strip()
-    if real_ip:
-        yield real_ip
-
-    raw_ip = (req.remote_addr or "").strip()
-    if raw_ip:
-        yield raw_ip
+    """Return only the trusted, proxy-normalized address."""
+    ip = get_client_ip(req)
+    return [] if ip == "unknown" else [ip]
 
 
 def _normalize_ip(raw_ip):
     try:
         return str(ipaddress.ip_address(raw_ip))
     except ValueError:
-        return raw_ip.strip()
+        return ""
 
 
 def lookup_ip_geo(ip):
@@ -94,16 +51,39 @@ def lookup_ip_geo(ip):
         if cached and now - cached["time"] < GEOIP_CACHE_TTL_SECS:
             return cached["data"]
 
-    params = urllib.parse.urlencode({"fields": GEOIP_FIELDS})
-    url = f"{GEOIP_URL.format(ip=urllib.parse.quote(ip, safe=''))}?{params}"
+    url = GEOIP_URL.format(ip=ip)
     try:
         with urllib.request.urlopen(url, timeout=2) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except Exception:
+            content_length = int(response.headers.get("Content-Length", "0") or 0)
+            if content_length > GEOIP_MAX_RESPONSE_BYTES:
+                return {}
+            payload = response.read(GEOIP_MAX_RESPONSE_BYTES + 1)
+            if len(payload) > GEOIP_MAX_RESPONSE_BYTES:
+                return {}
+            raw = json.loads(payload.decode("utf-8"))
+    except (OSError, TimeoutError, ValueError, json.JSONDecodeError):
         return {}
 
-    if data.get("status") != "success":
+    returned_ip = _normalize_ip(str(raw.get("ip") or ""))
+    if raw.get("success") is not True or returned_ip != ip:
         data = {}
+    else:
+        connection = raw.get("connection") if isinstance(raw.get("connection"), dict) else {}
+        timezone_data = raw.get("timezone") if isinstance(raw.get("timezone"), dict) else {}
+        asn = connection.get("asn")
+        data = {
+            "status": "success",
+            "country": raw.get("country"),
+            "countryCode": raw.get("country_code"),
+            "regionName": raw.get("region"),
+            "city": raw.get("city"),
+            "timezone": timezone_data.get("id"),
+            "isp": connection.get("isp"),
+            "org": connection.get("org"),
+            "as": f"AS{asn}" if asn else "",
+            "asname": connection.get("domain"),
+            "query": returned_ip,
+        }
 
     with _geoip_lock:
         _geoip_cache[ip] = {"time": now, "data": data}

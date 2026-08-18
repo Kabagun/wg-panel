@@ -1,12 +1,14 @@
 from flask import session
+from markupsafe import escape
 
 from .core import _lang
 from .i18n import t
+from .security import csrf_input
 
 FAVICON = '<link rel="icon" href="data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'><text y=\'.9em\' font-size=\'90\'>🔒</text></svg>">'
 
 def page_head(title="VPN Panel"):
-    return f'<title>{title} | VPN Panel</title>\n{FAVICON}\n'
+    return f'<title>{escape(title)} | VPN Panel</title>\n{FAVICON}\n'
 
 CSS = """
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -112,7 +114,7 @@ def flash_html():
     msgs = ""
     for cat, msg in (session.pop("_flashes", None) or []):
         cls = "msg-ok" if cat == "ok" else "msg-err"
-        msgs += f'<div class="{cls}">{msg}</div>'
+        msgs += f'<div class="{cls}">{escape(msg)}</div>'
     return msgs
 
 # ─── Pages ────────────────────────────────────────────────────────────────────
@@ -124,6 +126,7 @@ def login_page(lang):
   <p class="sub">{t("login_sub", lang)}</p>
   {{{{flash}}}}
   <form method="POST" id="login-form" autocomplete="on">
+    {csrf_input()}
     <label for="username">{t("login_user", lang)}</label>
     <input type="text" id="username" name="u" autocomplete="username" required autofocus>
     <label for="password">{t("login_pass", lang)}</label>
@@ -146,9 +149,14 @@ def register_page(lang):
   <p class="sub">{t("reg_sub", lang)}</p>
   {{{{flash}}}}
   <form method="POST" autocomplete="on">
+    {csrf_input()}
     <label>{t("reg_user", lang)}</label>
     <input type="text" id="username" name="u" pattern="[a-z0-9-]+" required autofocus
-           autocomplete="username" title="Lowercase letters, numbers, dashes only">
+           minlength="3" maxlength="32" autocomplete="username"
+           title="Lowercase letters, numbers, dashes only">
+    <label>{t("reg_telegram", lang)}</label>
+    <input type="text" name="telegram_username" pattern="@?[A-Za-z0-9_]{{5,32}}"
+           minlength="5" maxlength="33" autocomplete="off" placeholder="@username" required>
     <label>{t("reg_pass", lang)}</label>
     <input type="password" id="new-password" name="p" minlength="8" required autocomplete="new-password">
     <label>{t("reg_confirm", lang)}</label>
@@ -175,7 +183,10 @@ def pending_page(lang):
 <div class="card" style="text-align:center">
   <h1>⏳ {t("pend_title", lang)}</h1>
   <p class="sub" style="margin-bottom:20px">{t("pend_sub", lang)}</p>
-  <a href="/logout" class="btn r">{t("pend_logout", lang)}</a>
+  <form method="POST" action="/logout">
+    {csrf_input()}
+    <button type="submit" class="btn r">{t("pend_logout", lang)}</button>
+  </form>
 </div></div>
 """
 
@@ -187,7 +198,10 @@ def nav_bar(is_admin=False):
   <a href="/dashboard" class="btn b">{t("nav_devices", lang)}</a>
   <a href="/add" class="btn g">{t("nav_add", lang)}</a>
   {admin_link}
-  <a href="/logout" class="btn r" style="margin-left:auto;flex-shrink:0">{t("nav_logout", lang)}</a>
+  <form method="POST" action="/logout" style="margin-left:auto;flex-shrink:0">
+    {csrf_input()}
+    <button type="submit" class="btn r">{t("nav_logout", lang)}</button>
+  </form>
 </div>"""
 
 def forgot_page(lang):
@@ -198,6 +212,7 @@ def forgot_page(lang):
   <p class="sub">{t("forgot_sub", lang)}</p>
   {{{{flash}}}}
   <form method="POST">
+    {csrf_input()}
     <label>{t("login_user", lang)}</label>
     <input type="text" name="u" required autofocus>
     <button class="btn g btn-full" type="submit">{t("forgot_btn", lang)}</button>
@@ -208,6 +223,7 @@ def forgot_page(lang):
 """
 
 def reset_page(lang, username):
+    username = escape(username)
     if lang == "ru":
         sub = f"Выберите новый пароль для <b>{username}</b>."
     else:
@@ -219,6 +235,7 @@ def reset_page(lang, username):
   <p class="sub">{sub}</p>
   {{{{flash}}}}
   <form method="POST">
+    {csrf_input()}
     <label>{t("reset_new_pw", lang)}</label>
     <input type="password" name="p" minlength="8" required autofocus>
     <label>{t("reset_conf_pw", lang)}</label>

@@ -1,3 +1,3 @@
-from . import auth, devices, telegram, admin
+from . import admin, auth, devices, telegram
 
-__all__ = ["auth", "devices", "telegram", "admin"]
+__all__ = ["admin", "auth", "devices", "telegram"]

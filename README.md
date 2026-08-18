@@ -4,7 +4,9 @@ Minimal Flask web panel for a WireGuard server.
 
 It supports user registration, admin approval, per-user device limits, device
 creation/removal, QR/config download, traffic view, password reset links, and
-optional Telegram notifications.
+optional Telegram notifications. New registrations require a public Telegram
+username. Administrators can opt individual users into monthly payment
+reminders without exposing payment data in customer dashboards.
 
 ## What Is Versioned
 
@@ -59,12 +61,31 @@ At minimum set:
 - `WG_PANEL_ADMIN_PASSWORD` before first startup
 - `WG_PANEL_TRUST_PROXY=1` when the panel is served through nginx or another trusted reverse proxy.
 - `WG_PANEL_TELEGRAM_BOT_TOKEN` and `WG_PANEL_TELEGRAM_CHAT_ID`, if Telegram notifications are needed.
+- `WG_PANEL_TELEGRAM_WEBHOOK_SECRET`, a random secret used to authenticate Telegram callbacks.
+- `WG_PANEL_PAYMENT_ACCOUNT` and `WG_PANEL_PAYMENT_ERIP_PATH` before payment reminders are enabled.
+- `WG_PANEL_PAYMENT_TIME=09:00` and `WG_PANEL_PAYMENT_TIMEZONE=Europe/Minsk` for reminder scheduling.
 
-New registration notifications use the trusted proxy address, browser metadata,
-and public IP details from `ip-api.com`. Private or local client IPs cannot be
+New registration notifications use the ProxyFix-normalized client address,
+browser metadata, and public IP details from the HTTPS `ipwho.is` API. Private or local client IPs cannot be
 geolocated directly; in that case the notification can show the VPN endpoint
 GeoIP from `WG_PANEL_PUBLIC_IP` or the resolved `WG_PANEL_DOMAIN`. Lookup
 failures do not block registration.
+
+Payment reminders are administrator-only. The configured day is a permanent
+monthly anchor: a day that is absent from a short month uses that month's last
+day, then returns to the original day in the next month. Prices are derived
+from the configured device limit: 1–3 devices cost 5 BYN, 4–5 cost 7 BYN, and
+unlimited costs 15 BYN. Existing users remain disabled until an administrator
+sets a Telegram username and payment day and explicitly enables reminders.
+
+On startup, the panel migrates legacy WireGuard filenames to exact owner/device
+metadata. The migration aborts rather than guessing when one filename matches
+multiple usernames. To inspect production safely before restarting, run:
+
+```bash
+/opt/wg-panel/venv/bin/python -c \
+  'from wg_panel.wireguard import migrate_device_metadata; print(migrate_device_metadata(dry_run=True))'
+```
 
 Start the application through the server's deployment layer. Do not store
 server-specific systemd, nginx, TLS, or domain configuration in this repository.
@@ -99,6 +120,8 @@ journalctl -u wg-panel -n 100 --no-pager
 - `src/wg_panel/wireguard.py` - WireGuard client config helpers.
 - `src/wg_panel/traffic.py` - traffic counters and device metadata storage.
 - `src/wg_panel/telegram.py` - Telegram notifications and callback helpers.
+- `src/wg_panel/payments.py` - monthly payment dates, pricing, messages, and delivery checkpoints.
+- `src/wg_panel/security.py` - CSRF, trusted client address, and request abuse controls.
 - `src/wg_panel/routes/` - auth, device, Telegram, traffic, and admin routes.
 - `src/wg_panel/runner.py` - startup code for redirect server, traffic collector, webhook, and Flask.
 - `scripts/` - shell helpers installed into `/etc/wireguard`.

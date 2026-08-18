@@ -1,142 +1,132 @@
 import json
-import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from wg_panel import client_context
 
 
 class DummyResponse:
+    def __init__(self, payload=None, content_length=None):
+        self.payload = payload or {
+            "success": True,
+            "ip": "8.8.8.8",
+            "country": "Netherlands",
+            "country_code": "NL",
+            "region": "North Holland",
+            "city": "Amsterdam",
+            "timezone": {"id": "Europe/Amsterdam"},
+            "connection": {
+                "isp": "Example ISP",
+                "org": "Example Org",
+                "asn": 64500,
+                "domain": "example.test",
+            },
+        }
+        encoded = json.dumps(self.payload).encode()
+        self.headers = {"Content-Length": str(content_length if content_length is not None else len(encoded))}
+
     def __enter__(self):
         return self
 
     def __exit__(self, *_args):
         return False
 
-    def read(self):
-        return json.dumps(
-            {
-                "status": "success",
-                "country": "Netherlands",
-                "countryCode": "NL",
-                "regionName": "North Holland",
-                "city": "Amsterdam",
-                "timezone": "Europe/Amsterdam",
-                "isp": "Example ISP",
-                "org": "Example Org",
-                "as": "AS64500 Example",
-                "asname": "EXAMPLE",
-                "mobile": False,
-                "proxy": True,
-                "hosting": False,
-                "query": "8.8.8.8",
-            }
-        ).encode("utf-8")
+    def read(self, _limit=-1):
+        return json.dumps(self.payload).encode()
 
 
-class DummyRequest:
-    remote_addr = "8.8.8.8"
-    headers = {}
+def request_for(address="8.8.8.8", headers=None):
+    return SimpleNamespace(
+        remote_addr=address,
+        headers=headers or {},
+        user_agent=SimpleNamespace(
+            string="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
+        ),
+    )
 
-    class user_agent:
-        string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0"
+
+def setup_function():
+    client_context._geoip_cache.clear()
+    client_context._endpoint_cache.update({"time": 0, "ips": []})
 
 
-class ClientContextTest(unittest.TestCase):
-    def setUp(self):
-        client_context._geoip_cache.clear()
-        client_context._endpoint_cache["time"] = 0
-        client_context._endpoint_cache["ips"] = []
+def test_private_ip_skips_geoip_lookup():
+    with patch("urllib.request.urlopen") as urlopen:
+        assert client_context.lookup_ip_geo("127.0.0.1") == {}
+        urlopen.assert_not_called()
 
-    def test_private_ip_skips_geoip_lookup(self):
-        with patch("urllib.request.urlopen") as urlopen:
-            self.assertEqual(client_context.lookup_ip_geo("127.0.0.1"), {})
-            urlopen.assert_not_called()
 
-    def test_client_ip_prefers_public_forwarded_for(self):
-        class Request:
-            remote_addr = "10.0.0.4"
-            headers = {
-                "X-Forwarded-For": "37.214.29.144, 10.0.0.4",
-                "X-Real-IP": "10.0.0.4",
-            }
+def test_raw_forwarding_headers_cannot_spoof_proxy_normalized_address():
+    request = request_for(
+        "10.0.0.4",
+        {"X-Forwarded-For": "37.214.29.144", "X-Real-IP": "37.214.29.144"},
+    )
+    assert client_context.get_client_ip(request) == "10.0.0.4"
+    assert client_context.get_client_ip_chain(request) == ["10.0.0.4"]
 
-        self.assertEqual(client_context.get_client_ip(Request()), "37.214.29.144")
-        self.assertEqual(
-            client_context.get_client_ip_chain(Request()),
-            ["37.214.29.144", "10.0.0.4"],
+
+def test_geoip_uses_https_and_validates_returned_ip():
+    with patch("urllib.request.urlopen", return_value=DummyResponse()) as urlopen:
+        data = client_context.lookup_ip_geo("8.8.8.8")
+    assert urlopen.call_args.args[0].startswith("https://")
+    assert data["country"] == "Netherlands"
+    assert data["query"] == "8.8.8.8"
+
+    client_context._geoip_cache.clear()
+    mismatched = DummyResponse({"success": True, "ip": "1.1.1.1"})
+    with patch("urllib.request.urlopen", return_value=mismatched):
+        assert client_context.lookup_ip_geo("8.8.8.8") == {}
+
+
+def test_geoip_rejects_oversize_response():
+    response = DummyResponse(content_length=client_context.GEOIP_MAX_RESPONSE_BYTES + 1)
+    with patch("urllib.request.urlopen", return_value=response):
+        assert client_context.lookup_ip_geo("8.8.8.8") == {}
+
+
+def test_registration_notification_contains_enriched_context():
+    with patch("urllib.request.urlopen", return_value=DummyResponse()):
+        message = client_context.build_registration_notification(
+            "pocoyo52", "2026-07-09 15:41 UTC", request_for()
         )
-
-    def test_client_ip_falls_back_to_private_when_no_public_ip_exists(self):
-        class Request:
-            remote_addr = "10.0.0.4"
-            headers = {"X-Forwarded-For": "10.0.0.4"}
-
-        self.assertEqual(client_context.get_client_ip(Request()), "10.0.0.4")
-
-    def test_registration_notification_contains_enriched_ip_context(self):
-        with patch("urllib.request.urlopen", return_value=DummyResponse()):
-            message = client_context.build_registration_notification(
-                "pocoyo52",
-                "2026-07-09 15:41 UTC",
-                DummyRequest(),
-            )
-
-        self.assertIn("IP: `8.8.8.8`", message)
-        self.assertIn("Location: `Netherlands, NL, North Holland, Amsterdam`", message)
-        self.assertIn("Network: `Example ISP, Example Org`", message)
-        self.assertIn("ASN: `AS64500 Example, EXAMPLE`", message)
-        self.assertIn("Flags: `mobile=no, proxy=yes, hosting=no`", message)
-        self.assertIn("Browser:", message)
-
-    def test_geoip_failure_does_not_raise(self):
-        with patch("urllib.request.urlopen", side_effect=TimeoutError):
-            message = client_context.build_registration_notification(
-                "pocoyo52",
-                "2026-07-09 15:41 UTC",
-                DummyRequest(),
-            )
-
-        self.assertIn("Location:", message)
-
-    def test_private_ip_notification_can_include_vpn_endpoint_geoip(self):
-        class Request:
-            remote_addr = "10.0.0.4"
-            headers = {}
-
-            class user_agent:
-                string = DummyRequest.user_agent.string
-
-        def geo(ip):
-            if ip == "203.0.113.10":
-                return {}
-            if ip == "8.8.8.8":
-                return {
-                    "status": "success",
-                    "country": "United States",
-                    "countryCode": "US",
-                    "regionName": "California",
-                    "city": "Mountain View",
-                    "isp": "Google LLC",
-                    "org": "Google Public DNS",
-                    "as": "AS15169 Google LLC",
-                    "asname": "GOOGLE",
-                }
-            return {}
-
-        with patch.dict("os.environ", {"WG_PANEL_PUBLIC_IP": "8.8.8.8"}), patch(
-            "wg_panel.client_context.lookup_ip_geo", side_effect=geo
-        ):
-            message = client_context.build_registration_notification(
-                "pocoyo52",
-                "2026-07-09 15:41 UTC",
-                Request(),
-            )
-
-        self.assertIn("IP: `10.0.0.4`", message)
-        self.assertIn("Location: `private VPN/local IP`", message)
-        self.assertIn("VPN Endpoint: `8.8.8.8`", message)
-        self.assertIn("VPN Location: `United States, US, California, Mountain View`", message)
+    assert "IP: `8.8.8.8`" in message
+    assert "Location: `Netherlands, NL, North Holland, Amsterdam`" in message
+    assert "Network: `Example ISP, Example Org`" in message
+    assert "ASN: `AS64500, example.test`" in message
+    assert "Browser:" in message
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_geoip_failure_does_not_block_notification():
+    with patch("urllib.request.urlopen", side_effect=TimeoutError):
+        message = client_context.build_registration_notification(
+            "pocoyo52", "2026-07-09 15:41 UTC", request_for()
+        )
+    assert "Location:" in message
+
+
+def test_private_ip_notification_uses_vpn_endpoint_fallback():
+    def geo(address):
+        if address == "8.8.8.8":
+            return {
+                "status": "success",
+                "country": "United States",
+                "countryCode": "US",
+                "regionName": "California",
+                "city": "Mountain View",
+                "isp": "Google LLC",
+                "org": "Google Public DNS",
+                "as": "AS15169",
+                "asname": "google.com",
+            }
+        return {}
+
+    with patch.dict("os.environ", {"WG_PANEL_PUBLIC_IP": "8.8.8.8"}), patch(
+        "wg_panel.client_context.lookup_ip_geo", side_effect=geo
+    ):
+        message = client_context.build_registration_notification(
+            "pocoyo52", "2026-07-09 15:41 UTC", request_for("10.0.0.4")
+        )
+    assert "IP: `10.0.0.4`" in message
+    assert "Location: `private VPN/local IP`" in message
+    assert "VPN Endpoint: `8.8.8.8`" in message
+    assert "VPN Location: `United States, US, California, Mountain View`" in message

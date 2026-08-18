@@ -1,6 +1,9 @@
+from importlib import import_module
+
 from .core import app
 
-# Import side-effect modules so middleware and routes are registered on app import.
-from . import middleware, routes  # noqa: F401,E402
+# Register middleware and routes after the shared Flask app exists.
+import_module(".middleware", __name__)
+import_module(".routes", __name__)
 
 __all__ = ["app"]

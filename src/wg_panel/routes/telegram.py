@@ -1,47 +1,96 @@
+import hmac
+
 from flask import request
 
-from ..core import app, load_users, save_users
+from ..core import TG_CHAT_ID, TG_WEBHOOK_SECRET, app, mutate_users
 from ..telegram import answer_callback, edit_tg_message
+
+
+def _authorized_webhook():
+    supplied = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    return bool(
+        TG_WEBHOOK_SECRET
+        and supplied
+        and hmac.compare_digest(TG_WEBHOOK_SECRET, supplied)
+    )
+
 
 @app.route("/tg_webhook", methods=["POST"])
 def tg_webhook():
-    """Handle Telegram inline button callbacks for approve/reject."""
-    try:
-        data = request.get_json(silent=True) or {}
-        cq = data.get("callback_query")
-        if not cq:
+    """Handle authenticated, one-time administrator approval callbacks."""
+    if not _authorized_webhook():
+        return "forbidden", 403
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return "invalid", 400
+    callback = data.get("callback_query")
+    if not isinstance(callback, dict):
+        return "ok"
+
+    callback_id = str(callback.get("id") or "")
+    message = callback.get("message") if isinstance(callback.get("message"), dict) else {}
+    chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+    actor = callback.get("from") if isinstance(callback.get("from"), dict) else {}
+    chat_id = str(chat.get("id") or "")
+    actor_id = str(actor.get("id") or "")
+    if not TG_CHAT_ID or chat_id != str(TG_CHAT_ID) or actor_id != str(TG_CHAT_ID):
+        return "forbidden", 403
+
+    parts = str(callback.get("data") or "").split(":")
+    action = parts[0] if parts else ""
+    token = parts[1] if len(parts) > 1 else ""
+    if action not in {"approve", "reject"} or not token or len(parts) not in {2, 3}:
+        answer_callback(callback_id, "Invalid action")
+        return "ok"
+
+    max_devices = None
+    if action == "approve":
+        if len(parts) != 3:
+            answer_callback(callback_id, "Invalid limit")
             return "ok"
-        callback_id = cq["id"]
-        cb_data = cq.get("data", "")
-        msg = cq.get("message", {})
-        msg_id = msg.get("message_id")
-        chat_id = msg.get("chat", {}).get("id")
-        parts = cb_data.split(":", 2)
-        if len(parts) < 2:
-            answer_callback(callback_id, "Invalid")
+        try:
+            max_devices = int(parts[2])
+        except ValueError:
+            max_devices = None
+        if max_devices not in {3, 5, -1}:
+            answer_callback(callback_id, "Invalid limit")
             return "ok"
-        action, username = parts[0], parts[1]
-        max_dev = int(parts[2]) if len(parts) > 2 else 3
-        users = load_users()
-        if username not in users:
-            answer_callback(callback_id, "User not found")
-            edit_tg_message(chat_id, msg_id, f"\u2753 User `{username}` not found (already processed?)")
-            return "ok"
+
+    def apply(users):
+        match = next(
+            (
+                (username, user)
+                for username, user in users.items()
+                if user.get("role") != "admin"
+                and not user.get("approved")
+                and hmac.compare_digest(str(user.get("approval_token", "")), token)
+            ),
+            None,
+        )
+        if not match:
+            return None
+        username, user = match
         if action == "approve":
-            users[username]["approved"] = True
-            users[username]["max_devices"] = max_dev
-            save_users(users)
-            limit_str = "\u221e" if max_dev == -1 else str(max_dev)
-            answer_callback(callback_id, f"\u2705 {username} approved!")
-            edit_tg_message(chat_id, msg_id,
-                f"\u2705 *Approved:* `{username}`\nDevice limit: {limit_str}")
-        elif action == "reject":
+            user["approved"] = True
+            user["max_devices"] = max_devices
+            user.pop("approval_token", None)
+        else:
             del users[username]
-            save_users(users)
-            answer_callback(callback_id, f"\u274c {username} rejected")
-            edit_tg_message(chat_id, msg_id,
-                f"\u274c *Rejected:* `{username}` \u2014 account deleted")
-    except Exception as e:
-        import sys
-        print(f"[TG WEBHOOK ERROR] {e}", file=sys.stderr, flush=True)
+        return username
+
+    username = mutate_users(apply)
+    message_id = message.get("message_id")
+    if not username:
+        answer_callback(callback_id, "Already processed")
+        edit_tg_message(chat_id, message_id, "❓ Registration already processed or expired.")
+        return "ok"
+
+    if action == "approve":
+        limit = "∞" if max_devices == -1 else str(max_devices)
+        answer_callback(callback_id, f"✅ {username} approved")
+        edit_tg_message(chat_id, message_id, f"✅ *Approved:* `{username}`\nDevice limit: {limit}")
+    else:
+        answer_callback(callback_id, f"❌ {username} rejected")
+        edit_tg_message(chat_id, message_id, f"❌ *Rejected:* `{username}` — account deleted")
     return "ok"

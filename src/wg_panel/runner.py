@@ -15,13 +15,16 @@ from .core import (
     SSL_KEY,
     app,
     ensure_admin,
+    ensure_private_dir,
 )
+from .payments import process_payment_reminders
 from .telegram import set_tg_webhook
 from .traffic import collect_traffic
+from .wireguard import migrate_device_metadata
 
 
 def main():
-    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from http.server import BaseHTTPRequestHandler, HTTPServer
 
     class HTTPSRedirect(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -42,8 +45,10 @@ def main():
                 sock, addr = super().get_request()
                 try:
                     sock.settimeout(REDIRECT_SOCKET_TIMEOUT_SECS)
-                except Exception:
-                    pass
+                except (OSError, ValueError) as exc:
+                    import sys
+
+                    print(f"[HTTP REDIRECT] Failed to set socket timeout: {exc}", file=sys.stderr)
                 return sock, addr
 
         try:
@@ -61,16 +66,32 @@ def main():
         while True:
             try:
                 collect_traffic()
-            except Exception:
-                pass
+            except (OSError, ValueError) as exc:
+                import sys
+                print(f"[TRAFFIC] {exc}", file=sys.stderr, flush=True)
             time.sleep(60)
 
-    threading.Thread(target=traffic_loop, daemon=True).start()
-    set_tg_webhook()
+    def payment_loop():
+        import time
+        while True:
+            try:
+                process_payment_reminders()
+            except (OSError, ValueError) as exc:
+                import sys
+                print(f"[PAYMENTS] {exc}", file=sys.stderr, flush=True)
+            time.sleep(300)
 
-    os.makedirs(CLIENTS_DIR, exist_ok=True)
-    os.makedirs(DATA_DIR, exist_ok=True)
+    ensure_private_dir(CLIENTS_DIR)
+    ensure_private_dir(DATA_DIR)
     ensure_admin()
+    migration = migrate_device_metadata(dry_run=False)
+    print(
+        f"[DEVICE META] total={migration['total']} migrated={migration['migrated']}",
+        flush=True,
+    )
+    set_tg_webhook()
+    threading.Thread(target=traffic_loop, daemon=True).start()
+    threading.Thread(target=payment_loop, daemon=True).start()
     cert_ready = os.path.exists(SSL_CERT) and os.path.exists(SSL_KEY)
     ssl_ctx = (SSL_CERT, SSL_KEY) if ENABLE_INTERNAL_TLS and cert_ready else None
     if ENABLE_INTERNAL_TLS and not cert_ready:

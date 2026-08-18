@@ -17,6 +17,7 @@ STRINGS = {
         # register
         "reg_sub":       "Create an account — admin must approve before you can connect.",
         "reg_user":      "Username (letters, numbers, dashes)",
+        "reg_telegram":  "Public Telegram username",
         "reg_pass":      "Password",
         "reg_confirm":   "Confirm password",
         "reg_terms":     "By registering, you confirm that you are an adult and <strong>you agree not to distribute prohibited content through this network</strong>.<br>You acknowledge that violations make the network owner liable for your actions toward third parties.<br><span style='color:#8b949e'>Your data is stored only within this service and is not shared with third parties.</span>",
@@ -98,6 +99,7 @@ STRINGS = {
         # register
         "reg_sub":       "Создайте аккаунт — администратор должен одобрить его перед подключением.",
         "reg_user":      "Имя пользователя (буквы, цифры, дефисы)",
+        "reg_telegram":  "Публичное имя пользователя Telegram",
         "reg_pass":      "Пароль",
         "reg_confirm":   "Подтвердите пароль",
         "reg_terms":     "Продолжая регистрацию, вы подтверждаете, что являетесь совершеннолетним, и <strong>обязуетесь не распространять запрещённый контент через данную сеть</strong>.<br>Вы осознаёте, что при нарушении этого условия владелец сети несёт ответственность за ваши действия перед третьими лицами.<br><span style='color:#8b949e'>Ваши данные хранятся только в пределах этого сервиса и не передаются третьим лицам.</span>",
