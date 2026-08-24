@@ -3,6 +3,7 @@ import html
 import re
 import threading
 from datetime import date, datetime, time, timedelta
+from time import sleep
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .core import (
@@ -10,6 +11,7 @@ from .core import (
     PAYMENT_ERIP_PATH,
     PAYMENT_TIME,
     PAYMENT_TIMEZONE,
+    PAYMENT_USER_DELAY_SECONDS,
     load_users,
     mutate_users,
 )
@@ -153,7 +155,25 @@ def _checkpoint(username, month, part):
     return mutate_users(checkpoint)
 
 
-def process_payment_reminders(now=None, sender=send_telegram_sync):
+def _deliver_user_reminder(username, user, due, month, sender):
+    summary, forward_text, buttons = build_payment_messages(username, user, due)
+    parts = _prepare_delivery(username, month)
+    if parts is None:
+        return None
+    if "summary" not in parts:
+        if not sender(summary, False, "HTML", buttons):
+            return "summary_failed"
+        if not _checkpoint(username, month, "summary"):
+            return "disabled"
+    if "forward" not in parts:
+        if not sender(forward_text, False, "HTML"):
+            return "forward_failed"
+        if not _checkpoint(username, month, "forward"):
+            return "disabled"
+    return "sent"
+
+
+def process_payment_reminders(now=None, sender=send_telegram_sync, sleeper=sleep):
     """Send all currently due reminders and return per-user delivery results."""
     if not PAYMENT_ACCOUNT or not PAYMENT_ERIP_PATH:
         return []
@@ -169,29 +189,18 @@ def process_payment_reminders(now=None, sender=send_telegram_sync):
             now = now.astimezone(zone)
         month = now.strftime("%Y-%m")
         results = []
-        for username, user in sorted(load_users().items()):
-            if user.get("role") == "admin" or not _is_due(user, now):
-                continue
+        due_users = [
+            (username, user)
+            for username, user in sorted(load_users().items())
+            if user.get("role") != "admin" and _is_due(user, now)
+        ]
+        for index, (username, user) in enumerate(due_users):
             due = effective_due_date(now.year, now.month, user["payment_day"])
-            summary, forward_text, buttons = build_payment_messages(username, user, due)
-            parts = _prepare_delivery(username, month)
-            if parts is None:
-                continue
-            if "summary" not in parts:
-                if not sender(summary, False, "HTML", buttons):
-                    results.append((username, "summary_failed"))
-                    continue
-                if not _checkpoint(username, month, "summary"):
-                    results.append((username, "disabled"))
-                    continue
-            if "forward" not in parts:
-                if not sender(forward_text, False, "HTML"):
-                    results.append((username, "forward_failed"))
-                    continue
-                if not _checkpoint(username, month, "forward"):
-                    results.append((username, "disabled"))
-                    continue
-            results.append((username, "sent"))
+            result = _deliver_user_reminder(username, user, due, month, sender)
+            if result is not None:
+                results.append((username, result))
+                if index < len(due_users) - 1 and PAYMENT_USER_DELAY_SECONDS > 0:
+                    sleeper(PAYMENT_USER_DELAY_SECONDS)
         return results
     finally:
         _payment_run_lock.release()

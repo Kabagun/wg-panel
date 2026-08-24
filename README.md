@@ -64,6 +64,7 @@ At minimum set:
 - `WG_PANEL_TELEGRAM_WEBHOOK_SECRET`, a random secret used to authenticate Telegram callbacks.
 - `WG_PANEL_PAYMENT_ACCOUNT` and `WG_PANEL_PAYMENT_ERIP_PATH` before payment reminders are enabled.
 - `WG_PANEL_PAYMENT_TIME=09:00` and `WG_PANEL_PAYMENT_TIMEZONE=Europe/Minsk` for reminder scheduling.
+- `WG_PANEL_PAYMENT_USER_DELAY_SECONDS=60` to separate complete reminder batches for different users.
 
 New registration notifications use the ProxyFix-normalized client address,
 browser metadata, and public IP details from the HTTPS `ipwho.is` API. Private or local client IPs cannot be
@@ -77,6 +78,8 @@ day, then returns to the original day in the next month. Prices are derived
 from the configured device limit: 1–3 devices cost 5 BYN, 4–5 cost 7 BYN, and
 unlimited costs 15 BYN. Existing users remain disabled until an administrator
 sets a Telegram username and payment day and explicitly enables reminders.
+When several users are due together, the two messages for one user are sent as
+one batch, followed by the configured delay before the next user's batch.
 
 On startup, the panel migrates legacy WireGuard filenames to exact owner/device
 metadata. The migration aborts rather than guessing when one filename matches

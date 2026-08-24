@@ -84,6 +84,34 @@ def test_due_reminder_sends_two_russian_messages_and_deduplicates(monkeypatch):
     assert len(sent) == 2
 
 
+def test_multiple_users_are_delivered_as_spaced_sequential_batches(monkeypatch):
+    memory_store(
+        monkeypatch,
+        {"bob": paying_user(day=24), "alice": paying_user(day=24)},
+    )
+    monkeypatch.setattr(payments, "PAYMENT_USER_DELAY_SECONDS", 60.0)
+    timeline = []
+
+    def sender(text, *_args):
+        timeline.append(("send", text))
+        return True
+
+    now = datetime(2026, 8, 24, 9, 0, tzinfo=ZoneInfo("Europe/Minsk"))
+    result = payments.process_payment_reminders(
+        now,
+        sender,
+        sleeper=lambda seconds: timeline.append(("sleep", seconds)),
+    )
+
+    assert result == [("alice", "sent"), ("bob", "sent")]
+    assert [event[0] for event in timeline] == ["send", "send", "sleep", "send", "send"]
+    assert "<code>alice</code>" in timeline[0][1]
+    assert "Чек об оплате" in timeline[1][1]
+    assert timeline[2] == ("sleep", 60.0)
+    assert "<code>bob</code>" in timeline[3][1]
+    assert "Чек об оплате" in timeline[4][1]
+
+
 def test_scheduler_waits_until_nine_and_catches_up_later(monkeypatch):
     memory_store(monkeypatch, {"alice": paying_user(day=15)})
     sent = []
