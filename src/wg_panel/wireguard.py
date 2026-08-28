@@ -4,9 +4,17 @@ import re
 import subprocess
 
 from .core import CLIENTS_DIR, WG_DIR, _wireguard_lock, ensure_private_dir, load_users
-from .traffic import load_device_meta, remove_device_meta, save_device_meta, set_device_meta
+from .traffic import (
+    load_device_meta,
+    remove_device_meta,
+    save_device_meta,
+    set_device_meta,
+)
+from .traffic import set_device_safe_internet as _set_device_safe_internet
 
 SAFE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
+DEFAULT_DNS_SERVERS = "1.1.1.1, 8.8.8.8"
+SAFE_DNS_SERVERS = "1.1.1.3, 1.0.0.3"
 
 
 class DeviceMetadataMigrationError(RuntimeError):
@@ -44,6 +52,7 @@ def migrate_device_metadata(dry_run=False):
         device = current.get("device")
         if owner in users and isinstance(device, str) and device:
             current["vpn_type"] = "wireguard"
+            current.setdefault("safe_internet", False)
             continue
 
         candidates = []
@@ -58,7 +67,12 @@ def migrate_device_metadata(dry_run=False):
             ambiguous.append({"wg_name": wg_name, "owners": [item[0] for item in candidates]})
             continue
         owner, device = candidates[0]
-        meta[wg_name] = {"owner": owner, "device": device, "vpn_type": "wireguard"}
+        meta[wg_name] = {
+            "owner": owner,
+            "device": device,
+            "vpn_type": "wireguard",
+            "safe_internet": False,
+        }
         migrated += 1
 
     stale = sorted(name for name in meta if name not in config_names)
@@ -113,7 +127,7 @@ def get_device(wg_name):
         return None
     if not item.get("owner") or not item.get("device"):
         return None
-    return {"wg_name": wg_name, **item}
+    return {"wg_name": wg_name, **item, "safe_internet": bool(item.get("safe_internet"))}
 
 
 def user_owns_device(username, wg_name):
@@ -121,15 +135,66 @@ def user_owns_device(username, wg_name):
     return bool(device and device["owner"] == username)
 
 
+def set_device_safe_internet(wg_name, enabled):
+    """Persist the Safe internet preference for an existing WireGuard device."""
+    with _wireguard_lock:
+        if not get_device(wg_name):
+            return False
+        return _set_device_safe_internet(wg_name, enabled)
+
+
 def get_config(wg_name):
+    """Return a client config rendered with its device's current DNS preference."""
     path = _config_path(wg_name)
     if not path or not os.path.exists(path):
         return None
     try:
         with open(path, encoding="utf-8") as handle:
-            return handle.read()
+            config = handle.read()
     except OSError:
         return None
+
+    device = get_device(wg_name)
+    dns_servers = SAFE_DNS_SERVERS if device and device["safe_internet"] else DEFAULT_DNS_SERVERS
+    return _render_config_dns(config, dns_servers)
+
+
+def _render_config_dns(config, dns_servers):
+    lines = config.splitlines()
+    trailing_newline = config.endswith(("\n", "\r"))
+    interface_start = next(
+        (index for index, line in enumerate(lines) if line.strip().lower() == "[interface]"),
+        None,
+    )
+    if interface_start is None:
+        return config
+
+    interface_end = next(
+        (
+            index
+            for index in range(interface_start + 1, len(lines))
+            if lines[index].strip().startswith("[") and lines[index].strip().endswith("]")
+        ),
+        len(lines),
+    )
+    dns_indexes = [
+        index
+        for index in range(interface_start + 1, interface_end)
+        if re.match(r"^\s*DNS\s*=", lines[index], re.IGNORECASE)
+    ]
+    dns_line = f"DNS = {dns_servers}"
+    if dns_indexes:
+        lines[dns_indexes[0]] = dns_line
+        for index in reversed(dns_indexes[1:]):
+            del lines[index]
+    else:
+        insert_at = interface_end
+        while insert_at > interface_start + 1 and not lines[insert_at - 1].strip():
+            insert_at -= 1
+        lines.insert(insert_at, dns_line)
+
+    rendered = "\n".join(lines)
+    return rendered + "\n" if trailing_newline else rendered
 
 
 def _script_environment():
@@ -210,12 +275,14 @@ def delete_device(wg_name):
 
 
 def qr_svg_b64(wg_name):
-    path = _config_path(wg_name)
-    if not path or not os.path.exists(path):
+    """Return a QR code for the currently rendered client configuration."""
+    config = get_config(wg_name)
+    if not config:
         return None
     try:
         result = subprocess.run(
-            ["qrencode", "-t", "SVG", "-r", path, "-o", "-"],
+            ["qrencode", "-t", "SVG", "-o", "-"],
+            input=config.encode(),
             capture_output=True,
             timeout=10,
             check=False,

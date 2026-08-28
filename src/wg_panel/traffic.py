@@ -69,14 +69,28 @@ def mutate_device_meta(mutator):
 
 
 def set_device_meta(wg_name, owner, device):
+    """Create metadata for a newly provisioned WireGuard device."""
     def update(meta):
         meta[wg_name] = {
             "owner": owner,
             "device": device,
             "vpn_type": "wireguard",
+            "safe_internet": False,
         }
 
     mutate_device_meta(update)
+
+
+def set_device_safe_internet(wg_name, enabled):
+    """Set the Safe internet preference for an existing device."""
+    def update(meta):
+        device = meta.get(wg_name)
+        if not device:
+            return False
+        device["safe_internet"] = bool(enabled)
+        return True
+
+    return mutate_device_meta(update)
 
 
 def remove_device_meta(wg_name):

@@ -15,6 +15,7 @@ from ..wireguard import (
     get_device,
     get_user_devices,
     qr_svg_b64,
+    set_device_safe_internet,
 )
 
 
@@ -30,7 +31,6 @@ def dashboard():
     can_add = max_devices == -1 or used < max_devices
     lang = _lang()
     limit_text = t("dash_unlim", lang) if max_devices == -1 else str(max_devices)
-
     rows = ""
     for device in devices:
         wg_name = client_name(username, device)
@@ -174,6 +174,7 @@ def view_device(wg_name):
     config_title = "Текст конфига" if lang == "ru" else "Config Text"
     qr_heading = "QR-код" if lang == "ru" else "QR Code"
     copied = "✅ Скопировано!" if lang == "ru" else "✅ Copied!"
+    safe_checked = " checked" if device["safe_internet"] else ""
 
     html = page_head(display_name) + CSS + f"""
 <div class="wrap">
@@ -182,6 +183,17 @@ def view_device(wg_name):
     <h1>📱 {escape(display_name)}</h1>
     <p class="sub">{sub_text}</p>
     {flash_html()}
+    <form method="POST" action="/device/{escape(wg_name)}/safe-internet"
+          style="margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:8px">
+      {csrf_input()}
+      <label for="safe-internet" style="display:flex;align-items:center;gap:10px;margin:0">
+        <input id="safe-internet" type="checkbox" name="safe_internet"{safe_checked}
+               style="width:18px;height:18px;margin:0">
+        <b>{t("safe_title", lang)}</b>
+      </label>
+      <p style="color:var(--text2);font-size:12px;margin:8px 0 12px">{t("safe_help", lang)}</p>
+      <button class="btn b" type="submit">{t("safe_save", lang)}</button>
+    </form>
     <h2>{qr_heading}</h2>
     <p style="color:#8b949e;font-size:12px;margin-bottom:8px">{config_hint}</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
@@ -214,6 +226,22 @@ function copyConf(el) {{
 }}
 </script>"""
     return render_template_string(html)
+
+
+@app.route("/device/<wg_name>/safe-internet", methods=["POST"])
+@approved_required
+def update_device_safe_internet(wg_name):
+    device, _user = _authorized_device(wg_name)
+    if not device:
+        flash("Device not found or access denied.", "error")
+        return redirect(url_for("dashboard"))
+
+    enabled = request.form.get("safe_internet") == "on"
+    if set_device_safe_internet(wg_name, enabled):
+        flash(t("flash_safe_on" if enabled else "flash_safe_off", _lang()), "ok")
+    else:
+        flash(t("flash_safe_error", _lang()), "error")
+    return redirect(url_for("view_device", wg_name=wg_name))
 
 
 @app.route("/device/<wg_name>/download")

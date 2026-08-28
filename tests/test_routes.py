@@ -209,9 +209,15 @@ def test_exact_device_authorization_get_delete_rejection_and_no_store(runtime):
     )
 
     attacker = app.test_client()
-    csrf_session(attacker, "ali")
+    attacker_token = csrf_session(attacker, "ali")
     assert attacker.get("/device/alice-phone/download").status_code == 403
     assert attacker.get("/device/alice-phone/delete").status_code == 405
+    response = attacker.post(
+        "/device/alice-phone/safe-internet",
+        data={"csrf_token": attacker_token, "safe_internet": "on"},
+    )
+    assert response.status_code == 302
+    assert traffic.load_device_meta()["alice-phone"].get("safe_internet") is not True
 
     owner = app.test_client()
     csrf_session(owner, "alice")
@@ -219,6 +225,47 @@ def test_exact_device_authorization_get_delete_rejection_and_no_store(runtime):
     assert response.status_code == 200
     assert response.headers["Cache-Control"].startswith("no-store")
     assert "PrivateKey = secret" in response.get_data(as_text=True)
+
+
+def test_device_safe_internet_toggle_updates_existing_config_download(runtime):
+    _data, clients = runtime
+    core.save_users({"alice": user_record()})
+    config = clients / "alice-phone.conf"
+    config.write_text(
+        "[Interface]\nPrivateKey = secret\nAddress = 10.0.0.2/32\n"
+        "DNS = 1.1.1.1, 8.8.8.8\n\n[Peer]\nPublicKey = server\n",
+        encoding="utf-8",
+    )
+    traffic.save_device_meta(
+        {"alice-phone": {"owner": "alice", "device": "phone", "vpn_type": "wireguard"}}
+    )
+    client = app.test_client()
+    token = csrf_session(client, "alice")
+
+    response = client.post(
+        "/device/alice-phone/safe-internet",
+        data={"csrf_token": token, "safe_internet": "on"},
+    )
+    assert response.status_code == 302
+    assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is True
+    assert 'name="safe_internet" checked' in client.get(
+        "/device/alice-phone"
+    ).get_data(as_text=True)
+    enabled_config = client.get("/device/alice-phone/download").get_data(as_text=True)
+    assert "DNS = 1.1.1.3, 1.0.0.3" in enabled_config
+    assert "DNS = 1.1.1.1, 8.8.8.8" not in enabled_config
+
+    response = client.post(
+        "/device/alice-phone/safe-internet",
+        data={"csrf_token": token},
+    )
+    assert response.status_code == 302
+    assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is False
+    assert 'name="safe_internet" checked' not in client.get(
+        "/device/alice-phone"
+    ).get_data(as_text=True)
+    disabled_config = client.get("/device/alice-phone/download").get_data(as_text=True)
+    assert "DNS = 1.1.1.1, 8.8.8.8" in disabled_config
 
 
 def test_route_map_preserves_public_pages_and_removes_destructive_gets():

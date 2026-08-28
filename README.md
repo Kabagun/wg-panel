@@ -8,6 +8,12 @@ optional Telegram notifications. New registrations require a public Telegram
 username. Administrators can opt individual users into monthly payment
 reminders without exposing payment data in customer dashboards.
 
+Users can enable **Safe internet** separately for each device. Its downloaded
+config and QR code then use Cloudflare Family DNS (`1.1.1.3`, `1.0.0.3`) to
+block adult and malicious domains. The device must download and import the
+updated config; this DNS preference is not server-enforced and can be changed
+on the client.
+
 ## What Is Versioned
 
 - `src/wg_panel/` - Flask application package.

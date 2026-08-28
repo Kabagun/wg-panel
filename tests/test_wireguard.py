@@ -1,5 +1,6 @@
 import json
 import threading
+from types import SimpleNamespace
 
 from wg_panel import core, traffic, wireguard
 
@@ -141,3 +142,35 @@ def test_user_mutations_do_not_lose_concurrent_updates(monkeypatch, tmp_path):
         thread.join()
     assert set(core.load_users()) == {"alice", "bob"}
     assert json.loads((data_dir / "users.json").read_text(encoding="utf-8"))
+
+
+def test_qr_uses_safe_internet_dns(monkeypatch, tmp_path):
+    users = {"alice": {"approved": True}}
+    clients = configure_paths(monkeypatch, tmp_path, users)
+    config = clients / "alice-phone.conf"
+    config.write_text(
+        "[Interface]\nAddress = 10.0.0.2/32\nDNS = 1.1.1.1, 8.8.8.8\n\n[Peer]\n",
+        encoding="utf-8",
+    )
+    traffic.save_device_meta(
+        {
+            "alice-phone": {
+                "owner": "alice",
+                "device": "phone",
+                "vpn_type": "wireguard",
+                "safe_internet": True,
+            }
+        }
+    )
+    wireguard.migrate_device_metadata(dry_run=False)
+    assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is True
+    captured = {}
+
+    def run_qr(_args, **kwargs):
+        captured["input"] = kwargs["input"]
+        return SimpleNamespace(returncode=0, stdout=b"<svg></svg>")
+
+    monkeypatch.setattr(wireguard.subprocess, "run", run_qr)
+    assert wireguard.qr_svg_b64("alice-phone").startswith("data:image/svg+xml;base64,")
+    assert b"DNS = 1.1.1.3, 1.0.0.3" in captured["input"]
+    assert b"DNS = 1.1.1.1, 8.8.8.8" not in captured["input"]
