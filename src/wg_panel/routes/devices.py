@@ -35,40 +35,42 @@ def dashboard():
     for device in devices:
         wg_name = client_name(username, device)
         rows += f"""<tr>
-          <td><span style="font-family:monospace;color:#58a6ff">{escape(device)}</span></td>
-          <td><a href="/device/{escape(wg_name)}" class="btn b" style="padding:4px 10px;font-size:12px">{t("dash_view_qr", lang)}</a>
-              <form method="POST" action="/device/{escape(wg_name)}/delete" style="display:inline"
+          <td><span class="mono device-name">{escape(device)}</span></td>
+          <td><div class="table-actions"><a href="/device/{escape(wg_name)}" class="btn b">{t("dash_view_qr", lang)}</a>
+              <form method="POST" action="/device/{escape(wg_name)}/delete"
                     onsubmit="return confirm('{escape(device)}?')">
                 {csrf_input()}
-                <button class="btn r" style="padding:4px 10px;font-size:12px">{t("dash_remove", lang)}</button>
-              </form></td>
+                <button class="btn r">{t("dash_remove", lang)}</button>
+              </form></div></td>
         </tr>"""
 
     empty = (
-        f'<tr><td colspan="2" style="color:#8b949e;padding:16px">{t("dash_empty", lang)}</td></tr>'
+        f'<tr><td colspan="2" class="empty-state">{t("dash_empty", lang)}</td></tr>'
         if not rows
         else ""
     )
     add_button = (
         f'<a href="/add" class="btn g">{t("dash_add_btn", lang)}</a>'
         if can_add
-        else f'<span style="color:#8b949e;font-size:13px">{t("dash_limit", lang).format(n=max_devices)}</span>'
+        else f'<span class="field-help">{t("dash_limit", lang).format(n=max_devices)}</span>'
     )
 
     html = page_head(t("dash_title", lang)) + CSS + f"""
 <div class="wide">
   {nav_bar(is_admin)}
   <div class="card">
-    <h1>{t("dash_title", lang)}</h1>
-    <p class="sub">{t("dash_logged", lang)} <b>{escape(username)}</b> &nbsp;·&nbsp;
-       {used} / {escape(limit_text)} {t("dash_used", lang)}</p>
+    <div class="page-heading">
+      <div><h1 class="page-title">{t("dash_title", lang)}</h1>
+      <p class="sub">{t("dash_logged", lang)} <b>{escape(username)}</b> &nbsp;·&nbsp;
+         {used} / {escape(limit_text)} {t("dash_used", lang)}</p></div>
+    </div>
     {flash_html()}
     <div class="tbl-wrap">
-    <table><thead><tr><th>{t("dash_col_dev", lang)}</th><th>{t("dash_col_act", lang)}</th></tr></thead>
+    <table class="compact-table"><thead><tr><th>{t("dash_col_dev", lang)}</th><th>{t("dash_col_act", lang)}</th></tr></thead>
     <tbody>{rows}{empty}</tbody></table>
     </div>
     <hr>
-    {add_button}
+    <div class="actions">{add_button}</div>
   </div>
 </div>"""
     return render_template_string(html)
@@ -113,17 +115,17 @@ def add_device():
 <div class="wrap">
   {nav_bar(is_admin)}
   <div class="card">
-    <h1>➕ Add Device</h1>
+    <div class="page-heading"><div><h1 class="page-title">➕ Add Device</h1></div></div>
     <p class="sub">{t("add_sub", lang)}</p>
     {flash_html()}
-    <form method="POST">
+    <form method="POST" class="stack">
       {csrf_input()}
-      <label>{t("add_label", lang)}</label>
-      <input type="text" name="device" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]|[a-z0-9]"
+      <label for="device">{t("add_label", lang)}</label>
+      <input type="text" id="device" name="device" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]|[a-z0-9]"
              maxlength="64" placeholder="phone, pipyao-router, my_laptop" required autofocus>
       <button class="btn g btn-full" type="submit">{t("add_btn", lang)}</button>
     </form>
-    <p style="color:var(--text2);font-size:12px;margin-top:12px">{t("add_tip", lang)}</p>
+    <p class="field-help field-help-spaced">{t("add_tip", lang)}</p>
   </div>
 </div>"""
     return render_template_string(html)
@@ -155,10 +157,12 @@ def view_device(wg_name):
     qr = qr_svg_b64(wg_name)
     lang = _lang()
     display_name = device["device"]
+    qr_alt = "QR-код конфигурации WireGuard" if lang == "ru" else "WireGuard configuration QR code"
+    copy_label = "Скопировать конфигурацию" if lang == "ru" else "Copy configuration"
     qr_block = (
-        f'<div class="qr"><img src="{qr}" alt="QR"></div>'
+        f'<div class="qr"><img src="{qr}" alt="{qr_alt}"></div>'
         if qr
-        else '<p style="color:#8b949e">QR unavailable</p>'
+        else '<p class="empty-state">QR unavailable</p>'
     )
     config_hint = (
         "WireGuard → + → Сканировать QR код"
@@ -175,37 +179,48 @@ def view_device(wg_name):
     qr_heading = "QR-код" if lang == "ru" else "QR Code"
     copied = "✅ Скопировано!" if lang == "ru" else "✅ Copied!"
     safe_checked = " checked" if device["safe_internet"] else ""
+    safe_status_key = "safe_status_on" if device["safe_internet"] else "safe_status_off"
+    safe_status_class = "tag-ok" if device["safe_internet"] else "tag-pend"
 
     html = page_head(display_name) + CSS + f"""
 <div class="wrap">
   {nav_bar(user.get("role") == "admin")}
   <div class="card">
-    <h1>📱 {escape(display_name)}</h1>
+    <div class="page-heading"><div><h1 class="page-title">📱 {escape(display_name)}</h1></div></div>
     <p class="sub">{sub_text}</p>
     {flash_html()}
     <form method="POST" action="/device/{escape(wg_name)}/safe-internet"
-          style="margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:8px">
+          class="safe-card"
+          aria-labelledby="safe-internet-title"
+          >
       {csrf_input()}
-      <label for="safe-internet" style="display:flex;align-items:center;gap:10px;margin:0">
-        <input id="safe-internet" type="checkbox" name="safe_internet"{safe_checked}
-               style="width:18px;height:18px;margin:0">
-        <b>{t("safe_title", lang)}</b>
-      </label>
-      <p style="color:var(--text2);font-size:12px;margin:8px 0 12px">{t("safe_help", lang)}</p>
+      <div class="safe-card-head">
+        <div>
+          <h2 id="safe-internet-title" class="safe-card-title">{t("safe_title", lang)}</h2>
+          <span class="tag {safe_status_class}" role="status" aria-live="polite">{t(safe_status_key, lang)}</span>
+        </div>
+        <label for="safe-internet" class="safe-toggle">
+          <input id="safe-internet" type="checkbox" name="safe_internet"{safe_checked}
+                 aria-describedby="safe-internet-help">
+          <span>{t("safe_toggle", lang)}</span>
+        </label>
+      </div>
+      <p id="safe-internet-help" class="safe-help">{t("safe_help", lang)}</p>
       <button class="btn b" type="submit">{t("safe_save", lang)}</button>
     </form>
     <h2>{qr_heading}</h2>
-    <p style="color:#8b949e;font-size:12px;margin-bottom:8px">{config_hint}</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <p class="field-help section-hint">{config_hint}</p>
+    <div class="actions section-actions">
       <a href="https://apps.apple.com/app/wireguard/id1441195209" target="_blank" rel="noopener" class="btn b">📱 iOS / macOS</a>
       <a href="https://www.wireguard.com/install/" target="_blank" rel="noopener" class="btn b">💻 Install WireGuard</a>
     </div>
     {qr_block}
     <hr>
     <h2>{config_title}</h2>
-    <div class="conf" id="conf-block" onclick="copyConf(this)" style="cursor:pointer;user-select:all">{escape(config)}</div>
-    <div id="copy-toast" style="display:none;color:#3fb950;font-size:13px">{copied}</div>
-    <a href="/device/{escape(wg_name)}/download" class="btn b btn-full" style="margin-bottom:8px">⬇️ Download / Open</a>
+    <div class="conf" id="conf-block" role="button" tabindex="0" aria-label="{copy_label}"
+         onclick="copyConf(this)" onkeydown="copyConfKey(event, this)">{escape(config)}</div>
+    <div id="copy-toast" class="copy-toast">{copied}</div>
+    <a href="/device/{escape(wg_name)}/download" class="btn b btn-full download-btn">⬇️ Download / Open</a>
     <form method="POST" action="/device/{escape(wg_name)}/delete"
           onsubmit="return confirm('Remove {escape(display_name)}? This cannot be undone.')">
       {csrf_input()}
@@ -222,6 +237,11 @@ function copyConf(el) {{
   }};
   if (navigator.clipboard && navigator.clipboard.writeText) {{
     navigator.clipboard.writeText(text).then(showToast);
+  }}
+}}
+function copyConfKey(event, el) {{
+  if (event.key === 'Enter' || event.key === ' ') {{
+    event.preventDefault(); copyConf(el);
   }}
 }}
 </script>"""

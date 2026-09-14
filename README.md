@@ -10,9 +10,14 @@ reminders without exposing payment data in customer dashboards.
 
 Users can enable **Safe internet** separately for each device. Its downloaded
 config and QR code then use Cloudflare Family DNS (`1.1.1.3`, `1.0.0.3`) to
-block adult and malicious domains. The device must download and import the
-updated config; this DNS preference is not server-enforced and can be changed
-on the client.
+block adult and malicious domains. When the installed nftables helper is
+available, the server also enforces this preference for that device's IPv4
+WireGuard address: DNS TCP/UDP port 53 is redirected to Cloudflare Family and
+DNS-over-TLS port 853 is blocked. Ordinary WireGuard clients are not matched by
+the managed firewall set. Downloaded configs and QR codes continue to reflect
+the selected DNS. Enabling server enforcement is immediate; after disabling,
+a device that previously imported the Family DNS config must import the updated
+config if its local DNS setting should change as well.
 
 ## What Is Versioned
 
@@ -26,6 +31,7 @@ Runtime data is intentionally not versioned:
 
 - `/opt/wg-panel/data/` with users, traffic, device metadata, and Flask secret.
 - `/etc/wireguard/*.key`, `/etc/wireguard/wg0.conf`, and client configs.
+- Runtime nftables state (including `inet wg_panel_safe_dns`).
 - Web server, TLS, and systemd configuration.
 - TLS private keys and certificates.
 - Python virtual environments and caches.
@@ -36,7 +42,7 @@ Run as `root` on the VPN server.
 
 ```bash
 apt-get update
-apt-get install -y python3-venv wireguard qrencode
+apt-get install -y python3-venv wireguard nftables qrencode
 
 git clone git@github.com:Kabagun/wg-panel.git /opt/wg-panel
 python3 -m venv /opt/wg-panel/venv
@@ -49,6 +55,7 @@ Install helper scripts:
 install -m 700 /opt/wg-panel/scripts/add-client.sh /etc/wireguard/add-client.sh
 install -m 700 /opt/wg-panel/scripts/remove-client.sh /etc/wireguard/remove-client.sh
 install -m 700 /opt/wg-panel/scripts/list-clients.sh /etc/wireguard/list-clients.sh
+install -m 700 /opt/wg-panel/scripts/safe-dns.sh /etc/wireguard/safe-dns.sh
 ```
 
 Create environment file:
@@ -96,6 +103,29 @@ multiple usernames. To inspect production safely before restarting, run:
   'from wg_panel.wireguard import migrate_device_metadata; print(migrate_device_metadata(dry_run=True))'
 ```
 
+Startup also reconciles the server-side Safe internet policy from persisted
+device metadata. If any device is marked safe but `/etc/wireguard/safe-dns.sh`
+or nftables cannot apply the policy, startup aborts rather than serving an
+unenforced configuration. With no safe devices, a fresh install may start
+before the helper has ever created its managed table. The helper owns only
+`inet wg_panel_safe_dns`; do not put unrelated rules in that table. It is
+idempotent and atomically replaces only its own client set and rules. To inspect
+the current managed state without changing it, run:
+
+```bash
+nft list table inet wg_panel_safe_dns
+```
+
+Install the helper before provisioning new devices. Provisioning reconciles the
+managed table first so an address left fail-closed by an earlier cleanup error
+cannot be reassigned to an ordinary client.
+
+The implementation currently covers IPv4 clients in `10.0.0.2` through
+`10.0.0.254` on `wg0`. IPv6 traffic and a production server's existing NAT or
+forwarding policy are intentionally outside this repository's runtime state;
+verify that the host already forwards and masquerades WireGuard IPv4 traffic
+before enabling Safe internet.
+
 Start the application through the server's deployment layer. Do not store
 server-specific systemd, nginx, TLS, or domain configuration in this repository.
 The installed entry point is:
@@ -127,10 +157,11 @@ journalctl -u wg-panel -n 100 --no-pager
 - `src/wg_panel/auth.py` - login/admin decorators.
 - `src/wg_panel/client_context.py` - registration IP, GeoIP, and browser metadata helpers.
 - `src/wg_panel/wireguard.py` - WireGuard client config helpers.
+- `src/wg_panel/dns_enforcement.py` - validated server-side Safe internet reconciliation.
 - `src/wg_panel/traffic.py` - traffic counters and device metadata storage.
 - `src/wg_panel/telegram.py` - Telegram notifications and callback helpers.
 - `src/wg_panel/payments.py` - monthly payment dates, pricing, messages, and delivery checkpoints.
 - `src/wg_panel/security.py` - CSRF, trusted client address, and request abuse controls.
 - `src/wg_panel/routes/` - auth, device, Telegram, traffic, and admin routes.
-- `src/wg_panel/runner.py` - startup code for redirect server, traffic collector, webhook, and Flask.
+- `src/wg_panel/runner.py` - startup reconciliation, redirect server, traffic collector, webhook, and Flask.
 - `scripts/` - shell helpers installed into `/etc/wireguard`.

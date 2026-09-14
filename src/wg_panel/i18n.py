@@ -1,5 +1,9 @@
 STRINGS = {
     "en": {
+        # auth chrome
+        "auth_secure":   "Secure access",
+        "auth_create":   "Create an account",
+        "auth_recovery": "Account recovery",
         # nav
         "nav_devices":   "📋 My Devices",
         "nav_add":       "➕ Add Device",
@@ -50,8 +54,11 @@ STRINGS = {
         "dash_limit":    "Limit reached ({n} devices)",
         "dash_add_btn":  "➕ Add Device",
         "safe_title":    "Safe internet",
-        "safe_help":     "Blocks adult and malicious domains on this device with Cloudflare Family. After changing this setting, re-download and re-import its config.",
-        "safe_save":     "Save",
+        "safe_status_on":  "Enabled",
+        "safe_status_off": "Disabled",
+        "safe_toggle":   "Use Safe internet",
+        "safe_help":     "Uses Cloudflare Family to block adult and malicious domains. Enabling it is enforced by the VPN server immediately, and newly downloaded configs follow this setting. If you disable it after this device imported a Family DNS config, re-download and re-import the config to change the client DNS. Encrypted DNS and proxies may bypass this protection.",
+        "safe_save":     "Save setting",
         # traffic
         "tr_sub":        "Monthly traffic per device (collected every 60 seconds)",
         "tr_total_dl":   "Total ↓ Download",
@@ -80,14 +87,18 @@ STRINGS = {
         "flash_reg_ok":         "Account created! Waiting for admin approval.",
         "flash_add_invalid":    "Invalid name. Use lowercase letters, numbers, dashes (-) and underscores (_).",
         "flash_add_limit":      "Device limit reached ({n}).",
-        "flash_safe_on":        "Safe internet enabled. Re-download and re-import this device config.",
-        "flash_safe_off":       "Safe internet disabled. Re-download and re-import this device config.",
+        "flash_safe_on":        "Safe internet enabled. The VPN server enforces Family DNS immediately. Newly downloaded configs follow this setting.",
+        "flash_safe_off":       "Safe internet disabled on the VPN server. If this device previously imported a Family DNS config and you want to change its client DNS, re-download and re-import the config.",
         "flash_safe_error":     "Could not update the safe internet setting.",
         "flash_reset_len":      "Password must be at least 8 characters.",
         "flash_reset_match":    "Passwords do not match.",
         "flash_reset_ok":       "Password updated! You can now log in.",
     },
     "ru": {
+        # auth chrome
+        "auth_secure":   "Защищённый доступ",
+        "auth_create":   "Создание аккаунта",
+        "auth_recovery": "Восстановление доступа",
         # nav
         "nav_devices":   "📋 Устройства",
         "nav_add":       "➕ Добавить",
@@ -138,8 +149,11 @@ STRINGS = {
         "dash_limit":    "Лимит достигнут ({n} устройств)",
         "dash_add_btn":  "➕ Добавить устройство",
         "safe_title":    "Безопасный интернет",
-        "safe_help":     "Блокирует сайты для взрослых и вредоносные домены на этом устройстве через Cloudflare Family. После изменения скачайте и заново импортируйте его конфиг.",
-        "safe_save":     "Сохранить",
+        "safe_status_on":  "Включён",
+        "safe_status_off": "Выключен",
+        "safe_toggle":   "Использовать безопасный интернет",
+        "safe_help":     "Cloudflare Family блокирует сайты для взрослых и вредоносные домены. При включении VPN-сервер сразу применяет Family DNS, а новые скачанные конфиги учитывают эту настройку. Если выключить защиту после того, как устройство импортировало конфиг с Family DNS, чтобы изменить DNS на устройстве, скачайте и заново импортируйте конфиг. Зашифрованный DNS и прокси могут обойти эту защиту.",
+        "safe_save":     "Сохранить настройку",
         # traffic
         "tr_sub":        "Месячный трафик на устройство (собирается каждые 60 секунд)",
         "tr_total_dl":   "Всего ↓ Загрузка",
@@ -168,8 +182,8 @@ STRINGS = {
         "flash_reg_ok":         "Аккаунт создан! Ожидайте одобрения администратора.",
         "flash_add_invalid":    "Недопустимое название. Разрешены строчные буквы, цифры, дефисы (-) и подчёркивания (_).",
         "flash_add_limit":      "Достигнут лимит устройств ({n}).",
-        "flash_safe_on":        "Безопасный интернет включён. Скачайте и заново импортируйте конфиг этого устройства.",
-        "flash_safe_off":       "Безопасный интернет выключен. Скачайте и заново импортируйте конфиг этого устройства.",
+        "flash_safe_on":        "Безопасный интернет включён. VPN-сервер сразу применяет Family DNS. Новые скачанные конфиги учитывают эту настройку.",
+        "flash_safe_off":       "Безопасный интернет выключен на VPN-сервере. Если устройство ранее импортировало конфиг с Family DNS и вы хотите изменить DNS на нём, скачайте и заново импортируйте конфиг.",
         "flash_safe_error":     "Не удалось изменить настройку безопасного интернета.",
         "flash_reset_len":      "Пароль должен быть не менее 8 символов.",
         "flash_reset_match":    "Пароли не совпадают.",

@@ -41,31 +41,31 @@ def traffic_page():
         monthly = traffic.get(wg_name, {}).get("monthly", {})
         current = monthly.get(month_key, {"rx": 0, "tx": 0})
         history = "".join(
-            f'<span style="color:#8b949e;font-size:11px">{escape(key)}: '
+            f'<span class="history">{escape(key)}: '
             f'↓{fmt_bytes(monthly[key]["tx"])} ↑{fmt_bytes(monthly[key]["rx"])}</span><br>'
             for key in sorted(monthly, reverse=True)[:3]
         )
         if not history:
-            history = f'<span style="color:#8b949e;font-size:11px">{t("tr_nodata", lang)}</span>'
+            history = f'<span class="history">{t("tr_nodata", lang)}</span>'
         rows += f"""<tr>
-          <td><span style="font-family:monospace;color:#8b949e">{escape(owner)}</span></td>
-          <td><span style="font-family:monospace;color:#58a6ff">{escape(device)}</span></td>
-          <td style="color:#3fb950">↓ {fmt_bytes(current['tx'])}</td>
-          <td style="color:#f78166">↑ {fmt_bytes(current['rx'])}</td>
+          <td><span class="mono owner">{escape(owner)}</span></td>
+          <td><span class="mono device-name">{escape(device)}</span></td>
+          <td class="cell-down">↓ {fmt_bytes(current['tx'])}</td>
+          <td class="cell-up">↑ {fmt_bytes(current['rx'])}</td>
           <td>{history}</td>
         </tr>"""
     if not rows:
-        rows = f'<tr><td colspan="5" style="color:#8b949e;padding:16px">{t("tr_nodiv", lang)}</td></tr>'
+        rows = f'<tr><td colspan="5" class="empty-state">{t("tr_nodiv", lang)}</td></tr>'
 
     html = page_head(f"Traffic {month_key}") + CSS + f"""
 <div class="wide">
   {nav_bar(True)}
   <div class="card">
-    <h1>📊 Traffic — {month_key}</h1>
-    <p class="sub">{t("tr_sub", lang)}</p>
-    <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">
-      <div class="stat-box"><div class="stat-num" style="color:#3fb950">{fmt_bytes(total_tx)}</div><div class="stat-lbl">{t("tr_total_dl", lang)}</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:#f78166">{fmt_bytes(total_rx)}</div><div class="stat-lbl">{t("tr_total_ul", lang)}</div></div>
+    <div class="page-heading"><div><h1 class="page-title">📊 Traffic — {month_key}</h1>
+    <p class="sub">{t("tr_sub", lang)}</p></div></div>
+    <div class="metric-grid">
+      <div class="stat-box"><div class="stat-num cell-down">{fmt_bytes(total_tx)}</div><div class="stat-lbl">{t("tr_total_dl", lang)}</div></div>
+      <div class="stat-box"><div class="stat-num cell-up">{fmt_bytes(total_rx)}</div><div class="stat-lbl">{t("tr_total_ul", lang)}</div></div>
       <div class="stat-box"><div class="stat-num">{fmt_bytes(total_rx + total_tx)}</div><div class="stat-lbl">{t("tr_combined", lang)}</div></div>
     </div>
     <div class="tbl-wrap"><table><thead><tr><th>{t("tr_col_owner", lang)}</th><th>{t("tr_col_dev", lang)}</th><th>{t("tr_col_dl", lang)}</th><th>{t("tr_col_ul", lang)}</th><th>{t("tr_col_hist", lang)}</th></tr></thead>
@@ -95,17 +95,19 @@ def admin_panel():
             else "—"
         )
         pending_rows += f"""<tr>
-          <td><span style="font-family:monospace">{escape(username)}</span></td>
+          <td><span class="mono">{escape(username)}</span></td>
           <td>{telegram}</td><td>{escape(user.get('created_at', ''))}</td>
           <td>
-            <form method="POST" action="/admin/users/{escape(username)}/approve" style="display:inline">
+            <div class="table-actions">
+            <form method="POST" action="/admin/users/{escape(username)}/approve" class="inline">
               {csrf_input()}
-              <input type="number" name="max_devices" value="3" min="1" max="5" style="width:60px;margin:0 4px 0 0;padding:4px">
-              <button class="btn g" style="padding:4px 10px;font-size:12px">Approve</button>
+              <input class="compact-input" type="number" name="max_devices" value="3" min="1" max="5" aria-label="Device limit">
+              <button class="btn g">Approve</button>
             </form>
-            <form method="POST" action="/admin/users/{escape(username)}/delete" style="display:inline" onsubmit="return confirm('Delete user?')">
-              {csrf_input()}<button class="btn r" style="padding:4px 10px;font-size:12px">Delete</button>
+            <form method="POST" action="/admin/users/{escape(username)}/delete" class="inline" onsubmit="return confirm('Delete user?')">
+              {csrf_input()}<button class="btn r">Delete</button>
             </form>
+            </div>
           </td>
         </tr>"""
 
@@ -117,15 +119,15 @@ def admin_panel():
 
     html = page_head("Admin") + CSS + f"""
 <div class="wide">{nav_bar(True)}
-  <div class="card"><h1>⚙️ Admin Panel</h1><p class="sub">Overview</p>
-    <div class="row" style="gap:12px;margin-bottom:0">
+  <div class="card"><div class="page-heading"><div><h1 class="page-title">⚙️ Admin Panel</h1><p class="sub">Overview</p></div></div>
+    <div class="metric-grid">
       <div class="stat-box"><div class="stat-num">{len(users)}</div><div class="stat-lbl">Total users</div></div>
       <div class="stat-box"><div class="stat-num">{len(pending)}</div><div class="stat-lbl">Pending</div></div>
       <div class="stat-box"><div class="stat-num">{len(all_devices)}</div><div class="stat-lbl">Total devices</div></div>
     </div>
   </div>
   {pending_block}
-  <div class="card"><div class="row">
+  <div class="card"><div class="actions">
     <a href="/admin/users" class="btn b">👥 Manage Users</a>
     <a href="/admin/devices" class="btn b">📱 All Devices</a>
   </div></div>
@@ -167,22 +169,23 @@ def admin_users():
         if user.get("role") != "admin":
             approve = ""
             if not user.get("approved"):
-                approve = f"""<form method="POST" action="/admin/users/{escape(username)}/approve" style="display:inline">
+                approve = f"""<form method="POST" action="/admin/users/{escape(username)}/approve" class="inline">
                     {csrf_input()}<input type="hidden" name="max_devices" value="3">
-                    <button class="btn g" style="padding:4px 8px;font-size:11px">Approve</button></form>"""
+                    <button class="btn g">Approve</button></form>"""
             actions = f"""{approve}
-              <a href="/admin/users/{escape(username)}/edit" class="btn y" style="padding:4px 8px;font-size:11px">Edit</a>
-              <form method="POST" action="/admin/users/{escape(username)}/delete" style="display:inline" onsubmit="return confirm('Delete user and all devices?')">
-                {csrf_input()}<button class="btn r" style="padding:4px 8px;font-size:11px">Delete</button>
+              <a href="/admin/users/{escape(username)}/edit" class="btn y">Edit</a>
+              <form method="POST" action="/admin/users/{escape(username)}/delete" class="inline" onsubmit="return confirm('Delete user and all devices?')">
+                {csrf_input()}<button class="btn r">Delete</button>
               </form>"""
+            actions = f'<div class="table-actions">{actions}</div>'
 
-        rows += f"""<tr><td><span style="font-family:monospace">{escape(username)}</span></td>
+        rows += f"""<tr><td><span class="mono">{escape(username)}</span></td>
           <td>{role_tag}</td><td>{amount}</td><td>{telegram}</td><td>{payment}</td>
           <td>{escape(user.get('created_at', ''))}</td><td>{actions}</td></tr>"""
 
     html = page_head("Users") + CSS + f"""
 <div class="wide">{nav_bar(True)}<div class="card">
-  <h1>👥 Users</h1><p class="sub">Manage accounts, device limits and payment reminders</p>
+  <div class="page-heading"><div><h1 class="page-title">👥 Users</h1><p class="sub">Manage accounts, device limits and payment reminders</p></div></div>
   {flash_html()}<div class="tbl-wrap"><table>
   <thead><tr><th>Username</th><th>Status</th><th>Devices</th><th>Telegram</th><th>Payment</th><th>Registered</th><th>Actions</th></tr></thead>
   <tbody>{rows}</tbody></table></div>
@@ -281,19 +284,19 @@ def admin_edit(username):
     checked = "checked" if user.get("payment_enabled") else ""
     html = page_head(f"Edit {username}") + CSS + f"""
 <div class="wrap">{nav_bar(True)}<div class="card">
-  <h1>👤 {escape(username)}</h1><p class="sub">Admin-only account and payment settings</p>
+  <div class="page-heading"><div><h1 class="page-title">👤 {escape(username)}</h1><p class="sub">Admin-only account and payment settings</p></div></div>
   {flash_html()}
-  <form method="POST">
+  <form method="POST" class="stack">
     {csrf_input()}
-    <label>Telegram username</label>
-    <input type="text" name="telegram_username" value="{escape(telegram_username)}" pattern="@?[A-Za-z0-9_]{{5,32}}" maxlength="33" placeholder="@username">
-    <label>Device limit</label><select name="max_devices">{limit_options}</select>
-    <label>Monthly payment day</label>
-    <input type="number" name="payment_day" min="1" max="31" value="{payment_day}">
-    <label style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
-      <input type="checkbox" name="payment_enabled" {checked}> Enable monthly payment reminders
+    <label for="telegram_username">Telegram username</label>
+    <input type="text" id="telegram_username" name="telegram_username" value="{escape(telegram_username)}" pattern="@?[A-Za-z0-9_]{{5,32}}" maxlength="33" placeholder="@username">
+    <label for="max_devices">Device limit</label><select id="max_devices" name="max_devices">{limit_options}</select>
+    <label for="payment_day">Monthly payment day</label>
+    <input type="number" id="payment_day" name="payment_day" min="1" max="31" value="{payment_day}">
+    <label class="check-row" for="payment_enabled">
+      <input type="checkbox" id="payment_enabled" name="payment_enabled" {checked}> <span>Enable monthly payment reminders</span>
     </label>
-    <div class="stat-box" style="margin-bottom:14px">
+    <div class="stat-box price-preview">
       <div class="stat-num">{price if price is not None else '—'} BYN</div>
       <div class="stat-lbl">Calculated price · next effective date {preview.strftime('%d.%m.%Y')}</div>
     </div>
@@ -336,18 +339,18 @@ def admin_devices():
     all_devices = get_all_devices()
     rows = ""
     for owner, device, wg_name in all_devices:
-        rows += f"""<tr><td><span style="font-family:monospace;color:#8b949e">{escape(owner)}</span></td>
-          <td><span style="font-family:monospace;color:#58a6ff">{escape(device)}</span></td><td>
-            <a href="/device/{escape(wg_name)}" class="btn b" style="padding:4px 10px;font-size:12px">View</a>
-            <form method="POST" action="/device/{escape(wg_name)}/delete" style="display:inline" onsubmit="return confirm('Remove device?')">
+        rows += f"""<tr><td><span class="mono owner">{escape(owner)}</span></td>
+          <td><span class="mono device-name">{escape(device)}</span></td><td>
+            <div class="table-actions"><a href="/device/{escape(wg_name)}" class="btn b">View</a>
+            <form method="POST" action="/device/{escape(wg_name)}/delete" class="inline" onsubmit="return confirm('Remove device?')">
               {csrf_input()}<input type="hidden" name="return_to" value="admin">
-              <button class="btn r" style="padding:4px 10px;font-size:12px">Remove</button>
-            </form></td></tr>"""
+              <button class="btn r">Remove</button>
+            </form></div></td></tr>"""
     if not rows:
-        rows = '<tr><td colspan="3" style="color:#8b949e;padding:16px">No devices.</td></tr>'
+        rows = '<tr><td colspan="3" class="empty-state">No devices.</td></tr>'
     html = page_head("All Devices") + CSS + f"""
-<div class="wide">{nav_bar(True)}<div class="card"><h1>📱 All Devices ({len(all_devices)})</h1>
-  <p class="sub">Every WireGuard client across all users</p>{flash_html()}
+<div class="wide">{nav_bar(True)}<div class="card"><div class="page-heading"><div><h1 class="page-title">📱 All Devices ({len(all_devices)})</h1>
+  <p class="sub">Every WireGuard client across all users</p></div></div>{flash_html()}
   <div class="tbl-wrap"><table><thead><tr><th>Owner</th><th>Device</th><th>Actions</th></tr></thead>
   <tbody>{rows}</tbody></table></div></div></div>"""
     return render_template_string(html)

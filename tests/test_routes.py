@@ -197,6 +197,22 @@ def test_payment_settings_are_not_exposed_to_customer_dashboard(runtime):
     assert "private_handle" not in body
     assert "payment_day" not in body
     assert "5 BYN" not in body
+    assert 'table class="compact-table"' in body
+
+
+def test_ui_refresh_keeps_accessible_auth_and_shared_design_tokens():
+    client = app.test_client()
+    body = client.get("/login").get_data(as_text=True)
+
+    assert '<meta name="color-scheme" content="dark light">' in body
+    assert 'class="card auth-card"' in body
+    assert 'class="btn g btn-full"' in body
+    assert 'name="csrf_token"' in body
+    assert "focus-visible" in body
+
+    ru_body = client.get("/login", headers={"Accept-Language": "ru-RU"}).get_data(as_text=True)
+    assert "Защищённый доступ" in ru_body
+    assert "Secure access" not in ru_body
 
 
 def test_exact_device_authorization_get_delete_rejection_and_no_store(runtime):
@@ -248,9 +264,15 @@ def test_device_safe_internet_toggle_updates_existing_config_download(runtime):
     )
     assert response.status_code == 302
     assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is True
-    assert 'name="safe_internet" checked' in client.get(
-        "/device/alice-phone"
-    ).get_data(as_text=True)
+    enabled_page = client.get("/device/alice-phone").get_data(as_text=True)
+    assert 'name="safe_internet" checked' in enabled_page
+    assert '<span class="tag tag-ok" role="status" aria-live="polite">Enabled</span>' in enabled_page
+    assert 'aria-describedby="safe-internet-help"' in enabled_page
+    assert "VPN server enforces Family DNS immediately" in enabled_page
+    assert "newly downloaded configs follow this setting" in enabled_page
+    assert "If you disable it after this device imported a Family DNS config" in enabled_page
+    assert "Encrypted DNS and proxies may bypass" in enabled_page
+    assert ".conf:focus-visible" in enabled_page
     enabled_config = client.get("/device/alice-phone/download").get_data(as_text=True)
     assert "DNS = 1.1.1.3, 1.0.0.3" in enabled_config
     assert "DNS = 1.1.1.1, 8.8.8.8" not in enabled_config
@@ -261,11 +283,39 @@ def test_device_safe_internet_toggle_updates_existing_config_download(runtime):
     )
     assert response.status_code == 302
     assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is False
-    assert 'name="safe_internet" checked' not in client.get(
-        "/device/alice-phone"
-    ).get_data(as_text=True)
+    disabled_page = client.get("/device/alice-phone").get_data(as_text=True)
+    assert 'name="safe_internet" checked' not in disabled_page
+    assert '<span class="tag tag-pend" role="status" aria-live="polite">Disabled</span>' in disabled_page
+    assert "Safe internet disabled on the VPN server" in disabled_page
+    assert "previously imported a Family DNS config" in disabled_page
+    assert "re-download and re-import the config" in disabled_page
     disabled_config = client.get("/device/alice-phone/download").get_data(as_text=True)
     assert "DNS = 1.1.1.1, 8.8.8.8" in disabled_config
+
+
+def test_device_safe_internet_copy_is_localized_in_russian(runtime):
+    _data, clients = runtime
+    core.save_users({"alice": user_record()})
+    (clients / "alice-phone.conf").write_text(
+        "[Interface]\nPrivateKey = secret\nAddress = 10.0.0.2/32\n",
+        encoding="utf-8",
+    )
+    traffic.save_device_meta(
+        {"alice-phone": {"owner": "alice", "device": "phone", "vpn_type": "wireguard"}}
+    )
+    client = app.test_client()
+    csrf_session(client, "alice")
+
+    body = client.get(
+        "/device/alice-phone", headers={"Accept-Language": "ru-RU,ru;q=0.9"}
+    ).get_data(as_text=True)
+
+    assert '<span class="tag tag-pend" role="status" aria-live="polite">Выключен</span>' in body
+    assert "VPN-сервер сразу применяет Family DNS" in body
+    assert "новые скачанные конфиги учитывают эту настройку" in body
+    assert "Если выключить защиту после того, как устройство импортировало конфиг с Family DNS" in body
+    assert "скачайте и заново импортируйте конфиг" in body
+    assert "Зашифрованный DNS и прокси могут обойти" in body
 
 
 def test_route_map_preserves_public_pages_and_removes_destructive_gets():

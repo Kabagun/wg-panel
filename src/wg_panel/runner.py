@@ -20,7 +20,7 @@ from .core import (
 from .payments import process_payment_reminders
 from .telegram import set_tg_webhook
 from .traffic import collect_traffic
-from .wireguard import migrate_device_metadata
+from .wireguard import migrate_device_metadata, reconcile_safe_dns
 
 
 def main():
@@ -87,6 +87,11 @@ def main():
     migration = migrate_device_metadata(dry_run=False)
     print(
         f"[DEVICE META] total={migration['total']} migrated={migration['migrated']}",
+        flush=True,
+    )
+    safe_dns = reconcile_safe_dns()
+    print(
+        f"[SAFE DNS] devices={safe_dns['safe_devices']} ips={len(safe_dns['ips'])}",
         flush=True,
     )
     set_tg_webhook()

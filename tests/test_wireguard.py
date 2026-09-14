@@ -14,6 +14,7 @@ def configure_paths(monkeypatch, tmp_path, users):
     monkeypatch.setattr(traffic, "CLIENTS_DIR", str(clients))
     monkeypatch.setattr(traffic, "DEVICE_META_FILE", str(tmp_path / "data" / "device_meta.json"))
     monkeypatch.setattr(traffic, "TRAFFIC_FILE", str(tmp_path / "data" / "traffic.json"))
+    monkeypatch.setattr(wireguard, "_sync_safe_dns", lambda *_args, **_kwargs: ())
     return clients
 
 

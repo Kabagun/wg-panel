@@ -1,9 +1,10 @@
 import base64
+import logging
 import os
 import re
 import subprocess
 
-from .core import CLIENTS_DIR, WG_DIR, _wireguard_lock, ensure_private_dir, load_users
+from .core import CLIENTS_DIR, WG_DIR, _wireguard_lock, app, ensure_private_dir, load_users
 from .traffic import (
     load_device_meta,
     remove_device_meta,
@@ -11,10 +12,12 @@ from .traffic import (
     set_device_meta,
 )
 from .traffic import set_device_safe_internet as _set_device_safe_internet
+from .dns_enforcement import SafeDnsEnforcementError, sync_safe_dns
 
 SAFE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 DEFAULT_DNS_SERVERS = "1.1.1.1, 8.8.8.8"
 SAFE_DNS_SERVERS = "1.1.1.3, 1.0.0.3"
+logger = logging.getLogger(__name__)
 
 
 class DeviceMetadataMigrationError(RuntimeError):
@@ -135,12 +138,130 @@ def user_owns_device(username, wg_name):
     return bool(device and device["owner"] == username)
 
 
+def _client_ipv4(wg_name):
+    """Read one client IPv4 address from its runtime config."""
+    path = _config_path(wg_name)
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                key, separator, value = line.partition("=")
+                if separator and key.strip().lower() == "address":
+                    return value.strip().split(",", 1)[0].strip().split("/", 1)[0]
+    except (OSError, IndexError):
+        return None
+    return None
+
+
+def _safe_dns_ips(meta, excluded=None, override=None):
+    """Return the exact IPv4 set represented by Safe internet metadata."""
+    ips = []
+    for name, item in meta.items():
+        if name == excluded:
+            continue
+        enabled = bool(item.get("safe_internet"))
+        if override and name in override:
+            enabled = bool(override[name])
+        if not enabled:
+            continue
+        address = _client_ipv4(name)
+        if not address:
+            raise SafeDnsEnforcementError(
+                f"Safe internet device '{name}' has no client IPv4 address"
+            )
+        ips.append(address)
+    return ips
+
+
+def _sync_safe_dns(ips, *, allow_unavailable=False, require_helper=True):
+    """Apply the managed firewall policy through the installed helper."""
+    return sync_safe_dns(
+        ips,
+        wg_dir=WG_DIR,
+        allow_unavailable=allow_unavailable,
+        require_helper=require_helper,
+    )
+
+
+def reconcile_safe_dns(*, require_helper=None, allow_unavailable=False):
+    """Reconcile all persisted Safe internet devices during startup.
+
+    A non-empty safe set is fail-closed: missing or failing nftables support
+    raises and prevents the panel from serving an unenforced configuration.
+    A fresh install with no enabled devices may start before the helper is
+    installed; once a device is enabled, the helper is mandatory.
+    """
+    with _wireguard_lock:
+        meta = load_device_meta()
+        ips = _safe_dns_ips(meta)
+        if require_helper is None:
+            require_helper = bool(ips)
+        _sync_safe_dns(
+            ips,
+            allow_unavailable=allow_unavailable,
+            require_helper=require_helper,
+        )
+        return {
+            "safe_devices": sum(bool(item.get("safe_internet")) for item in meta.values()),
+            "ips": ips,
+        }
+
+
 def set_device_safe_internet(wg_name, enabled):
-    """Persist the Safe internet preference for an existing WireGuard device."""
+    """Persist Safe internet only after server enforcement succeeds.
+
+    The firewall is reconciled before metadata changes. If metadata persistence
+    fails, the previous firewall set is restored; an enable failure therefore
+    cannot leave a client marked safe without server enforcement.
+    """
+    enabled = bool(enabled)
     with _wireguard_lock:
         if not get_device(wg_name):
             return False
-        return _set_device_safe_internet(wg_name, enabled)
+        meta = load_device_meta()
+        current = meta.get(wg_name)
+        if not current:
+            return False
+        was_enabled = bool(current.get("safe_internet"))
+        try:
+            previous_ips = _safe_dns_ips(meta)
+            desired_ips = _safe_dns_ips(meta, override={wg_name: enabled})
+        except SafeDnsEnforcementError as exc:
+            logger.warning("Safe internet state rejected for %s: %s", wg_name, exc)
+            return False
+
+        # Reconciliation on an already-enabled device repairs drift without
+        # changing metadata. Disabling an already-disabled device is a no-op.
+        if was_enabled == enabled:
+            if not enabled:
+                return True
+            try:
+                _sync_safe_dns(desired_ips, allow_unavailable=bool(app.config.get("TESTING")))
+            except SafeDnsEnforcementError as exc:
+                logger.error("Safe internet reconciliation failed for %s: %s", wg_name, exc)
+                return False
+            return True
+
+        try:
+            _sync_safe_dns(desired_ips, allow_unavailable=bool(app.config.get("TESTING")))
+        except SafeDnsEnforcementError as exc:
+            logger.error("Safe internet firewall update failed for %s: %s", wg_name, exc)
+            return False
+
+        try:
+            changed = _set_device_safe_internet(wg_name, enabled)
+        except Exception as exc:  # JSON/filesystem failures must trigger rollback.
+            changed = False
+            logger.error("Safe internet metadata update failed for %s: %s", wg_name, exc)
+        if changed:
+            return True
+
+        try:
+            _sync_safe_dns(previous_ips, allow_unavailable=bool(app.config.get("TESTING")))
+        except SafeDnsEnforcementError as exc:
+            logger.critical("Safe internet rollback failed for %s: %s", wg_name, exc)
+        return False
 
 
 def get_config(wg_name):
@@ -245,6 +366,18 @@ def create_device(username, device):
         if wg_name in load_device_meta() or (path and os.path.exists(path)):
             return False, "", "Client name collision"
 
+        # A failed cleanup after an earlier peer revoke can leave its address in
+        # the fail-closed nftables set. Reconcile before the allocator can reuse
+        # that address, and require the installed helper on production creates.
+        try:
+            reconcile_safe_dns(
+                require_helper=True,
+                allow_unavailable=bool(app.config.get("TESTING")),
+            )
+        except SafeDnsEnforcementError as exc:
+            logger.error("Safe internet reconciliation blocked device creation: %s", exc)
+            return False, "", f"Safe internet firewall reconciliation failed: {exc}"
+
         ok, error = _run_script("add-client.sh", wg_name, 45)
         if not ok:
             return False, "", error
@@ -264,13 +397,50 @@ def delete_device(wg_name):
     if not get_device(wg_name):
         return False, "Device not found"
     with _wireguard_lock:
+        meta = load_device_meta()
+        device_meta = meta.get(wg_name, {})
+        was_safe = bool(device_meta.get("safe_internet"))
+        previous_ips = []
+        desired_ips = []
+        if was_safe:
+            try:
+                previous_ips = _safe_dns_ips(meta)
+                desired_ips = _safe_dns_ips(meta, excluded=wg_name)
+            except SafeDnsEnforcementError as exc:
+                logger.error("Safe internet state is invalid for %s: %s", wg_name, exc)
+                return False, f"Safe internet state is invalid: {exc}"
+
+        # Keep the safe address in the managed set until the peer and runtime
+        # config are both gone. This avoids a fail-open window during revoke.
         ok, error = _run_script("remove-client.sh", wg_name, 30)
         if not ok:
             return False, error
         path = _config_path(wg_name)
         if path and os.path.exists(path):
             return False, "WireGuard helper returned success but the client config still exists"
-        remove_device_meta(wg_name)
+        if was_safe:
+            try:
+                _sync_safe_dns(desired_ips)
+            except SafeDnsEnforcementError as exc:
+                # The peer is gone, but retaining the old address in the
+                # managed set is fail-closed. Startup reconciliation can retry
+                # cleanup; return the operational error to the caller now.
+                logger.critical("Safe internet firewall cleanup failed after deleting %s: %s", wg_name, exc)
+                return False, f"WireGuard peer removed but Safe internet cleanup failed: {exc}"
+        try:
+            remove_device_meta(wg_name)
+        except Exception as exc:  # Keep the firewall fail-closed if metadata storage is unavailable.
+            logger.error("Failed to remove device metadata for %s: %s", wg_name, exc)
+            if was_safe:
+                try:
+                    _sync_safe_dns(previous_ips)
+                except SafeDnsEnforcementError as rollback_exc:
+                    logger.critical(
+                        "Safe internet rollback failed after metadata removal error for %s: %s",
+                        wg_name,
+                        rollback_exc,
+                    )
+            return False, f"Failed to remove device metadata: {exc}"
         return True, ""
 
 
