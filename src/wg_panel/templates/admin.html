@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% from 'components.html' import heading, metric, flashes with context %}
+{% block content %}
+{{ heading(tr('ui_overview'), tr('ui_admin_sub'), tr('ui_admin_section')) }}{{ flashes() }}
+<div class="metrics-grid">{{ metric(tr('ui_total_users'), total_users, 'users') }}{{ metric(tr('ui_pending'), pending|length, 'clock', tone='amber') }}{{ metric(tr('ui_total_devices'), total_devices, 'devices', tone='green') }}</div>
+<section class="panel"><div class="section-heading"><div><h2>{{ tr('ui_requests') }} <span class="count-badge">{{ pending|length }}</span></h2><p>{{ tr('ui_requests_hint') }}</p></div></div>
+{% if pending %}
+<div class="table-scroll"><table class="responsive-table">
+  <thead><tr>
+    <th>{{ tr('login_user') }}</th><th>Telegram</th><th>{{ tr('ui_registered') }}</th>
+    <th>{{ tr('ui_limit') }}</th><th>{{ tr('dash_col_act') }}</th>
+  </tr></thead>
+  <tbody>{% for user in pending %}
+    <tr>
+      <td data-label="{{ tr('login_user') }}"><span class="table-person"><span class="avatar small-avatar">{{ user.username[:1]|upper }}</span><strong>{{ user.username }}</strong></span></td>
+      <td data-label="Telegram">{% if user.telegram_username %}<a href="https://t.me/{{ user.telegram_username }}" target="_blank" rel="noopener">@{{ user.telegram_username }}</a>{% else %}—{% endif %}</td>
+      <td data-label="{{ tr('ui_registered') }}" class="muted">{{ user.created_at }}</td>
+      <td data-label="{{ tr('ui_limit') }}">
+        <select class="approval-limit" name="max_devices" form="approve-{{ loop.index }}" aria-label="{{ tr('ui_limit') }}: {{ user.username }}">
+          {% for limit in [1,2,3,4,5,-1] %}<option value="{{ limit }}"{% if limit == 3 %} selected{% endif %}>{{ '∞' if limit == -1 else limit }}</option>{% endfor %}
+        </select>
+      </td>
+      <td data-label="{{ tr('dash_col_act') }}"><div class="table-actions">
+        <form id="approve-{{ loop.index }}" method="post" action="{{ url_for('admin_approve', username=user.username) }}" class="approval-form">
+          {{ csrf() }}<button class="button primary small" type="submit">{{ tr('ui_approve') }}</button>
+        </form>
+        <form method="post" action="{{ url_for('admin_delete_user', username=user.username) }}" data-confirm="{{ tr('ui_remove_user') }}">
+          {{ csrf() }}<button class="icon-button danger-text" aria-label="{{ tr('ui_remove') }}: {{ user.username }}" type="submit">{{ icon('trash', 17) }}</button>
+        </form>
+      </div></td>
+    </tr>
+  {% endfor %}</tbody>
+</table></div>
+{% else %}<div class="empty-state compact"><span class="empty-icon green">{{ icon('check', 28) }}</span><h3>{{ tr('ui_no_requests') }}</h3><p>{{ tr('ui_no_requests_hint') }}</p></div>{% endif %}</section>
+<div class="shortcut-grid"><a href="{{ url_for('admin_users') }}" class="shortcut-card"><span class="shortcut-icon">{{ icon('users', 25) }}</span><div><h3>{{ tr('ui_users') }}</h3><p>{{ tr('ui_users_sub') }}</p></div>{{ icon('arrow') }}</a><a href="{{ url_for('admin_devices') }}" class="shortcut-card"><span class="shortcut-icon">{{ icon('devices', 25) }}</span><div><h3>{{ tr('ui_all_devices') }}</h3><p>{{ tr('ui_all_devices_sub') }}</p></div>{{ icon('arrow') }}</a></div>
+{% endblock %}

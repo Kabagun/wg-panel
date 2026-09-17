@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% from 'components.html' import flashes with context %}
+{% block content %}
+<div class="device-workspace">
+  <a class="back-link" href="{{ url_for('dashboard') }}">{{ icon('back', 17) }}{{ tr('ui_back_devices') }}</a>
+  <header class="device-heading">
+    <span class="device-heading-icon">{{ icon(device_icon(device.device), 29) }}</span>
+    <div><p class="eyebrow">WIREGUARD</p><h1>{{ device.device }}</h1></div>
+  </header>
+  {{ flashes() }}
+  <section class="panel connection-card">
+    <div class="connection-heading"><h2>{{ tr('ui_connect') }}</h2><p>{{ tr('ui_connection_methods') }}</p></div>
+    <div class="connection-content">
+      <div class="connection-qr">
+        {% if qr %}<img src="{{ qr }}" alt="{{ tr('ui_qr_alt') }}" width="220" height="220">
+        {% else %}<div class="qr-unavailable">{{ icon('qr', 44) }}<p>{{ tr('ui_qr_missing') }}</p></div>{% endif %}
+        <span>{{ icon('qr', 15) }}{{ tr('ui_scan') }}</span>
+      </div>
+      <div class="connection-instructions">
+        <h3>{{ tr('ui_wireguard_app') }}</h3>
+        <p>{{ tr('ui_scan_hint') }}</p>
+        <a class="install-link" href="https://www.wireguard.com/install/" target="_blank" rel="noopener">{{ tr('ui_learn') }} ↗</a>
+        <div class="connection-separator"><span>{{ tr('ui_or_use_config') }}</span></div>
+        <div class="connection-actions">
+          <a href="{{ url_for('download_device', wg_name=wg_name) }}" class="button primary">{{ icon('down', 18) }}{{ tr('ui_download') }}</a>
+          <button type="button" class="button secondary" data-copy-target="conf-block" data-copy-success="{{ tr('ui_copied') }}" data-copy-error="{{ tr('ui_copy_error') }}">{{ icon('copy', 18) }}{{ tr('ui_copy') }}</button>
+        </div>
+        <p class="connection-note">{{ tr('ui_file_hint') }}</p>
+        <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
+        <pre id="conf-block" hidden>{{ config }}</pre>
+      </div>
+    </div>
+  </section>
+  <section class="panel protection-settings">
+    <form method="post" action="{{ url_for('update_device_safe_internet', wg_name=wg_name) }}" aria-labelledby="safe-internet-title" data-auto-submit data-saving-label="{{ tr('ui_saving') }}">
+      {{ csrf() }}
+      <div class="protection-row">
+        <span class="protection-icon">{{ icon('shield', 23) }}</span>
+        <div class="protection-description"><h2 id="safe-internet-title">{{ tr('safe_title') }}</h2><p id="safe-internet-summary">{{ tr('ui_safe_summary') }}</p></div>
+        <div class="protection-switch">
+          <span class="tag {{ 'tag-ok' if device.safe_internet else 'tag-pend' }}" role="status" aria-live="polite">{{ tr('safe_status_on' if device.safe_internet else 'safe_status_off') }}</span>
+          <label class="switch-label" for="safe-internet">
+            <input id="safe-internet" type="checkbox" role="switch" name="safe_internet"{% if device.safe_internet %} checked{% endif %} aria-describedby="safe-internet-help" data-auto-toggle disabled>
+            <span class="switch-track" aria-hidden="true"></span><span class="sr-only">{{ tr('safe_toggle') }}</span>
+          </label>
+        </div>
+      </div>
+      <details class="protection-details"><summary>{{ tr('ui_safe_details') }}{{ icon('chevron', 14) }}</summary><p id="safe-internet-help">{{ tr('safe_help') }}</p></details>
+      <noscript><p class="field-help">{{ tr('ui_switch_requires_js') }}</p></noscript>
+    </form>
+  </section>
+  <div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><form method="post" action="{{ url_for('delete_device_route', wg_name=wg_name) }}" data-confirm="{{ tr('ui_remove_device') }}">{{ csrf() }}<button class="button danger-outline small" type="submit">{{ icon('trash', 16) }}{{ tr('ui_danger') }}</button></form></div>
+</div>
+{% endblock %}

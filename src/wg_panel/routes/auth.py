@@ -2,7 +2,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from flask import flash, redirect, render_template_string, request, session, url_for
+from flask import flash, redirect, request, session, url_for
 
 from ..client_context import build_registration_notification
 from ..core import DOMAIN, _hash, _lang, _now, app, load_users, mutate_users, verify_password
@@ -15,7 +15,7 @@ from ..security import (
     rate_limited_response,
 )
 from ..telegram import send_telegram, send_telegram_sync, submit_background
-from ..ui import flash_html, forgot_page, login_page, register_page, reset_page
+from ..ui import forgot_page, login_page, register_page, reset_page
 
 
 @app.route("/")
@@ -63,7 +63,7 @@ def login():
         flash(t("flash_login_err", _lang()), "error")
 
     lang = _lang()
-    return render_template_string(login_page(lang).replace("{{flash}}", flash_html()))
+    return login_page(lang)
 
 
 def _registration_notification(username, telegram_username, registered_at, remote_addr, user_agent, token):
@@ -172,7 +172,7 @@ def register():
                 return redirect(url_for("login"))
 
     lang = _lang()
-    return render_template_string(register_page(lang).replace("{{flash}}", flash_html()))
+    return register_page(lang)
 
 
 @app.route("/logout", methods=["POST"])
@@ -217,7 +217,7 @@ def forgot():
         )
         return redirect(url_for("login"))
 
-    return render_template_string(forgot_page(_lang()).replace("{{flash}}", flash_html()))
+    return forgot_page(_lang())
 
 
 def _find_reset_user(token):
@@ -274,4 +274,4 @@ def reset_password(token):
             flash("Reset link is invalid or has expired.", "error")
             return redirect(url_for("login"))
 
-    return render_template_string(reset_page(_lang(), matched).replace("{{flash}}", flash_html()))
+    return reset_page(_lang(), matched)

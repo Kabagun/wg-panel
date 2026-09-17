@@ -1,11 +1,9 @@
 from datetime import UTC, datetime
 
-from flask import flash, redirect, render_template_string, request, url_for
-from markupsafe import escape
+from flask import flash, redirect, request, url_for
 
 from ..auth import admin_required
-from ..core import _lang, app, load_users, mutate_users
-from ..i18n import t
+from ..core import app, load_users, mutate_users
 from ..payments import (
     effective_due_date,
     next_effective_due_date,
@@ -13,9 +11,8 @@ from ..payments import (
     payment_price,
     payment_today,
 )
-from ..security import csrf_input
-from ..traffic import collect_traffic, fmt_bytes, load_traffic
-from ..ui import CSS, flash_html, nav_bar, page_head
+from ..traffic import collect_traffic, load_traffic
+from ..ui import render_page
 from ..wireguard import delete_device, get_all_devices, get_user_devices
 
 
@@ -29,50 +26,28 @@ def traffic_page():
     traffic = load_traffic()
     month_key = datetime.now(UTC).strftime("%Y-%m")
     all_devices = get_all_devices()
-    lang = _lang()
+    rows = []
     total_rx = total_tx = 0
-    for _owner, _device, wg_name in all_devices:
-        current = traffic.get(wg_name, {}).get("monthly", {}).get(month_key, {"rx": 0, "tx": 0})
-        total_rx += current["rx"]
-        total_tx += current["tx"]
-
-    rows = ""
     for owner, device, wg_name in all_devices:
         monthly = traffic.get(wg_name, {}).get("monthly", {})
         current = monthly.get(month_key, {"rx": 0, "tx": 0})
-        history = "".join(
-            f'<span class="history">{escape(key)}: '
-            f'↓{fmt_bytes(monthly[key]["tx"])} ↑{fmt_bytes(monthly[key]["rx"])}</span><br>'
-            for key in sorted(monthly, reverse=True)[:3]
-        )
-        if not history:
-            history = f'<span class="history">{t("tr_nodata", lang)}</span>'
-        rows += f"""<tr>
-          <td><span class="mono owner">{escape(owner)}</span></td>
-          <td><span class="mono device-name">{escape(device)}</span></td>
-          <td class="cell-down">↓ {fmt_bytes(current['tx'])}</td>
-          <td class="cell-up">↑ {fmt_bytes(current['rx'])}</td>
-          <td>{history}</td>
-        </tr>"""
-    if not rows:
-        rows = f'<tr><td colspan="5" class="empty-state">{t("tr_nodiv", lang)}</td></tr>'
-
-    html = page_head(f"Traffic {month_key}") + CSS + f"""
-<div class="wide">
-  {nav_bar(True)}
-  <div class="card">
-    <div class="page-heading"><div><h1 class="page-title">📊 Traffic — {month_key}</h1>
-    <p class="sub">{t("tr_sub", lang)}</p></div></div>
-    <div class="metric-grid">
-      <div class="stat-box"><div class="stat-num cell-down">{fmt_bytes(total_tx)}</div><div class="stat-lbl">{t("tr_total_dl", lang)}</div></div>
-      <div class="stat-box"><div class="stat-num cell-up">{fmt_bytes(total_rx)}</div><div class="stat-lbl">{t("tr_total_ul", lang)}</div></div>
-      <div class="stat-box"><div class="stat-num">{fmt_bytes(total_rx + total_tx)}</div><div class="stat-lbl">{t("tr_combined", lang)}</div></div>
-    </div>
-    <div class="tbl-wrap"><table><thead><tr><th>{t("tr_col_owner", lang)}</th><th>{t("tr_col_dev", lang)}</th><th>{t("tr_col_dl", lang)}</th><th>{t("tr_col_ul", lang)}</th><th>{t("tr_col_hist", lang)}</th></tr></thead>
-    <tbody>{rows}</tbody></table></div>
-  </div>
-</div>"""
-    return render_template_string(html)
+        total_rx += current["rx"]
+        total_tx += current["tx"]
+        rows.append({
+            "owner": owner, "device": device, "wg_name": wg_name,
+            "rx": current["rx"], "tx": current["tx"],
+            "history": [
+                {"month": key, **monthly[key]}
+                for key in sorted(monthly, reverse=True)[:3]
+            ],
+        })
+    total = total_rx + total_tx
+    for row in rows:
+        row["share"] = round((row["rx"] + row["tx"]) / total * 100, 1) if total else 0
+    return render_page(
+        "traffic.html", "ui_traffic", rows=rows, month=month_key,
+        total_rx=total_rx, total_tx=total_tx,
+    )
 
 
 @app.route("/admin")
@@ -80,117 +55,36 @@ def traffic_page():
 def admin_panel():
     users = load_users()
     pending = [
-        username
+        {
+            "username": username,
+            "telegram_username": normalize_telegram_username(user.get("telegram_username")),
+            "created_at": user.get("created_at", ""),
+        }
         for username, user in users.items()
         if not user.get("approved") and user.get("role") != "admin"
     ]
-    all_devices = get_all_devices()
-    pending_rows = ""
-    for username in pending:
-        user = users[username]
-        telegram_username = normalize_telegram_username(user.get("telegram_username"))
-        telegram = (
-            f'<a href="https://t.me/{telegram_username}" target="_blank" rel="noopener">@{escape(telegram_username)}</a>'
-            if telegram_username
-            else "—"
-        )
-        pending_rows += f"""<tr>
-          <td><span class="mono">{escape(username)}</span></td>
-          <td>{telegram}</td><td>{escape(user.get('created_at', ''))}</td>
-          <td>
-            <div class="table-actions">
-            <form method="POST" action="/admin/users/{escape(username)}/approve" class="inline">
-              {csrf_input()}
-              <input class="compact-input" type="number" name="max_devices" value="3" min="1" max="5" aria-label="Device limit">
-              <button class="btn g">Approve</button>
-            </form>
-            <form method="POST" action="/admin/users/{escape(username)}/delete" class="inline" onsubmit="return confirm('Delete user?')">
-              {csrf_input()}<button class="btn r">Delete</button>
-            </form>
-            </div>
-          </td>
-        </tr>"""
-
-    pending_block = ""
-    if pending:
-        pending_block = f"""<div class="card"><h2>⏳ Pending Approvals ({len(pending)})</h2>
-        <div class="tbl-wrap"><table><thead><tr><th>Username</th><th>Telegram</th><th>Registered</th><th>Actions</th></tr></thead>
-        <tbody>{pending_rows}</tbody></table></div></div>"""
-
-    html = page_head("Admin") + CSS + f"""
-<div class="wide">{nav_bar(True)}
-  <div class="card"><div class="page-heading"><div><h1 class="page-title">⚙️ Admin Panel</h1><p class="sub">Overview</p></div></div>
-    <div class="metric-grid">
-      <div class="stat-box"><div class="stat-num">{len(users)}</div><div class="stat-lbl">Total users</div></div>
-      <div class="stat-box"><div class="stat-num">{len(pending)}</div><div class="stat-lbl">Pending</div></div>
-      <div class="stat-box"><div class="stat-num">{len(all_devices)}</div><div class="stat-lbl">Total devices</div></div>
-    </div>
-  </div>
-  {pending_block}
-  <div class="card"><div class="actions">
-    <a href="/admin/users" class="btn b">👥 Manage Users</a>
-    <a href="/admin/devices" class="btn b">📱 All Devices</a>
-  </div></div>
-</div>"""
-    return render_template_string(html)
+    return render_page(
+        "admin.html", "ui_overview", pending=pending,
+        total_users=len(users), total_devices=len(get_all_devices()),
+    )
 
 
 @app.route("/admin/users")
 @admin_required
 def admin_users():
-    users = load_users()
-    rows = ""
-    for username, user in sorted(users.items()):
-        devices = get_user_devices(username)
-        max_devices = user.get("max_devices", 3)
-        limit = "∞" if max_devices == -1 else str(max_devices)
-        amount = "∞ / ∞" if user.get("role") == "admin" else f"{len(devices)} / {limit}"
-        if user.get("role") == "admin":
-            role_tag = '<span class="tag tag-admin">admin</span>'
-        elif user.get("approved"):
-            role_tag = '<span class="tag tag-ok">active</span>'
-        else:
-            role_tag = '<span class="tag tag-pend">pending</span>'
-
-        telegram_username = normalize_telegram_username(user.get("telegram_username"))
-        telegram = (
-            f'<a href="https://t.me/{telegram_username}" target="_blank" rel="noopener">@{escape(telegram_username)}</a>'
-            if telegram_username
-            else "—"
-        )
-        price = payment_price(max_devices)
-        payment = "—"
-        if user.get("payment_enabled"):
-            payment = f'<span class="tag tag-ok">{price} BYN · day {user.get("payment_day")}</span>'
-        elif user.get("role") != "admin":
-            payment = '<span class="tag tag-pend">disabled</span>'
-
-        actions = ""
-        if user.get("role") != "admin":
-            approve = ""
-            if not user.get("approved"):
-                approve = f"""<form method="POST" action="/admin/users/{escape(username)}/approve" class="inline">
-                    {csrf_input()}<input type="hidden" name="max_devices" value="3">
-                    <button class="btn g">Approve</button></form>"""
-            actions = f"""{approve}
-              <a href="/admin/users/{escape(username)}/edit" class="btn y">Edit</a>
-              <form method="POST" action="/admin/users/{escape(username)}/delete" class="inline" onsubmit="return confirm('Delete user and all devices?')">
-                {csrf_input()}<button class="btn r">Delete</button>
-              </form>"""
-            actions = f'<div class="table-actions">{actions}</div>'
-
-        rows += f"""<tr><td><span class="mono">{escape(username)}</span></td>
-          <td>{role_tag}</td><td>{amount}</td><td>{telegram}</td><td>{payment}</td>
-          <td>{escape(user.get('created_at', ''))}</td><td>{actions}</td></tr>"""
-
-    html = page_head("Users") + CSS + f"""
-<div class="wide">{nav_bar(True)}<div class="card">
-  <div class="page-heading"><div><h1 class="page-title">👥 Users</h1><p class="sub">Manage accounts, device limits and payment reminders</p></div></div>
-  {flash_html()}<div class="tbl-wrap"><table>
-  <thead><tr><th>Username</th><th>Status</th><th>Devices</th><th>Telegram</th><th>Payment</th><th>Registered</th><th>Actions</th></tr></thead>
-  <tbody>{rows}</tbody></table></div>
-</div></div>"""
-    return render_template_string(html)
+    users = []
+    for username, user in sorted(load_users().items()):
+        limit = user.get("max_devices", 3)
+        users.append({
+            "username": username, "role": user.get("role", "user"),
+            "approved": bool(user.get("approved")), "max_devices": limit,
+            "device_count": len(get_user_devices(username)),
+            "telegram_username": normalize_telegram_username(user.get("telegram_username")),
+            "payment_enabled": bool(user.get("payment_enabled")),
+            "payment_day": user.get("payment_day"), "price": payment_price(limit),
+            "created_at": user.get("created_at", ""),
+        })
+    return render_page("users.html", "ui_users", users=users)
 
 
 def _limit_from_form():
@@ -277,33 +171,22 @@ def admin_edit(username):
         preview = effective_due_date(today.year, today.month, payment_day)
     else:
         preview = next_effective_due_date(payment_day, today)
-    limit_options = "".join(
-        f'<option value="{value}" {"selected" if value == max_devices else ""}>{"Unlimited" if value == -1 else value}</option>'
-        for value in (1, 2, 3, 4, 5, -1)
+    form = {
+        "telegram_username": telegram_username, "max_devices": max_devices,
+        "payment_day": payment_day, "payment_enabled": bool(user.get("payment_enabled")),
+    }
+    if request.method == "POST":
+        form.update({
+            "telegram_username": request.form.get("telegram_username", ""),
+            "max_devices": request.form.get("max_devices", ""),
+            "payment_day": request.form.get("payment_day", ""),
+            "payment_enabled": bool(request.form.get("payment_enabled")),
+        })
+    return render_page(
+        "edit_user.html", "ui_account", username=username, form=form, price=price,
+        preview=preview.strftime("%d.%m.%Y"),
+        reminders_enabled=bool(user.get("payment_enabled")),
     )
-    checked = "checked" if user.get("payment_enabled") else ""
-    html = page_head(f"Edit {username}") + CSS + f"""
-<div class="wrap">{nav_bar(True)}<div class="card">
-  <div class="page-heading"><div><h1 class="page-title">👤 {escape(username)}</h1><p class="sub">Admin-only account and payment settings</p></div></div>
-  {flash_html()}
-  <form method="POST" class="stack">
-    {csrf_input()}
-    <label for="telegram_username">Telegram username</label>
-    <input type="text" id="telegram_username" name="telegram_username" value="{escape(telegram_username)}" pattern="@?[A-Za-z0-9_]{{5,32}}" maxlength="33" placeholder="@username">
-    <label for="max_devices">Device limit</label><select id="max_devices" name="max_devices">{limit_options}</select>
-    <label for="payment_day">Monthly payment day</label>
-    <input type="number" id="payment_day" name="payment_day" min="1" max="31" value="{payment_day}">
-    <label class="check-row" for="payment_enabled">
-      <input type="checkbox" id="payment_enabled" name="payment_enabled" {checked}> <span>Enable monthly payment reminders</span>
-    </label>
-    <div class="stat-box price-preview">
-      <div class="stat-num">{price if price is not None else '—'} BYN</div>
-      <div class="stat-lbl">Calculated price · next effective date {preview.strftime('%d.%m.%Y')}</div>
-    </div>
-    <button class="btn g btn-full" type="submit">Save</button>
-  </form>
-</div></div>"""
-    return render_template_string(html)
 
 
 @app.route("/admin/users/<username>/delete", methods=["POST"])
@@ -336,21 +219,4 @@ def admin_delete_user(username):
 @app.route("/admin/devices")
 @admin_required
 def admin_devices():
-    all_devices = get_all_devices()
-    rows = ""
-    for owner, device, wg_name in all_devices:
-        rows += f"""<tr><td><span class="mono owner">{escape(owner)}</span></td>
-          <td><span class="mono device-name">{escape(device)}</span></td><td>
-            <div class="table-actions"><a href="/device/{escape(wg_name)}" class="btn b">View</a>
-            <form method="POST" action="/device/{escape(wg_name)}/delete" class="inline" onsubmit="return confirm('Remove device?')">
-              {csrf_input()}<input type="hidden" name="return_to" value="admin">
-              <button class="btn r">Remove</button>
-            </form></div></td></tr>"""
-    if not rows:
-        rows = '<tr><td colspan="3" class="empty-state">No devices.</td></tr>'
-    html = page_head("All Devices") + CSS + f"""
-<div class="wide">{nav_bar(True)}<div class="card"><div class="page-heading"><div><h1 class="page-title">📱 All Devices ({len(all_devices)})</h1>
-  <p class="sub">Every WireGuard client across all users</p></div></div>{flash_html()}
-  <div class="tbl-wrap"><table><thead><tr><th>Owner</th><th>Device</th><th>Actions</th></tr></thead>
-  <tbody>{rows}</tbody></table></div></div></div>"""
-    return render_template_string(html)
+    return render_page("all_devices.html", "ui_all_devices", devices=get_all_devices())

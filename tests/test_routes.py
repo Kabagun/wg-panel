@@ -1,4 +1,5 @@
 import hashlib
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -197,22 +198,28 @@ def test_payment_settings_are_not_exposed_to_customer_dashboard(runtime):
     assert "private_handle" not in body
     assert "payment_day" not in body
     assert "5 BYN" not in body
-    assert 'table class="compact-table"' in body
+    assert 'data-filter-scope' in body
+    assert 'href="/admin"' not in body
+    assert 'href="/traffic"' not in body
 
 
-def test_ui_refresh_keeps_accessible_auth_and_shared_design_tokens():
+def test_ui_refresh_loads_local_assets_and_accessible_auth_structure():
     client = app.test_client()
     body = client.get("/login").get_data(as_text=True)
 
-    assert '<meta name="color-scheme" content="dark light">' in body
-    assert 'class="card auth-card"' in body
-    assert 'class="btn g btn-full"' in body
+    assert '<html lang="en">' in body
+    assert '<meta name="color-scheme" content="light">' in body
+    assert 'href="/static/panel.css"' in body
+    assert 'src="/static/panel.js"' in body
+    assert 'class="auth-card"' in body
+    assert 'class="button primary button-full"' in body
     assert 'name="csrf_token"' in body
-    assert "focus-visible" in body
+    assert 'class="skip-link" href="#main"' in body
 
     ru_body = client.get("/login", headers={"Accept-Language": "ru-RU"}).get_data(as_text=True)
-    assert "Защищённый доступ" in ru_body
-    assert "Secure access" not in ru_body
+    assert '<html lang="ru">' in ru_body
+    assert "С возвращением" in ru_body
+    assert "Welcome back" not in ru_body
 
 
 def test_exact_device_authorization_get_delete_rejection_and_no_store(runtime):
@@ -272,7 +279,8 @@ def test_device_safe_internet_toggle_updates_existing_config_download(runtime):
     assert "newly downloaded configs follow this setting" in enabled_page
     assert "If you disable it after this device imported a Family DNS config" in enabled_page
     assert "Encrypted DNS and proxies may bypass" in enabled_page
-    assert ".conf:focus-visible" in enabled_page
+    assert '<pre id="conf-block" hidden>' in enabled_page
+    assert 'data-copy-target="conf-block"' in enabled_page
     enabled_config = client.get("/device/alice-phone/download").get_data(as_text=True)
     assert "DNS = 1.1.1.3, 1.0.0.3" in enabled_config
     assert "DNS = 1.1.1.1, 8.8.8.8" not in enabled_config
@@ -325,3 +333,161 @@ def test_route_map_preserves_public_pages_and_removes_destructive_gets():
     )
     assert "GET" not in rules["/device/<wg_name>/delete"]
     assert "GET" not in rules["/admin/users/<username>/delete"]
+
+
+def _assert_form_has_csrf(body, action):
+    match = re.search(
+        rf'<form[^>]+action="{re.escape(action)}"[^>]*>(.*?)</form>',
+        body,
+        flags=re.DOTALL,
+    )
+    assert match, f"form action {action!r} was not rendered"
+    assert 'name="csrf_token"' in match.group(1)
+
+
+def test_static_assets_are_served_in_full_by_the_flask_package():
+    client = app.test_client()
+    expected = {
+        "/static/panel.css": ("text/css", 5_000),
+        "/static/panel.js": ("text/javascript", 1_000),
+        "/static/favicon.svg": ("image/svg+xml", 100),
+    }
+
+    for path, (mimetype, minimum_size) in expected.items():
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.mimetype == mimetype
+        assert len(response.data) >= minimum_size
+
+
+def test_role_navigation_and_customer_payment_privacy(runtime):
+    alice = user_record()
+    alice.update(
+        {
+            "telegram_username": "private_handle",
+            "payment_enabled": True,
+            "payment_day": 15,
+        }
+    )
+    core.save_users(
+        {
+            "admin": user_record(role="admin", limit=-1),
+            "alice": alice,
+        }
+    )
+
+    customer = app.test_client()
+    csrf_session(customer, "alice")
+    customer_body = customer.get("/dashboard").get_data(as_text=True)
+    assert 'href="/admin"' not in customer_body
+    assert 'href="/admin/users"' not in customer_body
+    assert 'href="/traffic"' not in customer_body
+    assert "private_handle" not in customer_body
+    assert "payment_day" not in customer_body
+    assert "5 BYN" not in customer_body
+
+    admin = app.test_client()
+    csrf_session(admin, "admin")
+    admin_body = admin.get("/dashboard").get_data(as_text=True)
+    assert 'href="/admin"' in admin_body
+    assert 'href="/admin/users"' in admin_body
+    assert 'href="/admin/devices"' in admin_body
+    assert 'href="/traffic"' in admin_body
+
+
+def test_device_and_admin_action_forms_keep_csrf_and_post_contracts(runtime):
+    _data, clients = runtime
+    core.save_users(
+        {
+            "admin": user_record(role="admin", limit=-1),
+            "alice": user_record(),
+            "pending": user_record(approved=False),
+        }
+    )
+    (clients / "alice-phone.conf").write_text(
+        "[Interface]\nPrivateKey = secret\nAddress = 10.0.0.2/32\n",
+        encoding="utf-8",
+    )
+    traffic.save_device_meta(
+        {"alice-phone": {"owner": "alice", "device": "phone", "vpn_type": "wireguard"}}
+    )
+
+    owner = app.test_client()
+    csrf_session(owner, "alice")
+    device_body = owner.get("/device/alice-phone").get_data(as_text=True)
+    _assert_form_has_csrf(device_body, "/device/alice-phone/safe-internet")
+    _assert_form_has_csrf(device_body, "/device/alice-phone/delete")
+    _assert_form_has_csrf(device_body, "/logout")
+    assert 'href="/device/alice-phone/download"' in device_body
+    assert 'data-confirm=' in device_body
+
+    admin = app.test_client()
+    csrf_session(admin, "admin")
+    admin_body = admin.get("/admin").get_data(as_text=True)
+    _assert_form_has_csrf(admin_body, "/admin/users/pending/approve")
+    _assert_form_has_csrf(admin_body, "/admin/users/pending/delete")
+
+
+def test_english_and_russian_auth_pending_reset_and_app_pages(runtime):
+    pending = user_record(approved=False)
+    resetting = user_record()
+    resetting["reset_token"] = "localized-reset-token"
+    resetting["reset_token_expiry"] = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    core.save_users({"pending": pending, "resetting": resetting})
+    client = app.test_client()
+
+    en_login = client.get("/login").get_data(as_text=True)
+    ru_login = client.get("/login", headers={"Accept-Language": "ru-RU"}).get_data(as_text=True)
+    assert "Welcome back" in en_login
+    assert "С возвращением" in ru_login
+
+    csrf_session(client, "pending")
+    en_pending = client.get("/dashboard").get_data(as_text=True)
+    ru_pending = client.get(
+        "/dashboard", headers={"Accept-Language": "ru-RU,ru;q=0.9"}
+    ).get_data(as_text=True)
+    assert "Pending Approval" in en_pending
+    assert "Ожидание одобрения" in ru_pending
+    _assert_form_has_csrf(en_pending, "/logout")
+
+    anonymous = app.test_client()
+    en_reset = anonymous.get("/reset/localized-reset-token").get_data(as_text=True)
+    ru_reset = anonymous.get(
+        "/reset/localized-reset-token", headers={"Accept-Language": "ru"}
+    ).get_data(as_text=True)
+    assert "Set New Password" in en_reset
+    assert "Новый пароль" in ru_reset
+    assert "resetting" in en_reset
+    assert 'name="csrf_token"' in en_reset
+
+
+def test_user_controlled_device_and_config_are_autoescaped_without_jinja_evaluation(runtime):
+    _data, clients = runtime
+    core.save_users({"alice": user_record()})
+    display_name = "{{ 7 * 7 }}<script>alert(1)</script>"
+    config = (
+        "[Interface]\nPrivateKey = {{ 8 * 8 }}<img src=x onerror=alert(2)>\n"
+        "Address = 10.0.0.2/32\n"
+    )
+    (clients / "alice-phone.conf").write_text(config, encoding="utf-8")
+    traffic.save_device_meta(
+        {
+            "alice-phone": {
+                "owner": "alice",
+                "device": display_name,
+                "vpn_type": "wireguard",
+                "safe_internet": False,
+            }
+        }
+    )
+    client = app.test_client()
+    csrf_session(client, "alice")
+
+    dashboard = client.get("/dashboard").get_data(as_text=True)
+    detail = client.get("/device/alice-phone").get_data(as_text=True)
+    assert "{{ 7 * 7 }}" in dashboard
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in dashboard
+    assert "<script>alert(1)</script>" not in dashboard
+    assert "{{ 8 * 8 }}" in detail
+    assert "&lt;img src=x onerror=alert(2)&gt;" in detail
+    assert "<img src=x onerror=alert(2)>" not in detail

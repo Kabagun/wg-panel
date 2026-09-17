@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f7f8fa">
+  <title>{{ title }} · WG Panel</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}">
+  <script src="{{ url_for('static', filename='panel.js') }}" defer></script>
+</head>
+<body class="{{ 'auth-body' if auth_view else 'app-body' }}">
+<a class="skip-link" href="#main">{{ tr('ui_skip') }}</a>
+{% if not auth_view %}
+{% macro nav_link(endpoint, label, glyph, active) %}
+<a class="nav-link{{ ' active' if active }}" href="{{ url_for(endpoint) }}"{% if active %} aria-current="page"{% endif %}>{{ icon(glyph) }}<span>{{ tr(label) }}</span></a>
+{% endmacro %}
+<aside class="sidebar" id="navigation">
+  <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">{{ icon('shield', 25) }}</span><span>WG Panel<small>WIREGUARD MANAGER</small></span></a>
+  <nav aria-label="{{ tr('ui_workspace') }}">
+    <p class="nav-heading">{{ tr('ui_workspace') }}</p>
+    {{ nav_link('dashboard', 'ui_devices', 'devices', request.endpoint in ['dashboard', 'view_device']) }}
+    {{ nav_link('add_device', 'ui_add', 'plus', request.endpoint == 'add_device') }}
+    {% if is_admin %}
+    <p class="nav-heading admin-nav-heading">{{ tr('ui_admin_section') }}</p>
+    {{ nav_link('admin_panel', 'ui_overview', 'grid', request.endpoint == 'admin_panel') }}
+    {{ nav_link('admin_users', 'ui_users', 'users', request.endpoint in ['admin_users', 'admin_edit']) }}
+    {{ nav_link('admin_devices', 'ui_all_devices', 'devices', request.endpoint == 'admin_devices') }}
+    {{ nav_link('traffic_page', 'ui_traffic', 'chart', request.endpoint == 'traffic_page') }}
+    {% endif %}
+  </nav>
+  <div class="sidebar-bottom">
+    <a class="sidebar-help" href="https://www.wireguard.com/install/" target="_blank" rel="noopener">{{ icon('down', 18) }}{{ tr('ui_learn') }}{{ icon('arrow', 16) }}</a>
+    <div class="account"><span class="avatar">{{ current_username[:1]|upper }}</span><div><strong>{{ current_username }}</strong><small>{{ tr('ui_admin' if is_admin else 'ui_member') }}</small></div><form method="post" action="{{ url_for('logout') }}">{{ csrf() }}<button class="icon-button" type="submit" aria-label="{{ tr('nav_logout') }}" title="{{ tr('nav_logout') }}">{{ icon('logout', 18) }}</button></form></div>
+  </div>
+</aside>
+<div class="app-shell">
+  <header class="topbar"><div class="breadcrumb"><button class="icon-button menu-toggle" type="button" aria-controls="navigation" aria-expanded="false" aria-label="{{ tr('ui_menu') }}">{{ icon('menu') }}</button><span>WG Panel</span>{{ icon('chevron', 14) }}<strong>{{ title }}</strong></div><span class="protocol-pill">{{ icon('shield', 15) }}WireGuard VPN</span></header>
+  <main class="main-content" id="main" tabindex="-1">
+{% else %}
+  <main class="auth-layout" id="main" tabindex="-1">
+{% endif %}
+{% block content %}{% endblock %}
+  </main>
+{% if not auth_view %}<footer class="app-footer"><span>WG Panel</span><span>{{ tr('ui_brand_sub') }}</span></footer></div>{% endif %}
+<dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description">
+  <div class="dialog-icon">{{ icon('trash', 26) }}</div><h2 id="confirm-title">{{ tr('ui_remove_title') }}</h2><p id="confirm-description"></p>
+  <div class="dialog-actions"><button type="button" class="button secondary" data-dialog-cancel autofocus>{{ tr('ui_cancel') }}</button><button type="button" class="button danger" data-dialog-confirm>{{ tr('ui_confirm') }}</button></div>
+</dialog>
+</body>
+</html>

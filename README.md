@@ -19,6 +19,23 @@ the selected DNS. Enabling server enforcement is immediate; after disabling,
 a device that previously imported the Family DNS config must import the updated
 config if its local DNS setting should change as well.
 
+## Interface
+
+The panel uses a light, responsive interface in Russian or English, selected by
+the browser language. It includes device cards, local device/user search,
+QR/config setup, per-device Safe internet controls, and administrator pages for
+approval, limits, payment reminders and monthly traffic. Mobile tables become
+labelled rows, while navigation collapses into a menu.
+
+Templates are rendered once with Jinja autoescaping. Styles, icons and JavaScript
+are served locally with the Python package; no CDN, frontend build or additional
+runtime is required. Forms retain their existing POST/CSRF and ownership checks.
+JavaScript adds search, password visibility, accessible deletion confirmation,
+clipboard feedback and immediate Safe internet submission. The switch saves
+through the existing CSRF-protected form and reloads the confirmed state, QR and
+configuration together. It requires JavaScript; other forms and navigation
+remain available without it.
+
 ## What Is Versioned
 
 - `src/wg_panel/` - Flask application package.
@@ -153,7 +170,9 @@ journalctl -u wg-panel -n 100 --no-pager
 
 - `src/wg_panel/core.py` - Flask app object, environment config, user storage, shared helpers.
 - `src/wg_panel/i18n.py` - UI strings and translation helper.
-- `src/wg_panel/ui.py` - inline HTML/CSS page builders.
+- `src/wg_panel/ui.py` - shared autoescaped page renderer and local SVG icons.
+- `src/wg_panel/templates/` - shared layout, authentication, device and admin views.
+- `src/wg_panel/static/` - local stylesheet, progressive enhancement and favicon.
 - `src/wg_panel/auth.py` - login/admin decorators.
 - `src/wg_panel/client_context.py` - registration IP, GeoIP, and browser metadata helpers.
 - `src/wg_panel/wireguard.py` - WireGuard client config helpers.

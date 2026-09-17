@@ -1,0 +1,23 @@
+{% macro flashes() %}
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="notice {{ 'notice-success' if category == 'ok' else 'notice-error' }}" role="{{ 'status' if category == 'ok' else 'alert' }}">{{ message }}</div>
+{% endfor %}
+{% endmacro %}
+
+{% macro heading(title, description, eyebrow='') %}
+<div class="page-heading"><div>{% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}<h1>{{ title }}</h1><p class="page-description">{{ description }}</p></div>{% if caller is defined %}<div class="heading-actions">{{ caller() }}</div>{% endif %}</div>
+{% endmacro %}
+
+{% macro metric(label, value, glyph, detail='', tone='blue') %}
+<div class="metric"><div class="metric-top"><span>{{ label }}</span><span class="metric-icon {{ tone }}">{{ icon(glyph, 18) }}</span></div><div class="metric-value">{{ value }}</div>{% if detail %}<p class="metric-detail">{{ detail }}</p>{% endif %}</div>
+{% endmacro %}
+
+{% macro search(label) %}
+<label class="search-field">{{ icon('search', 18) }}<span class="sr-only">{{ label }}</span><input type="search" placeholder="{{ label }}" data-search autocomplete="off"></label>
+{% endmacro %}
+
+{% macro no_results() %}<p class="search-empty" data-search-empty role="status" hidden>{{ tr('ui_no_results') }}</p>{% endmacro %}
+
+{% macro guide() %}
+<section class="setup-guide"><div class="section-heading"><div><h2>{{ tr('ui_guide') }}</h2><p>{{ tr('ui_guide_sub') }}</p></div><span class="guide-icon">{{ icon('globe', 25) }}</span></div><div class="guide-steps">{% for n in [1, 2, 3] %}<div class="guide-step"><span class="step-number">0{{ n }}</span><div><h3>{% if n == 1 %}<a href="https://www.wireguard.com/install/" target="_blank" rel="noopener">{{ tr('ui_step1') }} ↗</a>{% else %}{{ tr('ui_step' ~ n) }}{% endif %}</h3><p>{{ tr('ui_step' ~ n ~ '_sub') }}</p></div></div>{% endfor %}</div></section>
+{% endmacro %}

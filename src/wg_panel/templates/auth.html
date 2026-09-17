@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% from 'components.html' import flashes with context %}
+{% block content %}
+<section class="auth-story"><a class="brand" href="{{ url_for('login') }}"><span class="brand-mark">{{ icon('shield', 25) }}</span><span>WG Panel<small>WIREGUARD MANAGER</small></span></a><div class="auth-story-content"><span class="eyebrow">PERSONAL VPN, SIMPLIFIED</span><h2>{{ tr('ui_auth_hero') }}</h2><p>{{ tr('ui_auth_intro') }}</p><div class="connection-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><span class="art-node node-phone">{{ icon('phone', 27) }}</span><span class="art-node node-laptop">{{ icon('laptop', 29) }}</span><span class="art-node node-router">{{ icon('router', 27) }}</span><span class="art-shield">{{ icon('shield', 55) }}</span></div><ul class="auth-features">{% for n in [1,2,3] %}<li>{{ icon('check', 17) }}{{ tr('ui_auth_feature' ~ n) }}</li>{% endfor %}</ul></div><span class="auth-story-footer">WireGuard · WG Panel</span></section>
+<section class="auth-form-side"><div class="auth-card">
+  <span class="auth-symbol">{{ icon('clock' if mode == 'pending' else 'key' if mode in ['forgot','reset'] else 'lock', 25) }}</span>
+  <p class="eyebrow">{{ tr('auth_secure' if mode == 'login' else 'auth_create' if mode == 'register' else 'auth_recovery' if mode in ['forgot','reset'] else 'ui_pending') }}</p>
+  <h1>{{ title }}</h1>
+  <p class="auth-subtitle">{% if mode == 'login' %}{{ tr('login_sub') }}{% elif mode == 'register' %}{{ tr('reg_sub') }}{% elif mode == 'forgot' %}{{ tr('forgot_sub') }}{% elif mode == 'reset' %}{{ tr('ui_reset_sub') }} <strong>{{ username }}</strong>.{% else %}{{ tr('pend_sub')|safe }}{% endif %}</p>
+  {{ flashes() }}
+  {% if mode == 'pending' %}<form method="post" action="{{ url_for('logout') }}">{{ csrf() }}<button class="button secondary button-full" type="submit">{{ tr('nav_logout') }}</button></form>
+  {% else %}
+  <form method="post" class="form-stack"{% if mode == 'login' %} id="login-form"{% endif %}>
+    {{ csrf() }}
+    {% if mode != 'reset' %}<label for="username">{{ tr('login_user') }}</label><input id="username" name="u" autocomplete="username" value="{{ request.form.get('u', '') }}" required autofocus maxlength="32"{% if mode == 'register' %} minlength="3" pattern="[a-z0-9-]+" aria-describedby="username-help"{% endif %}>{% if mode == 'register' %}<p class="field-help" id="username-help">{{ tr('reg_user') }}</p>{% endif %}{% endif %}
+    {% if mode == 'register' %}<label for="telegram_username">{{ tr('reg_telegram') }}</label><input id="telegram_username" name="telegram_username" pattern="@?[A-Za-z0-9_]{5,32}" minlength="5" maxlength="33" autocomplete="off" placeholder="@username" value="{{ request.form.get('telegram_username', '') }}" required>{% endif %}
+    {% if mode in ['login', 'register', 'reset'] %}
+    <div class="label-row"><label for="password">{{ tr('reset_new_pw' if mode == 'reset' else 'login_pass') }}</label>{% if mode == 'login' %}<a href="{{ url_for('forgot') }}">{{ tr('login_forgot') }}</a>{% endif %}</div>
+    <div class="password-field"><input type="password" id="password" name="p" autocomplete="{{ 'current-password' if mode == 'login' else 'new-password' }}"{% if mode != 'login' %} minlength="8"{% endif %} maxlength="256" required><button class="icon-button password-toggle" type="button" data-password-target="password" data-show-label="{{ tr('ui_show_password') }}" data-hide-label="{{ tr('ui_hide_password') }}" aria-label="{{ tr('ui_show_password') }}" aria-pressed="false">{{ icon('eye', 19) }}</button></div>
+    {% endif %}
+    {% if mode in ['register', 'reset'] %}<label for="confirm-password">{{ tr('reg_confirm') }}</label><input type="password" id="confirm-password" name="p2" autocomplete="new-password" maxlength="256" required>{% endif %}
+    {% if mode == 'register' %}<details class="terms"><summary>{{ tr('reg_agree') }}</summary><div>{{ tr('reg_terms')|safe }}</div></details><label class="check-row" for="agree"><input type="checkbox" id="agree" name="agree" required{% if request.form.get('agree') %} checked{% endif %}><span>{{ tr('reg_agree') }}</span></label>{% endif %}
+    <button class="button primary button-full" type="submit">{{ tr('login_btn' if mode == 'login' else 'reg_btn' if mode == 'register' else 'forgot_btn' if mode == 'forgot' else 'reset_btn') }}{{ icon('arrow', 18) }}</button>
+  </form>
+  {% if mode == 'login' %}<p class="auth-bottom">{{ tr('ui_no_account') }} <a href="{{ url_for('register') }}">{{ tr('login_create') }}</a></p>{% else %}<a class="back-link auth-bottom" href="{{ url_for('login') }}">{{ icon('back', 17) }}{{ tr('reg_back') }}</a>{% endif %}
+  {% endif %}
+</div><div class="auth-footnote">{{ icon('shield', 15) }}{{ tr('ui_brand_sub') }}</div></section>
+{% endblock %}

@@ -77,7 +77,13 @@ PAYMENT_USER_DELAY_SECONDS = min(
 MAX_CONCURRENT_REQUESTS = _env_int("WG_PANEL_MAX_CONCURRENT_REQUESTS", 32)
 MAX_REQUEST_BODY_BYTES = _env_int("WG_PANEL_MAX_REQUEST_BODY_BYTES", 16 * 1024)
 
-app = Flask("app", root_path=str(Path(__file__).resolve().parents[2]))
+_PACKAGE_DIR = Path(__file__).resolve().parent
+app = Flask(
+    "app",
+    root_path=str(Path(__file__).resolve().parents[2]),
+    template_folder=str(_PACKAGE_DIR / "templates"),
+    static_folder=str(_PACKAGE_DIR / "static"),
+)
 app.config.update(
     MAX_CONTENT_LENGTH=MAX_REQUEST_BODY_BYTES,
     SESSION_COOKIE_HTTPONLY=True,

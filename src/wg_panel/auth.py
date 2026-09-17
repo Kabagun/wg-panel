@@ -1,6 +1,6 @@
 from functools import wraps
 
-from flask import flash, redirect, render_template_string, session, url_for
+from flask import flash, redirect, session, url_for
 
 from .core import _lang, load_users
 from .ui import pending_page
@@ -32,7 +32,7 @@ def approved_required(f):
         if not user:
             return redirect(url_for("login"))
         if not user.get("approved"):
-            return render_template_string(pending_page(_lang()))
+            return pending_page(_lang())
         return f(*a, **kw)
     return deco
 

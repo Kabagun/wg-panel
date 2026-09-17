@@ -6,7 +6,6 @@ from wg_panel import app, core, security
 from wg_panel import auth as auth_helpers
 from wg_panel import telegram as telegram_client
 from wg_panel.routes import telegram as telegram_route
-from wg_panel.ui import flash_html
 
 
 def test_password_hashing_is_scrypt_and_legacy_is_detected():
@@ -60,12 +59,16 @@ def test_oversize_request_body_is_rejected():
     assert client.post("/login", data={"payload": "x" * (17 * 1024)}).status_code == 413
 
 
-def test_flash_messages_are_html_escaped():
-    with app.test_request_context("/"):
-        session["_flashes"] = [("error", '<img src=x onerror="alert(1)">')]
-        rendered = flash_html()
-    assert "<img" not in rendered
-    assert "&lt;img" in rendered
+def test_flash_messages_are_html_escaped_by_single_pass_page_renderer():
+    client = app.test_client()
+    with client.session_transaction() as browser_session:
+        browser_session["_flashes"] = [("error", '<img src=x onerror="alert(1)">')]
+
+    response = client.get("/login")
+    rendered = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "<img src=x" not in rendered
+    assert "&lt;img src=x onerror=&#34;alert(1)&#34;&gt;" in rendered
 
 
 def test_session_version_revokes_existing_session(monkeypatch):
