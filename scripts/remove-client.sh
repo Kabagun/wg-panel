@@ -69,19 +69,46 @@ trap cleanup EXIT
 
 install -m 600 "$WG_CONF" "$WG_BACKUP"
 install -m 600 "$CLIENT_CONFIG" "$CLIENT_BACKUP"
-python3 - "$WG_CONF" "$WG_TMP" "$CLIENT_NAME" <<'PY'
+python3 - "$WG_CONF" "$WG_TMP" "$CLIENT_PUB" <<'PY'
 import re
 import sys
 
-source, target, client_name = sys.argv[1:]
+source, target, public_key = sys.argv[1:]
 with open(source, encoding="utf-8") as handle:
     content = handle.read()
-pattern = re.compile(rf"\n# {re.escape(client_name)}\n\[Peer\][^\[]*")
-updated, count = pattern.subn("", content)
-if count != 1:
-    raise SystemExit(f"ERROR: Expected one persistent peer block, found {count}")
+lines = content.splitlines(keepends=True)
+headers = [
+    index for index, line in enumerate(lines)
+    if re.fullmatch(r"\s*\[[^\]\r\n]+\]\s*(?:#.*)?", line.rstrip("\r\n"))
+]
+
+def block_start(header):
+    # Blank lines and comments before a header belong to that next section.
+    start = header
+    while start and (not lines[start - 1].strip() or lines[start - 1].lstrip().startswith("#")):
+        start -= 1
+    return start
+
+matches = []
+for position, header in enumerate(headers):
+    if lines[header].split("#", 1)[0].strip() != "[Peer]":
+        continue
+    end = block_start(headers[position + 1]) if position + 1 < len(headers) else len(lines)
+    keys = []
+    for line in lines[header + 1:end]:
+        key, separator, value = line.split("#", 1)[0].partition("=")
+        if separator and key.strip() == "PublicKey":
+            keys.append(value.strip())
+    if public_key in keys:
+        if keys != [public_key]:
+            raise SystemExit("ERROR: Ambiguous persistent peer public keys")
+        matches.append((block_start(header), end))
+if len(matches) != 1:
+    raise SystemExit(f"ERROR: Expected one persistent peer block, found {len(matches)}")
+start, end = matches[0]
+updated = "".join(lines[:start] + lines[end:])
 with open(target, "w", encoding="utf-8") as handle:
-    handle.write(updated.rstrip() + "\n")
+    handle.write(updated)
 PY
 
 wg set "$WG_INTERFACE_NAME" peer "$CLIENT_PUB" remove
@@ -95,7 +122,7 @@ if wg show "$WG_INTERFACE_NAME" peers | grep -Fxq "$CLIENT_PUB"; then
     echo "ERROR: Live peer still exists after removal" >&2
     exit 6
 fi
-if grep -Fq "# $CLIENT_NAME" "$WG_CONF"; then
+if awk '/^[[:space:]]*PublicKey[[:space:]]*=/ {value=$0; sub(/^[^=]*=/, "", value); sub(/#.*/, "", value); gsub(/[[:space:]]/, "", value); print value}' "$WG_CONF" | grep -Fxq "$CLIENT_PUB"; then
     echo "ERROR: Persistent peer still exists after removal" >&2
     exit 7
 fi

@@ -1,5 +1,11 @@
+import math
 import os
+import socket
+import sys
 import threading
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 
 from .core import (
     BIND_HOST,
@@ -9,6 +15,7 @@ from .core import (
     ENABLE_HTTP_REDIRECT,
     ENABLE_INTERNAL_TLS,
     HTTP_REDIRECT_PORT,
+    MAX_REDIRECT_CONNECTIONS,
     PORT,
     REDIRECT_SOCKET_TIMEOUT_SECS,
     SSL_CERT,
@@ -23,37 +30,90 @@ from .traffic import collect_traffic
 from .wireguard import migrate_device_metadata, reconcile_safe_dns
 
 
-def main():
-    from http.server import BaseHTTPRequestHandler, HTTPServer
+class HTTPSRedirect(BaseHTTPRequestHandler):
+    """Redirect one GET/POST request to the configured HTTPS endpoint."""
 
-    class HTTPSRedirect(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(301)
-            self.send_header("Location", f"https://{DOMAIN}{self.path}")
-            self.end_headers()
-        def do_POST(self):
-            self.do_GET()
-        def log_message(self, *a):
-            pass
+    def do_GET(self):
+        """Return the existing permanent redirect and close the connection."""
+        self.send_response(301)
+        self.send_header("Location", f"https://{DOMAIN}{self.path}")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+    def do_POST(self):
+        """Apply the same redirect to POST requests."""
+        self.do_GET()
+
+    def log_message(self, *args):
+        """Suppress routine redirect request logs."""
+
+
+class BoundedRedirectServer(ThreadingMixIn, HTTPServer):
+    """Bound handler admission and total connection lifetime, including headers."""
+
+    daemon_threads = True
+
+    def __init__(self, address, handler=HTTPSRedirect, *, max_connections=32, deadline=5.0):
+        if max_connections < 1 or not math.isfinite(deadline) or deadline <= 0:
+            raise ValueError("Redirect capacity and deadline must be positive and finite")
+        self._slots = threading.BoundedSemaphore(max_connections)
+        self._deadline = deadline
+        self._accepted = {}
+        super().__init__(address, handler)
+
+    def process_request(self, request, client_address):
+        """Reject excess connections before allocating their handler threads."""
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        self._accepted[request] = time.monotonic()
+        try:
+            request.settimeout(self._deadline)
+            super().process_request(request, client_address)
+        except Exception:
+            self._accepted.pop(request, None)
+            self.shutdown_request(request)
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        """Close even trickling sockets at an absolute deadline and release capacity."""
+        def expire():
+            try:
+                request.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        remaining = max(0, self._accepted.pop(request) + self._deadline - time.monotonic())
+        timer = threading.Timer(remaining, expire)
+        timer.daemon = True
+        try:
+            timer.start()
+            super().process_request_thread(request, client_address)
+        finally:
+            timer.cancel()
+            self.shutdown_request(request)
+            self._slots.release()
+
+    def handle_error(self, request, client_address):
+        """Treat closed/expired client connections as ordinary disconnects."""
+        if not isinstance(sys.exception(), (ConnectionError, TimeoutError)):
+            super().handle_error(request, client_address)
+
+
+def main():
+    """Reconcile persisted state and start the single-process panel service."""
 
     def run_redirect():
-        from socketserver import ThreadingMixIn
-
-        class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
-            daemon_threads = True
-            def get_request(self):
-                sock, addr = super().get_request()
-                try:
-                    sock.settimeout(REDIRECT_SOCKET_TIMEOUT_SECS)
-                except (OSError, ValueError) as exc:
-                    import sys
-
-                    print(f"[HTTP REDIRECT] Failed to set socket timeout: {exc}", file=sys.stderr)
-                return sock, addr
-
         try:
-            ThreadingHTTPServer(("0.0.0.0", HTTP_REDIRECT_PORT), HTTPSRedirect).serve_forever()
-        except OSError as e:
+            with BoundedRedirectServer(
+                (BIND_HOST, HTTP_REDIRECT_PORT),
+                max_connections=MAX_REDIRECT_CONNECTIONS,
+                deadline=REDIRECT_SOCKET_TIMEOUT_SECS,
+            ) as server:
+                server.serve_forever()
+        except (OSError, ValueError) as e:
             import sys
             print(f"[HTTP REDIRECT] Failed to bind on :{HTTP_REDIRECT_PORT}: {e}", file=sys.stderr, flush=True)
 

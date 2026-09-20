@@ -2,7 +2,7 @@ from functools import wraps
 
 from flask import flash, redirect, session, url_for
 
-from .core import _lang, load_users
+from .core import _lang, _wireguard_lock, load_users
 from .ui import pending_page
 
 
@@ -11,7 +11,13 @@ def _current_user():
     if not username:
         return None, None
     user = load_users().get(username)
-    if not user or session.get("session_version") != user.get("session_version", 1):
+    if (
+        not user
+        or user.get("revoking")
+        or not user.get("account_id")
+        or session.get("account_id") != user["account_id"]
+        or session.get("session_version") != user.get("session_version", 1)
+    ):
         session.clear()
         return None, None
     return username, user
@@ -28,12 +34,15 @@ def login_required(f):
 def approved_required(f):
     @wraps(f)
     def deco(*a, **kw):
-        _username, user = _current_user()
-        if not user:
-            return redirect(url_for("login"))
-        if not user.get("approved"):
-            return pending_page(_lang())
-        return f(*a, **kw)
+        # Keep authentication and device use in the same lifecycle transaction:
+        # a queued request must not act on a deleted/recreated account or peer.
+        with _wireguard_lock:
+            _username, user = _current_user()
+            if not user:
+                return redirect(url_for("login"))
+            if not user.get("approved"):
+                return pending_page(_lang())
+            return f(*a, **kw)
     return deco
 
 def admin_required(f):

@@ -1,10 +1,12 @@
 import hashlib
 import re
+import threading
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from wg_panel import app, core, traffic, wireguard
+from wg_panel import app, core, security, traffic, wireguard
+from wg_panel import auth as auth_helpers
 from wg_panel.routes import auth as auth_routes
 
 
@@ -23,6 +25,8 @@ def runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(wireguard, "CLIENTS_DIR", str(clients))
     monkeypatch.setattr(wireguard, "WG_DIR", str(tmp_path / "wireguard"))
     app.config.update(TESTING=True)
+    monkeypatch.setattr(auth_routes, "login_request_limiter", security.WindowRateLimiter())
+    monkeypatch.setattr(auth_routes, "login_failure_limiter", security.LoginFailureLimiter())
     return data, clients
 
 
@@ -48,7 +52,173 @@ def csrf_session(client, username=None, version=1):
         if username:
             browser_session["user"] = username
             browser_session["session_version"] = version
+            browser_session["account_id"] = core.load_users()[username]["account_id"]
     return "csrf-test-token"
+
+
+def test_recreated_account_rejects_retained_cookie_but_new_login_works(runtime, monkeypatch):
+    _data, clients = runtime
+    core.save_users({"alice": user_record()})
+    old = app.test_client()
+    csrf_session(old, "alice")
+    old_cookie = old.get_cookie("session").value
+    old_id = core.load_users()["alice"]["account_id"]
+    assert wireguard.delete_user("alice")[0]
+    monkeypatch.setattr(auth_routes, "submit_background", lambda *_args, **_kwargs: True)
+    fresh = app.test_client()
+    token = csrf_session(fresh)
+    assert fresh.post("/register", data={
+        "csrf_token": token, "u": "alice", "p": "different123", "p2": "different123",
+        "agree": "on", "telegram_username": "alice_contact",
+    }, environ_base={"REMOTE_ADDR": "198.51.100.99"}).status_code == 302
+    core.mutate_users(lambda users: users["alice"].update(approved=True))
+    new_id = core.load_users()["alice"]["account_id"]
+    assert new_id != old_id
+    assert new_id == core.load_users()["alice"]["account_id"]
+    name = "u5-alice-phone"
+    (clients / f"{name}.conf").write_text("[Interface]\nPrivateKey = replacement\n")
+    traffic.set_device_meta(name, "alice", "phone")
+    for path in ("/dashboard", "/add", f"/device/{name}", f"/device/{name}/download"):
+        old.set_cookie("session", old_cookie)
+        assert old.get(path).status_code == 302
+    for path in ("/add", f"/device/{name}/delete", f"/device/{name}/safe-internet"):
+        old.set_cookie("session", old_cookie)
+        assert old.post(path, data={"csrf_token": "csrf-test-token"}).status_code == 302
+    assert traffic.load_device_meta()[name]["owner"] == "alice"
+    assert fresh.post("/login", data={
+        "csrf_token": token, "u": "alice", "p": "different123",
+    }).status_code == 302
+    assert fresh.get(f"/device/{name}/download").status_code == 200
+
+
+@pytest.mark.parametrize("credential_change", ["reset", "recreate"])
+def test_legacy_login_conflict_cannot_inherit_new_identity_or_reset_generation(
+    runtime, monkeypatch, credential_change,
+):
+    old = user_record(hashlib.sha256(b"password123").hexdigest())
+    old.update(reset_token="racing-reset", reset_token_expiry=(
+        datetime.now(UTC) + timedelta(hours=1)
+    ).isoformat())
+    core.save_users({"alice": old})
+    original_verify = auth_routes.verify_password
+    monkeypatch.setattr(auth_routes, "send_telegram", lambda *_args, **_kwargs: None)
+
+    def verify_then_change(password, stored):
+        result = original_verify(password, stored)
+        if credential_change == "reset":
+            reset = app.test_client()
+            token = csrf_session(reset)
+            assert reset.post("/reset/racing-reset", data={
+                "csrf_token": token, "p": "new-password123", "p2": "new-password123",
+            }).status_code == 302
+        else:
+            assert wireguard.delete_user("alice")[0]
+            core.save_users({"alice": user_record(stored)})
+        return result
+
+    monkeypatch.setattr(auth_routes, "verify_password", verify_then_change)
+    attacker = app.test_client()
+    token = csrf_session(attacker)
+    response = attacker.post("/login", data={
+        "csrf_token": token, "u": "alice", "p": "password123",
+    })
+    assert response.status_code == 200
+    with attacker.session_transaction() as browser_session:
+        assert "user" not in browser_session
+    assert attacker.get("/dashboard").status_code == 302
+
+
+def test_login_ip_throttle_precedes_username_processing(runtime, monkeypatch):
+    monkeypatch.setattr(auth_routes, "load_users", dict)
+    checks = []
+    monkeypatch.setattr(auth_routes, "verify_password", lambda *args: checks.append(args) or (False, False))
+    client = app.test_client()
+    token = csrf_session(client)
+    for index in range(30):
+        assert client.post("/login", data={
+            "csrf_token": token, "u": f"unknown-{index}", "p": "wrong",
+        }).status_code == 200
+    assert client.post("/login", data={
+        "csrf_token": token, "u": "brand-new-name", "p": "wrong",
+    }).status_code == 429
+    assert len(checks) == 30
+
+
+def test_failed_account_revocation_stays_disabled_and_can_be_retried(runtime, monkeypatch):
+    _data, clients = runtime
+    core.save_users({"admin": user_record(role="admin"), "alice": user_record()})
+    config = clients / "u5-alice-phone.conf"
+    config.write_text("[Interface]\nAddress = 10.0.0.2/32\n")
+    traffic.set_device_meta("u5-alice-phone", "alice", "phone")
+    monkeypatch.setattr(wireguard, "_run_script", lambda *_args: (False, "failed revoke"))
+    owner = app.test_client()
+    csrf_session(owner, "alice")
+    admin = app.test_client()
+    token = csrf_session(admin, "admin")
+    assert admin.post("/admin/users/alice/delete", data={"csrf_token": token}).status_code == 302
+    assert core.load_users()["alice"]["revoking"]
+    assert not core.load_users()["alice"]["approved"]
+    assert "approval_token" not in core.load_users()["alice"]
+    assert not wireguard.create_device("alice", "new")[0]
+    assert owner.get("/device/u5-alice-phone/download").status_code == 302
+    admin.post("/admin/users/alice/approve", data={"csrf_token": token, "max_devices": "3"})
+    assert not core.load_users()["alice"]["approved"]
+
+    def remove(*_args):
+        config.unlink()
+        return True, ""
+
+    monkeypatch.setattr(wireguard, "_run_script", remove)
+    assert admin.post("/admin/users/alice/delete", data={"csrf_token": token}).status_code == 302
+    assert "alice" not in core.load_users()
+    assert not traffic.load_device_meta()
+
+
+def test_queued_device_request_rechecks_account_incarnation(runtime, monkeypatch):
+    core.save_users({"alice": user_record()})
+    client = app.test_client()
+    token = csrf_session(client, "alice")
+    queued = threading.Event()
+    results = []
+
+    class RequestLock:
+        def __enter__(self):
+            queued.set()
+            core._wireguard_lock.acquire()
+
+        def __exit__(self, *_args):
+            core._wireguard_lock.release()
+
+    monkeypatch.setattr(auth_helpers, "_wireguard_lock", RequestLock())
+    worker = threading.Thread(target=lambda: results.append(client.post("/add", data={
+        "csrf_token": token, "device": "phone",
+    })))
+    with core._wireguard_lock:
+        worker.start()
+        assert queued.wait(5)
+        assert wireguard.delete_user("alice")[0]
+        core.save_users({"alice": user_record()})
+    worker.join(5)
+    assert not worker.is_alive()
+    assert results[0].status_code == 302 and results[0].location.endswith("/login")
+    assert not traffic.load_device_meta()
+
+
+def test_legacy_account_identity_is_persisted_before_first_login(runtime):
+    import json
+
+    data, _clients = runtime
+    data.mkdir(parents=True, exist_ok=True)
+    (data / "users.json").write_text(json.dumps({"alice": user_record()}), encoding="utf-8")
+    client = app.test_client()
+    token = csrf_session(client)
+    assert client.post("/login", data={
+        "csrf_token": token, "u": "alice", "p": "password123",
+    }).status_code == 302
+    stored = json.loads((data / "users.json").read_text(encoding="utf-8"))
+    with client.session_transaction() as browser_session:
+        assert browser_session["account_id"] == stored["alice"]["account_id"]
+    assert client.get("/dashboard").status_code == 200
 
 
 def test_registration_requires_telegram_and_defaults_payments_disabled(runtime, monkeypatch):

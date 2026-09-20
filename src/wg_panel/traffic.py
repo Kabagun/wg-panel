@@ -9,6 +9,7 @@ from .core import (
     TRAFFIC_FILE,
     _device_meta_lock,
     _traffic_lock,
+    _wireguard_lock,
     ensure_private_dir,
     write_json_private,
 )
@@ -51,17 +52,20 @@ def mutate_traffic(mutator):
 
 
 def load_device_meta():
-    with _device_meta_lock:
+    """Read ownership and policy within the device lifecycle transaction."""
+    with _wireguard_lock, _device_meta_lock:
         return _read_json(DEVICE_META_FILE)
 
 
 def save_device_meta(meta):
-    with _device_meta_lock:
+    """Replace metadata; callers retaining a snapshot must hold the lifecycle lock."""
+    with _wireguard_lock, _device_meta_lock:
         write_json_private(DEVICE_META_FILE, meta)
 
 
 def mutate_device_meta(mutator):
-    with _device_meta_lock:
+    """Mutate ownership or policy atomically with provisioning and migration."""
+    with _wireguard_lock, _device_meta_lock:
         meta = _read_json(DEVICE_META_FILE)
         result = mutator(meta)
         write_json_private(DEVICE_META_FILE, meta)

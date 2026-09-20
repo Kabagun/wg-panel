@@ -1,5 +1,6 @@
 import hashlib
 
+import pytest
 from flask import session
 
 from wg_panel import app, core, security
@@ -31,6 +32,56 @@ def test_login_failure_limiter_enters_and_exits_cooldown():
     assert retry == 900
     now[0] += 901
     assert limiter.check("ip|user")[0]
+
+
+def test_login_cooldown_survives_key_churn_and_failure_window_expiry():
+    now = [1000.0]
+    limiter = security.LoginFailureLimiter(max_keys=3, clock=lambda: now[0])
+    for _ in range(5):
+        limiter.record_failure("ip|admin")
+    for offset in range(20):
+        limiter.record_failure(f"ip|unknown-{offset}")
+    assert limiter.check("ip|admin") == (False, 900)
+    assert len(limiter._failures) == 3
+    assert not limiter.check("another-ip|new")[0]
+    now[0] += 301
+    for offset in range(20):
+        limiter.record_failure(f"ip|later-{offset}")
+    assert limiter.check("ip|admin") == (False, 599)
+    now[0] += 600
+    assert limiter.check("ip|admin")[0]
+
+
+def test_window_capacity_preserves_limits_and_recovers_after_expiry():
+    now = [1000.0]
+    limiter = security.WindowRateLimiter(max_keys=2, clock=lambda: now[0])
+    assert limiter.consume("login", "ip1", 1, 60)[0]
+    assert limiter.consume("login", "ip2", 1, 60)[0]
+    for offset in range(20):
+        assert not limiter.consume("login", f"new-{offset}", 1, 60)[0]
+    assert not limiter.consume("login", "ip1", 1, 60)[0]
+    assert len(limiter._events) == 2
+    now[0] += 61
+    assert limiter.consume("login", "new", 1, 60)[0]
+
+
+@pytest.mark.parametrize("action", ["approve:one-time-token:3", "reject:one-time-token"])
+def test_webhook_cannot_reactivate_or_drop_revoking_account(monkeypatch, action):
+    state = {"alice": {
+        "role": "user", "approved": False, "revoking": True,
+        "approval_token": "one-time-token",
+    }}
+    monkeypatch.setattr(telegram_route, "TG_WEBHOOK_SECRET", "secret")
+    monkeypatch.setattr(telegram_route, "TG_CHAT_ID", "42")
+    monkeypatch.setattr(telegram_route, "mutate_users", lambda callback: callback(state))
+    monkeypatch.setattr(telegram_route, "answer_callback", lambda *_args: True)
+    monkeypatch.setattr(telegram_route, "edit_tg_message", lambda *_args: True)
+    response = app.test_client().post("/tg_webhook", json={"callback_query": {
+        "id": "cb", "from": {"id": 42}, "data": action,
+        "message": {"message_id": 10, "chat": {"id": 42}},
+    }}, headers={"X-Telegram-Bot-Api-Secret-Token": "secret"})
+    assert response.status_code == 200
+    assert state["alice"]["revoking"] and not state["alice"]["approved"]
 
 
 def test_public_window_limiter_bounds_requests():

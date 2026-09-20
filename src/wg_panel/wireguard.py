@@ -4,15 +4,24 @@ import os
 import re
 import subprocess
 
-from .core import CLIENTS_DIR, WG_DIR, _wireguard_lock, app, ensure_private_dir, load_users
+from .core import (
+    CLIENTS_DIR,
+    WG_DIR,
+    _wireguard_lock,
+    app,
+    ensure_private_dir,
+    load_users,
+    mutate_users,
+)
+from .dns_enforcement import SafeDnsEnforcementError, sync_safe_dns
 from .traffic import (
     load_device_meta,
+    mutate_device_meta,
     remove_device_meta,
     save_device_meta,
     set_device_meta,
 )
 from .traffic import set_device_safe_internet as _set_device_safe_internet
-from .dns_enforcement import SafeDnsEnforcementError, sync_safe_dns
 
 SAFE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 DEFAULT_DNS_SERVERS = "1.1.1.1, 8.8.8.8"
@@ -30,8 +39,22 @@ def _config_path(wg_name):
     return os.path.join(CLIENTS_DIR, f"{wg_name}.conf")
 
 
+def _is_generated_name(wg_name):
+    match = re.match(r"^u([1-9][0-9]*)-(.+)$", wg_name)
+    if not match:
+        return False
+    length = int(match[1])
+    remainder = match[2]
+    return len(remainder) > length + 1 and remainder[length] == "-"
+
+
 def migrate_device_metadata(dry_run=False):
     """Map every legacy config to one exact user/device owner."""
+    with _wireguard_lock:
+        return _migrate_device_metadata(dry_run)
+
+
+def _migrate_device_metadata(dry_run):
     if not os.path.isdir(CLIENTS_DIR):
         if dry_run:
             return {"total": 0, "migrated": 0, "ambiguous": [], "unowned": [], "stale": []}
@@ -56,6 +79,12 @@ def migrate_device_metadata(dry_run=False):
         if owner in users and isinstance(device, str) and device:
             current["vpn_type"] = "wireguard"
             current.setdefault("safe_internet", False)
+            continue
+
+        # Generated names require authoritative metadata, even if a username
+        # happens to match a legacy prefix. Never transfer an existing owner.
+        if owner or _is_generated_name(wg_name):
+            unowned.append(wg_name)
             continue
 
         candidates = []
@@ -92,7 +121,8 @@ def migrate_device_metadata(dry_run=False):
         )
     if not dry_run:
         for name in stale:
-            meta.pop(name, None)
+            if not users.get(meta[name].get("owner"), {}).get("revoking"):
+                meta.pop(name, None)
         save_device_meta(meta)
         for wg_name in config_names:
             path = _config_path(wg_name)
@@ -102,7 +132,12 @@ def migrate_device_metadata(dry_run=False):
 
 
 def get_all_devices():
-    migrate_device_metadata(dry_run=False)
+    """List committed ownership without running migrations or writing state."""
+    with _wireguard_lock:
+        return _get_all_devices()
+
+
+def _get_all_devices():
     meta = load_device_meta()
     result = []
     for wg_name, item in meta.items():
@@ -126,7 +161,7 @@ def client_name(username, device):
 def get_device(wg_name):
     item = load_device_meta().get(wg_name)
     path = _config_path(wg_name)
-    if not item or not path or not os.path.exists(path):
+    if not item or item.get("revoked") or not path or not os.path.exists(path):
         return None
     if not item.get("owner") or not item.get("device"):
         return None
@@ -158,7 +193,7 @@ def _safe_dns_ips(meta, excluded=None, override=None):
     """Return the exact IPv4 set represented by Safe internet metadata."""
     ips = []
     for name, item in meta.items():
-        if name == excluded:
+        if name == excluded or item.get("revoked"):
             continue
         enabled = bool(item.get("safe_internet"))
         if override and name in override:
@@ -203,7 +238,10 @@ def reconcile_safe_dns(*, require_helper=None, allow_unavailable=False):
             require_helper=require_helper,
         )
         return {
-            "safe_devices": sum(bool(item.get("safe_internet")) for item in meta.values()),
+            "safe_devices": sum(
+                bool(item.get("safe_internet")) and not item.get("revoked", False)
+                for item in meta.values()
+            ),
             "ips": ips,
         }
 
@@ -251,7 +289,7 @@ def set_device_safe_internet(wg_name, enabled):
 
         try:
             changed = _set_device_safe_internet(wg_name, enabled)
-        except Exception as exc:  # JSON/filesystem failures must trigger rollback.
+        except Exception as exc:  # noqa: BLE001 - every storage failure must trigger rollback.
             changed = False
             logger.error("Safe internet metadata update failed for %s: %s", wg_name, exc)
         if changed:
@@ -350,7 +388,7 @@ def create_device(username, device):
     with _wireguard_lock:
         users = load_users()
         user = users.get(username)
-        if not user or not user.get("approved"):
+        if not user or not user.get("approved") or user.get("revoking"):
             return False, "", "User is not approved"
         current = get_user_devices(username)
         if device in current:
@@ -394,11 +432,15 @@ def create_device(username, device):
 
 def delete_device(wg_name):
     """Revoke a device and remove metadata only after verified helper success."""
-    if not get_device(wg_name):
-        return False, "Device not found"
     with _wireguard_lock:
         meta = load_device_meta()
         device_meta = meta.get(wg_name, {})
+        revoked = bool(device_meta.get("revoked"))
+        path = _config_path(wg_name)
+        if not path or (not revoked and not get_device(wg_name)):
+            return False, "Device not found"
+        if revoked and os.path.exists(path):
+            return False, "Revoked device has an unexpected client configuration"
         was_safe = bool(device_meta.get("safe_internet"))
         previous_ips = []
         desired_ips = []
@@ -412,12 +454,16 @@ def delete_device(wg_name):
 
         # Keep the safe address in the managed set until the peer and runtime
         # config are both gone. This avoids a fail-open window during revoke.
-        ok, error = _run_script("remove-client.sh", wg_name, 30)
-        if not ok:
-            return False, error
-        path = _config_path(wg_name)
-        if path and os.path.exists(path):
-            return False, "WireGuard helper returned success but the client config still exists"
+        if not revoked:
+            ok, error = _run_script("remove-client.sh", wg_name, 30)
+            if not ok:
+                return False, error
+            if os.path.exists(path):
+                return False, "WireGuard helper returned success but the client config still exists"
+            try:
+                mutate_device_meta(lambda records: records[wg_name].update(revoked=True))
+            except (OSError, ValueError) as exc:
+                return False, f"Peer removed but its revocation checkpoint could not be saved: {exc}"
         if was_safe:
             try:
                 _sync_safe_dns(desired_ips)
@@ -429,7 +475,7 @@ def delete_device(wg_name):
                 return False, f"WireGuard peer removed but Safe internet cleanup failed: {exc}"
         try:
             remove_device_meta(wg_name)
-        except Exception as exc:  # Keep the firewall fail-closed if metadata storage is unavailable.
+        except Exception as exc:  # noqa: BLE001 - keep the firewall fail-closed on storage failure.
             logger.error("Failed to remove device metadata for %s: %s", wg_name, exc)
             if was_safe:
                 try:
@@ -441,6 +487,48 @@ def delete_device(wg_name):
                         rollback_exc,
                     )
             return False, f"Failed to remove device metadata: {exc}"
+        return True, ""
+
+
+def delete_user(username):
+    """Disable an account, revoke its peers, then remove it in one transaction.
+
+    A failure retains the disabled account and ownership for an administrator
+    to retry. Provisioning and protected device requests share this lock.
+    """
+    with _wireguard_lock:
+        def begin(users):
+            user = users.get(username)
+            if not user or user.get("role") == "admin":
+                return False
+            user["revoking"] = True
+            user["approved"] = False
+            user["payment_enabled"] = False
+            user.pop("approval_token", None)
+            return True
+
+        if not mutate_users(begin):
+            return False, "User not found or protected"
+        failures = []
+        meta = load_device_meta()
+        # A config that was published without ownership (for example after a
+        # storage failure) is unresolved authority, not proof of no devices.
+        if os.path.isdir(CLIENTS_DIR):
+            unknown = [name for name in os.listdir(CLIENTS_DIR) if name.endswith(".conf")
+                       and not meta.get(name[:-5], {}).get("owner")]
+            if unknown:
+                return False, "Unowned client configurations require ownership recovery"
+        # Include stale metadata as well as visible configs. Unresolved peer
+        # state must block successful deletion, never silently disappear.
+        for wg_name, item in meta.items():
+            if item.get("owner") != username:
+                continue
+            ok, error = delete_device(wg_name)
+            if not ok:
+                failures.append(f"{item.get('device', wg_name)}: {error}")
+        if failures:
+            return False, "; ".join(failures)
+        mutate_users(lambda users: users.pop(username, None))
         return True, ""
 
 

@@ -63,6 +63,7 @@ def tg_webhook():
                 (username, user)
                 for username, user in users.items()
                 if user.get("role") != "admin"
+                and not user.get("revoking")
                 and not user.get("approved")
                 and hmac.compare_digest(str(user.get("approval_token", "")), token)
             ),

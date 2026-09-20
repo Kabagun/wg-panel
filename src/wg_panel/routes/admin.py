@@ -13,7 +13,7 @@ from ..payments import (
 )
 from ..traffic import collect_traffic, load_traffic
 from ..ui import render_page
-from ..wireguard import delete_device, get_all_devices, get_user_devices
+from ..wireguard import delete_user, get_all_devices, get_user_devices
 
 
 @app.route("/traffic")
@@ -106,7 +106,7 @@ def admin_approve(username):
 
     def approve(users):
         user = users.get(username)
-        if not user or user.get("role") == "admin":
+        if not user or user.get("role") == "admin" or user.get("revoking"):
             return False
         user["approved"] = True
         user["max_devices"] = max_devices
@@ -192,27 +192,11 @@ def admin_edit(username):
 @app.route("/admin/users/<username>/delete", methods=["POST"])
 @admin_required
 def admin_delete_user(username):
-    user = load_users().get(username)
-    if not user or user.get("role") == "admin":
-        return redirect(url_for("admin_users"))
-    failures = []
-    for owner, device, wg_name in get_all_devices():
-        if owner != username:
-            continue
-        ok, error = delete_device(wg_name)
-        if not ok:
-            failures.append(f"{device}: {error}")
-    if failures:
-        flash("Account retained because device revocation failed: " + "; ".join(failures), "error")
-        return redirect(url_for("admin_users"))
-
-    removed = mutate_users(
-        lambda users: bool(users.pop(username, None))
-        if users.get(username, {}).get("role") != "admin"
-        else False
-    )
+    removed, error = delete_user(username)
     if removed:
         flash(f"User '{username}' and all devices deleted.", "ok")
+    else:
+        flash("Account retained because device revocation failed: " + error, "error")
     return redirect(url_for("admin_users"))
 
 

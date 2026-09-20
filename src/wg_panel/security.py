@@ -2,7 +2,7 @@ import hmac
 import secrets
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 from urllib.parse import urlsplit
 
 from flask import abort, request, session
@@ -13,7 +13,8 @@ class WindowRateLimiter:
     """Bounded in-memory sliding-window limiter for a single-process service."""
 
     def __init__(self, max_keys=2048, clock=time.monotonic):
-        self._events = defaultdict(deque)
+        self._events = {}
+        self._expires = {}
         self._max_keys = max_keys
         self._clock = clock
         self._lock = threading.Lock()
@@ -22,6 +23,14 @@ class WindowRateLimiter:
         now = self._clock()
         bucket_key = (namespace, str(key))
         with self._lock:
+            if bucket_key not in self._events:
+                for existing, expiry in list(self._expires.items()):
+                    if expiry <= now:
+                        self._events.pop(existing, None)
+                        self._expires.pop(existing, None)
+                if len(self._events) >= self._max_keys:
+                    return False, max(1, int(min(self._expires.values()) - now))
+                self._events[bucket_key] = deque()
             events = self._events[bucket_key]
             cutoff = now - window_seconds
             while events and events[0] <= cutoff:
@@ -30,16 +39,13 @@ class WindowRateLimiter:
                 retry_after = max(1, int(window_seconds - (now - events[0])))
                 return False, retry_after
             events.append(now)
-            self._trim()
+            self._expires[bucket_key] = now + window_seconds
             return True, 0
 
     def reset(self, namespace, key):
         with self._lock:
             self._events.pop((namespace, str(key)), None)
-
-    def _trim(self):
-        while len(self._events) > self._max_keys:
-            self._events.pop(next(iter(self._events)))
+            self._expires.pop((namespace, str(key)), None)
 
 
 class LoginFailureLimiter:
@@ -58,7 +64,7 @@ class LoginFailureLimiter:
         self.cooldown_seconds = cooldown_seconds
         self.max_keys = max_keys
         self._clock = clock
-        self._failures = defaultdict(deque)
+        self._failures = {}
         self._blocked_until = {}
         self._lock = threading.Lock()
 
@@ -66,26 +72,32 @@ class LoginFailureLimiter:
         now = self._clock()
         key = str(key)
         with self._lock:
+            self._prune_expired(now)
             blocked_until = self._blocked_until.get(key, 0)
             if blocked_until > now:
                 return False, max(1, int(blocked_until - now))
-            self._blocked_until.pop(key, None)
-            self._prune(key, now)
+            if key not in self._failures and len(self._failures) >= self.max_keys:
+                expiry = min(
+                    max(events[-1] + self.window_seconds if events else 0,
+                        self._blocked_until.get(existing, 0))
+                    for existing, events in self._failures.items()
+                )
+                return False, max(1, int(expiry - now))
             return True, 0
 
     def record_failure(self, key):
         now = self._clock()
         key = str(key)
         with self._lock:
-            self._prune(key, now)
-            failures = self._failures[key]
+            self._prune_expired(now)
+            if self._blocked_until.get(key, 0) > now:
+                return
+            if key not in self._failures and len(self._failures) >= self.max_keys:
+                return
+            failures = self._failures.setdefault(key, deque(maxlen=self.threshold))
             failures.append(now)
             if len(failures) >= self.threshold:
                 self._blocked_until[key] = now + self.cooldown_seconds
-            while len(self._failures) > self.max_keys:
-                oldest = next(iter(self._failures))
-                self._failures.pop(oldest, None)
-                self._blocked_until.pop(oldest, None)
 
     def reset(self, key):
         key = str(key)
@@ -93,16 +105,19 @@ class LoginFailureLimiter:
             self._failures.pop(key, None)
             self._blocked_until.pop(key, None)
 
-    def _prune(self, key, now):
-        failures = self._failures[key]
+    def _prune_expired(self, now):
         cutoff = now - self.window_seconds
-        while failures and failures[0] <= cutoff:
-            failures.popleft()
-        if not failures:
-            self._failures.pop(key, None)
+        for key, failures in list(self._failures.items()):
+            while failures and failures[0] <= cutoff:
+                failures.popleft()
+            if self._blocked_until.get(key, 0) <= now:
+                self._blocked_until.pop(key, None)
+                if not failures:
+                    self._failures.pop(key, None)
 
 
 public_rate_limiter = WindowRateLimiter()
+login_request_limiter = WindowRateLimiter()
 login_failure_limiter = LoginFailureLimiter()
 
 

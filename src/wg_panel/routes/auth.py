@@ -11,6 +11,7 @@ from ..payments import normalize_telegram_username
 from ..security import (
     client_ip,
     login_failure_limiter,
+    login_request_limiter,
     public_rate_limiter,
     rate_limited_response,
 )
@@ -33,6 +34,9 @@ def healthz():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
+        allowed, retry_after = login_request_limiter.consume("login", client_ip(), 30, 60)
+        if not allowed:
+            return rate_limited_response(retry_after)
         username = request.form.get("u", "").strip().lower()[:32]
         password = request.form.get("p", "")[:256]
         rate_key = f"{client_ip()}|{username}"
@@ -41,22 +45,35 @@ def login():
             return rate_limited_response(retry_after)
 
         user = load_users().get(username)
+        if user and "account_id" not in user:
+            # Persist a legacy account identity before verifying credentials;
+            # subsequent checks must refer to exactly this incarnation.
+            user = mutate_users(lambda users: dict(users[username]) if username in users else None)
         valid, needs_upgrade = verify_password(password, user.get("password_hash") if user else "")
         if valid and user:
-            if needs_upgrade:
-                old_hash = user["password_hash"]
+            def authenticate(users):
+                current = users.get(username)
+                if (
+                    not current
+                    or current.get("revoking")
+                    or any(current.get(key) != user.get(key) for key in (
+                        "account_id", "password_hash", "session_version"
+                    ))
+                ):
+                    return None
+                if needs_upgrade:
+                    current["password_hash"] = _hash(password)
+                return dict(current)
 
-                def upgrade(users):
-                    current = users.get(username)
-                    if current and current.get("password_hash") == old_hash:
-                        current["password_hash"] = _hash(password)
-
-                mutate_users(upgrade)
-                user = load_users()[username]
+            authenticated = mutate_users(authenticate)
+        else:
+            authenticated = None
+        if authenticated:
             login_failure_limiter.reset(rate_key)
             session.clear()
             session["user"] = username
-            session["session_version"] = user.get("session_version", 1)
+            session["account_id"] = authenticated["account_id"]
+            session["session_version"] = authenticated["session_version"]
             return redirect(url_for("dashboard"))
 
         login_failure_limiter.record_failure(rate_key)

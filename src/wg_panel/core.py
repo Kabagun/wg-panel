@@ -54,6 +54,7 @@ ENABLE_INTERNAL_TLS = _env_bool("WG_PANEL_ENABLE_INTERNAL_TLS", True)
 ENABLE_HTTP_REDIRECT = _env_bool("WG_PANEL_ENABLE_HTTP_REDIRECT", True)
 HTTP_REDIRECT_PORT = _env_int("WG_PANEL_HTTP_REDIRECT_PORT", 80)
 REDIRECT_SOCKET_TIMEOUT_SECS = _env_float("WG_PANEL_REDIRECT_SOCKET_TIMEOUT", 5.0)
+MAX_REDIRECT_CONNECTIONS = _env_int("WG_PANEL_MAX_REDIRECT_CONNECTIONS", 32)
 TRUST_PROXY = _env_bool("WG_PANEL_TRUST_PROXY", False)
 
 DOMAIN = os.getenv("WG_PANEL_DOMAIN", "localhost")
@@ -146,7 +147,7 @@ def _user_file_lock():
         os.close(fd)
 
 
-def _normalize_users(users):
+def _normalize_users(users, *, initialize_identity=False):
     for username, user in users.items():
         user.setdefault("role", "user")
         user.setdefault("approved", False)
@@ -158,7 +159,12 @@ def _normalize_users(users):
         user.setdefault("payment_last_notified_month", "")
         user.setdefault("payment_delivery", {"month": "", "parts": []})
         user.setdefault("session_version", 1)
-        if user["role"] != "admin" and not user["approved"]:
+        if initialize_identity and "account_id" not in user:
+            user["account_id"] = secrets.token_hex(32)
+        if user.get("revoking"):
+            user["approved"] = False
+            user.pop("approval_token", None)
+        elif user["role"] != "admin" and not user["approved"]:
             user.setdefault("approval_token", secrets.token_urlsafe(12))
         else:
             user.pop("approval_token", None)
@@ -179,16 +185,16 @@ def load_users():
 def mutate_users(mutator):
     """Atomically load, mutate, and persist users; return the callback result."""
     with _users_lock, _user_file_lock():
-        users = _normalize_users(_load_json_unlocked(USERS_FILE, {}))
+        users = _normalize_users(_load_json_unlocked(USERS_FILE, {}), initialize_identity=True)
         result = mutator(users)
-        write_json_private(USERS_FILE, users)
+        write_json_private(USERS_FILE, _normalize_users(users, initialize_identity=True))
         return result
 
 
 def save_users(users):
     """Replace user state atomically. Prefer mutate_users for route updates."""
     with _users_lock, _user_file_lock():
-        write_json_private(USERS_FILE, _normalize_users(users))
+        write_json_private(USERS_FILE, _normalize_users(users, initialize_identity=True))
 
 
 def _load_secret_key():

@@ -113,7 +113,10 @@ one batch, followed by the configured delay before the next user's batch.
 
 On startup, the panel migrates legacy WireGuard filenames to exact owner/device
 metadata. The migration aborts rather than guessing when one filename matches
-multiple usernames. To inspect production safely before restarting, run:
+multiple usernames. Generated `u<length>-<username>-<device>` names with missing
+ownership are never interpreted as legacy filenames; restore their authoritative
+metadata before startup. Ordinary device listing does not run migrations or
+rewrite metadata. To inspect production safely before restarting, run:
 
 ```bash
 /opt/wg-panel/venv/bin/python -c \
@@ -145,6 +148,8 @@ before enabling Safe internet.
 
 Start the application through the server's deployment layer. Do not store
 server-specific systemd, nginx, TLS, or domain configuration in this repository.
+Run one application process: device lifecycle transactions and request limits
+are coordinated within that process. Multiple WSGI workers are not supported.
 The installed entry point is:
 
 ```bash
@@ -156,6 +161,31 @@ For ad-hoc local runs after installation:
 ```bash
 /opt/wg-panel/venv/bin/python -m wg_panel
 ```
+
+## Security lifecycle
+
+Each account has an immutable random `account_id`; cookies must match that
+identity and its password-reset session version. Existing accounts receive an
+identity during startup or their first login. Cookies issued before this change
+require a fresh login. Deleted usernames may be registered again without reusing
+the previous account's sessions.
+
+Account deletion disables the account before enumerating and revoking peers.
+If revocation fails, the account remains disabled and cannot be approved again;
+repair the reported helper/storage problem and retry deletion. Unowned client
+configs or unresolved peer metadata block deletion until ownership is recovered.
+Provisioning, migration, policy changes and protected device requests share the
+same transaction boundary. Safe internet remains a per-device setting.
+
+Login accepts at most 30 POST attempts per client IP in 60 seconds, in addition
+to the existing per-IP/username cooldown. Full limiter storage rejects new keys
+until existing restrictions expire instead of evicting active restrictions.
+
+When the bundled HTTP redirect listener is enabled, it admits at most
+`WG_PANEL_MAX_REDIRECT_CONNECTIONS` connections (default 32). Each connection
+has an absolute `WG_PANEL_REDIRECT_SOCKET_TIMEOUT` deadline (default 5 seconds),
+including clients that slowly send incomplete headers. Both settings must be
+positive; the listener binds to `WG_PANEL_BIND_HOST`.
 
 ## Checks
 
