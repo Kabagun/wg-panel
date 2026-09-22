@@ -27,6 +27,14 @@ QR/config setup, per-device Safe internet controls, and administrator pages for
 approval, limits, payment reminders and monthly traffic. Mobile tables become
 labelled rows, while navigation collapses into a menu.
 
+Administrators can pause an approved user's VPN on **all devices**, then resume
+it with the same configurations, keys and addresses. The user list has access
+status filters, explicit Pause/Resume actions and a separate error state for
+incomplete pauses. A paused user can sign in and read/download saved configs,
+but cannot create, modify or delete devices. Their dashboard and device pages
+explain the pause; administrators remain able to manage or delete those devices.
+Payment settings and reminder scheduling do not change when access is paused.
+
 Templates are rendered once with Jinja autoescaping. Styles, icons and JavaScript
 are served locally with the Python package; no CDN, frontend build or additional
 runtime is required. Forms retain their existing POST/CSRF and ownership checks.
@@ -71,6 +79,7 @@ Install helper scripts:
 ```bash
 install -m 700 /opt/wg-panel/scripts/add-client.sh /etc/wireguard/add-client.sh
 install -m 700 /opt/wg-panel/scripts/remove-client.sh /etc/wireguard/remove-client.sh
+install -m 700 /opt/wg-panel/scripts/set-client-state.sh /etc/wireguard/set-client-state.sh
 install -m 700 /opt/wg-panel/scripts/list-clients.sh /etc/wireguard/list-clients.sh
 install -m 700 /opt/wg-panel/scripts/safe-dns.sh /etc/wireguard/safe-dns.sh
 ```
@@ -177,6 +186,38 @@ configs or unresolved peer metadata block deletion until ownership is recovered.
 Provisioning, migration, policy changes and protected device requests share the
 same transaction boundary. Safe internet remains a per-device setting.
 
+VPN pause is separate from approval and deletion. Install the updated add/remove
+helpers **and** `set-client-state.sh` together before using it. Pausing removes
+each public key from the live WireGuard interface and wraps its exact persistent
+peer block in a commented `WG-PANEL-PAUSED` envelope in `wg0.conf`. This envelope
+contains base64-encoded configuration, not encryption; keep the file private and
+do not discard these comments or overwrite the file with `wg showconf`/`wg-quick
+save`. `SaveConfig=true` is not supported with these managed peer records.
+Client files, device metadata and traffic history remain in place; retained
+client addresses stay reserved in the allocator. Resuming restores the original
+block and reconciles Safe internet before enabling any peer. It does not restart
+WireGuard or disturb other users.
+
+The account's restrictive state is saved before peer changes. A partial failure
+keeps the account blocked for device changes and displays **Needs attention**;
+the panel never reports that every device is disconnected without successful
+helper results. Fix the logged helper/storage error and use **Retry pause**.
+A failed resume attempts to pause every device again. Startup reapplies saved
+pauses before serving requests and aborts if it cannot confirm enforcement.
+After a completed pause, WireGuard restart reads the commented configuration
+and does not restore paused peers, even if the panel is stopped.
+
+Admin access actions are POST-only and CSRF-protected:
+
+- `POST /admin/users/<username>/pause`: pause all existing devices; repeatable.
+- `POST /admin/users/<username>/resume`: restore the retained peer identities.
+- `GET /admin/users?status=paused`: filter by access status (`all`, `active`,
+  `paused`, `pending`, `attention`, `revoking`).
+
+Administrator accounts, accounts awaiting approval and accounts being deleted
+cannot be paused or resumed through these actions. Changing a client's local
+IP cannot bypass a removed public key or the server's per-peer `/32` constraint.
+
 Login accepts at most 30 POST attempts per client IP in 60 seconds, in addition
 to the existing per-IP/username cooldown. Full limiter storage rejects new keys
 until existing restrictions expire instead of evicting active restrictions.
@@ -204,6 +245,7 @@ journalctl -u wg-panel -n 100 --no-pager
 - `src/wg_panel/templates/` - shared layout, authentication, device and admin views.
 - `src/wg_panel/static/` - local stylesheet, progressive enhancement and favicon.
 - `src/wg_panel/auth.py` - login/admin decorators.
+- `src/wg_panel/access.py` - account-wide pause/resume and startup reconciliation.
 - `src/wg_panel/client_context.py` - registration IP, GeoIP, and browser metadata helpers.
 - `src/wg_panel/wireguard.py` - WireGuard client config helpers.
 - `src/wg_panel/dns_enforcement.py` - validated server-side Safe internet reconciliation.

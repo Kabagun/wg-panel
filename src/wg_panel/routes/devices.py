@@ -39,7 +39,8 @@ def dashboard():
         max_devices=max_devices,
         limit_text=t("dash_unlim", _lang()) if max_devices == -1 else str(max_devices),
         available="∞" if max_devices == -1 else max(0, max_devices - used),
-        can_add=max_devices == -1 or used < max_devices,
+        can_add=not user.get("paused") and (max_devices == -1 or used < max_devices),
+        paused=bool(user.get("paused")), pause_pending=bool(user.get("pause_pending")),
         protected_count=sum(device["safe_internet"] for device in devices),
     )
 
@@ -106,6 +107,8 @@ def view_device(wg_name):
     return render_page(
         "device.html", "ui_devices", device=device, wg_name=wg_name,
         config=config, qr=qr_svg_b64(wg_name),
+        owner_paused=bool(load_users().get(device["owner"], {}).get("paused")),
+        owner_pause_pending=bool(load_users().get(device["owner"], {}).get("pause_pending")),
     )
 
 

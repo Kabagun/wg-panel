@@ -76,6 +76,7 @@ def render_page(template, title_key, *, lang=None, auth_view=False, **context):
         fmt_bytes=fmt_bytes,
         current_username=username,
         is_admin=user.get("role") == "admin",
+        current_paused=bool(user.get("paused")),
         auth_view=auth_view,
         **context,
     )

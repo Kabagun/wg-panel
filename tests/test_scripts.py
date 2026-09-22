@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_wireguard_scripts_enforce_locking_permissions_and_failures():
     add_script = (ROOT / "scripts" / "add-client.sh").read_text(encoding="utf-8")
     remove_script = (ROOT / "scripts" / "remove-client.sh").read_text(encoding="utf-8")
-    for script in (add_script, remove_script):
+    state_script = (ROOT / "scripts" / "set-client-state.sh").read_text(encoding="utf-8")
+    for script in (add_script, remove_script, state_script):
         assert "set -Eeuo pipefail" in script
         assert "umask 077" in script
         assert "flock -x" in script
@@ -22,6 +23,10 @@ def test_wireguard_scripts_enforce_locking_permissions_and_failures():
     assert "LIVE_REMOVED" in remove_script
     assert "Expected one persistent peer block" in remove_script
     assert "Live peer still exists after removal" in remove_script
+    assert "WG-PANEL-PAUSED-BEGIN v1" in state_script
+    assert "ROLLBACK_LIVE_ON_FAILURE" in state_script
+    assert "Live peer still exists after pause" in state_script
+    assert '"$CLIENTS_DIR"/*.conf' in add_script
 
 
 def remove_persistent_peer(tmp_path, content, public_key):

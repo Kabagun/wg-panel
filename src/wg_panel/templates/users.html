@@ -1,8 +1,38 @@
 {% extends 'base.html' %}
-{% from 'components.html' import heading, flashes, search, no_results with context %}
+{% from 'components.html' import heading, flashes, search, no_results, access_badge with context %}
 {% block content %}
 {{ heading(tr('ui_users'), tr('ui_users_sub'), tr('ui_admin_section')) }}{{ flashes() }}
-<section class="panel" data-filter-scope><div class="section-heading"><h2>{{ tr('ui_total_users') }} <span class="count-badge">{{ users|length }}</span></h2>{{ search(tr('ui_search_users')) }}</div>
-<div class="table-scroll"><table class="responsive-table users-table"><thead><tr><th>{{ tr('login_user') }}</th><th>{{ tr('ui_status') }}</th><th>{{ tr('ui_devices') }}</th><th>{{ tr('ui_payment') }}</th><th>{{ tr('ui_registered') }}</th><th>{{ tr('dash_col_act') }}</th></tr></thead><tbody>{% for user in users %}
-<tr data-search-item="{{ user.username }} {{ user.telegram_username }}"><td data-label="{{ tr('login_user') }}"><div class="table-person"><span class="avatar small-avatar">{{ user.username[:1]|upper }}</span><div><strong>{{ user.username }}</strong>{% if user.telegram_username %}<a class="table-secondary" href="https://t.me/{{ user.telegram_username }}" target="_blank" rel="noopener">@{{ user.telegram_username }}</a>{% endif %}</div></div></td><td data-label="{{ tr('ui_status') }}"><span class="tag {{ 'tag-admin' if user.role == 'admin' else 'tag-ok' if user.approved else 'tag-pend' }}">{{ tr('ui_admin' if user.role == 'admin' else 'ui_active' if user.approved else 'ui_pending') }}</span></td><td data-label="{{ tr('ui_devices') }}" class="numeric"><span>{{ user.device_count }} <span class="muted">/ {{ '∞' if user.max_devices == -1 else user.max_devices }}</span></span></td><td data-label="{{ tr('ui_payment') }}">{% if user.payment_enabled %}<div><strong class="nowrap">{{ user.price }} BYN</strong><small class="table-secondary">{{ user.payment_day }} · {{ tr('ui_day') }}</small></div>{% elif user.role == 'admin' %}—{% else %}<span class="muted">{{ tr('ui_disabled') }}</span>{% endif %}</td><td data-label="{{ tr('ui_registered') }}" class="muted date-cell">{{ user.created_at }}</td><td data-label="{{ tr('dash_col_act') }}">{% if user.role != 'admin' %}<div class="table-actions">{% if not user.approved %}<form method="post" action="{{ url_for('admin_approve', username=user.username) }}">{{ csrf() }}<input type="hidden" name="max_devices" value="3"><button class="button primary small" type="submit">{{ tr('ui_approve') }}</button></form>{% endif %}<a class="button secondary small" href="{{ url_for('admin_edit', username=user.username) }}">{{ tr('ui_edit') }}</a><form method="post" action="{{ url_for('admin_delete_user', username=user.username) }}" data-confirm="{{ tr('ui_remove_user') }}">{{ csrf() }}<button class="icon-button danger-text" aria-label="{{ tr('ui_remove') }}: {{ user.username }}" type="submit">{{ icon('trash', 17) }}</button></form></div>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{{ no_results() }}</section>
+<section class="panel users-panel" data-filter-scope>
+  <div class="section-heading"><h2>{{ tr('ui_total_users') }} <span class="count-badge">{{ total_users }}</span></h2>{{ search(tr('ui_search_users')) }}</div>
+  <nav class="status-filters" aria-label="{{ tr('ui_filter_status') }}">
+    {% for key in ['all', 'active', 'paused', 'pending', 'attention', 'revoking'] %}
+      {% if key not in ['attention', 'revoking'] or status_counts[key] %}
+      <a class="status-filter{{ ' selected' if selected_status == key }}" href="{{ url_for('admin_users', status=key) }}"{% if selected_status == key %} aria-current="page"{% endif %}>{{ tr('ui_filter_all' if key == 'all' else 'ui_access_' ~ key) }}<span>{{ total_users if key == 'all' else status_counts[key] }}</span></a>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  <div class="table-scroll"><table class="responsive-table users-table">
+    <thead><tr><th>{{ tr('login_user') }}</th><th>{{ tr('ui_access_heading') }}</th><th>{{ tr('ui_devices_count') }}</th><th>{{ tr('ui_payment') }}</th><th>{{ tr('dash_col_act') }}</th></tr></thead>
+    <tbody>{% for user in users %}
+      <tr data-search-item="{{ user.username }} {{ user.telegram_username }}">
+        <td class="user-identity" data-label="{{ tr('login_user') }}"><div class="table-person"><span class="avatar small-avatar">{{ user.username[:1]|upper }}</span><div><strong>{{ user.username }}</strong>{% if user.telegram_username %}<a class="table-secondary" href="https://t.me/{{ user.telegram_username }}" target="_blank" rel="noopener">@{{ user.telegram_username }}</a>{% endif %}<small class="table-secondary user-joined" title="{{ user.created_at }}">{{ tr('ui_registered') }}: {{ user.created_at[:10] }}</small></div></div></td>
+        <td data-label="{{ tr('ui_access_heading') }}">{{ access_badge(user.status) }}</td>
+        <td data-label="{{ tr('ui_devices_count') }}" class="numeric"><span>{{ user.device_count }} <span class="muted">/ {{ '∞' if user.max_devices == -1 else user.max_devices }}</span></span></td>
+        <td data-label="{{ tr('ui_payment') }}">{% if user.payment_enabled %}<div><strong class="nowrap">{{ user.price }} BYN</strong><small class="table-secondary">{{ user.payment_day }} · {{ tr('ui_day') }}</small></div>{% elif user.role == 'admin' %}—{% else %}<span class="muted">{{ tr('ui_disabled') }}</span>{% endif %}</td>
+        <td class="user-actions" data-label="{{ tr('dash_col_act') }}">
+          {% if user.role != 'admin' %}<div class="table-actions">
+            {% if user.revoking %}<span class="action-help">{{ tr('ui_revoking_help') }}</span>
+            {% elif not user.approved %}<form method="post" action="{{ url_for('admin_approve', username=user.username) }}">{{ csrf() }}<input type="hidden" name="max_devices" value="{{ user.max_devices }}"><button class="button primary small" type="submit">{{ tr('ui_approve') }}</button></form>
+            {% elif user.pause_pending %}<form method="post" action="{{ url_for('admin_pause_user', username=user.username) }}">{{ csrf() }}<button class="button warning small" type="submit" aria-label="{{ tr('ui_retry_pause') }}: {{ user.username }}">{{ tr('ui_retry_pause') }}</button></form>
+            {% elif user.paused %}<form method="post" action="{{ url_for('admin_resume_user', username=user.username) }}">{{ csrf() }}<button class="button primary small" type="submit" aria-label="{{ tr('ui_resume') }}: {{ user.username }}">{{ tr('ui_resume') }}</button></form>
+            {% else %}<form method="post" action="{{ url_for('admin_pause_user', username=user.username) }}">{{ csrf() }}<button class="button warning small" type="submit" aria-label="{{ tr('ui_pause') }}: {{ user.username }}">{{ tr('ui_pause') }}</button></form>{% endif %}
+            <a class="button secondary small" href="{{ url_for('admin_edit', username=user.username) }}" aria-label="{{ tr('ui_edit') }}: {{ user.username }}">{{ tr('ui_edit') }}</a>
+            <form class="user-delete" method="post" action="{{ url_for('admin_delete_user', username=user.username) }}" data-confirm="{{ tr('ui_remove_user') }}">{{ csrf() }}<button class="icon-button danger-text" aria-label="{{ tr('ui_remove') }}: {{ user.username }}" type="submit">{{ icon('trash', 17) }}</button></form>
+          </div>{% else %}<span class="muted">—</span>{% endif %}
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="5"><div class="empty-state compact">{{ tr('ui_no_users_status') }}</div></td></tr>{% endfor %}</tbody>
+  </table></div>{{ no_results() }}
+  <p class="users-help">{{ icon('info', 17) }}{{ tr('ui_pause_admin_help') }}</p>
+</section>
 {% endblock %}

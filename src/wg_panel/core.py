@@ -151,6 +151,8 @@ def _normalize_users(users, *, initialize_identity=False):
     for username, user in users.items():
         user.setdefault("role", "user")
         user.setdefault("approved", False)
+        user.setdefault("paused", False)
+        user.setdefault("pause_pending", False)
         user.setdefault("max_devices", 3)
         user.setdefault("created_at", _now())
         user.setdefault("telegram_username", "")

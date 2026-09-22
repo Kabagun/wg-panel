@@ -1,8 +1,9 @@
 from functools import wraps
 
-from flask import flash, redirect, session, url_for
+from flask import flash, redirect, request, session, url_for
 
 from .core import _lang, _wireguard_lock, load_users
+from .i18n import t
 from .ui import pending_page
 
 
@@ -42,6 +43,11 @@ def approved_required(f):
                 return redirect(url_for("login"))
             if not user.get("approved"):
                 return pending_page(_lang())
+            if user.get("paused") and (
+                request.endpoint == "add_device" or request.method not in {"GET", "HEAD"}
+            ):
+                flash(t("ui_pause_restricted", _lang()), "error")
+                return redirect(url_for("dashboard"))
             return f(*a, **kw)
     return deco
 

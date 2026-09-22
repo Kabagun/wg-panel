@@ -21,7 +21,7 @@
   <nav aria-label="{{ tr('ui_workspace') }}">
     <p class="nav-heading">{{ tr('ui_workspace') }}</p>
     {{ nav_link('dashboard', 'ui_devices', 'devices', request.endpoint in ['dashboard', 'view_device']) }}
-    {{ nav_link('add_device', 'ui_add', 'plus', request.endpoint == 'add_device') }}
+    {% if not current_paused %}{{ nav_link('add_device', 'ui_add', 'plus', request.endpoint == 'add_device') }}{% endif %}
     {% if is_admin %}
     <p class="nav-heading admin-nav-heading">{{ tr('ui_admin_section') }}</p>
     {{ nav_link('admin_panel', 'ui_overview', 'grid', request.endpoint == 'admin_panel') }}

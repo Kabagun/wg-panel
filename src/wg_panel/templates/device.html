@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from 'components.html' import flashes with context %}
+{% from 'components.html' import flashes, pause_notice with context %}
 {% block content %}
 <div class="device-workspace">
   <a class="back-link" href="{{ url_for('dashboard') }}">{{ icon('back', 17) }}{{ tr('ui_back_devices') }}</a>
@@ -8,8 +8,9 @@
     <div><p class="eyebrow">WIREGUARD</p><h1>{{ device.device }}</h1></div>
   </header>
   {{ flashes() }}
+  {% if owner_paused %}{{ pause_notice(owner_pause_pending) }}{% endif %}
   <section class="panel connection-card">
-    <div class="connection-heading"><h2>{{ tr('ui_connect') }}</h2><p>{{ tr('ui_connection_methods') }}</p></div>
+    <div class="connection-heading"><h2>{{ tr('ui_saved_config' if owner_paused else 'ui_connect') }}</h2><p>{{ tr('ui_saved_config_hint' if owner_paused else 'ui_connection_methods') }}</p></div>
     <div class="connection-content">
       <div class="connection-qr">
         {% if qr %}<img src="{{ qr }}" alt="{{ tr('ui_qr_alt') }}" width="220" height="220">
@@ -32,7 +33,7 @@
     </div>
   </section>
   <section class="panel protection-settings">
-    <form method="post" action="{{ url_for('update_device_safe_internet', wg_name=wg_name) }}" aria-labelledby="safe-internet-title" data-auto-submit data-saving-label="{{ tr('ui_saving') }}">
+    <form method="post" action="{{ url_for('update_device_safe_internet', wg_name=wg_name) }}" aria-labelledby="safe-internet-title"{% if not current_paused %} data-auto-submit{% endif %} data-saving-label="{{ tr('ui_saving') }}">
       {{ csrf() }}
       <div class="protection-row">
         <span class="protection-icon">{{ icon('shield', 23) }}</span>
@@ -49,6 +50,6 @@
       <noscript><p class="field-help">{{ tr('ui_switch_requires_js') }}</p></noscript>
     </form>
   </section>
-  <div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><form method="post" action="{{ url_for('delete_device_route', wg_name=wg_name) }}" data-confirm="{{ tr('ui_remove_device') }}">{{ csrf() }}<button class="button danger-outline small" type="submit">{{ icon('trash', 16) }}{{ tr('ui_danger') }}</button></form></div>
+  {% if not current_paused %}<div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><form method="post" action="{{ url_for('delete_device_route', wg_name=wg_name) }}" data-confirm="{{ tr('ui_remove_device') }}">{{ csrf() }}<button class="button danger-outline small" type="submit">{{ icon('trash', 16) }}{{ tr('ui_danger') }}</button></form></div>{% endif %}
 </div>
 {% endblock %}

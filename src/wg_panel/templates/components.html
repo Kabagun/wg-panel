@@ -18,6 +18,18 @@
 
 {% macro no_results() %}<p class="search-empty" data-search-empty role="status" hidden>{{ tr('ui_no_results') }}</p>{% endmacro %}
 
+{% macro access_badge(status) %}
+<span class="tag access-tag tag-{{ status }}">{{ tr('ui_access_' ~ status) }}</span>
+{% endmacro %}
+
+{% macro pause_notice(pending=false) %}
+<aside class="pause-notice" role="status">
+  <span class="pause-notice-icon">{{ icon('info' if pending else 'lock', 23) }}</span>
+  <div><h2>{{ tr('ui_pause_pending_title' if pending else 'ui_pause_title') }}</h2>
+  <p>{{ tr('ui_pause_pending_body' if pending else 'ui_pause_body') }}</p></div>
+</aside>
+{% endmacro %}
+
 {% macro guide() %}
 <section class="setup-guide"><div class="section-heading"><div><h2>{{ tr('ui_guide') }}</h2><p>{{ tr('ui_guide_sub') }}</p></div><span class="guide-icon">{{ icon('globe', 25) }}</span></div><div class="guide-steps">{% for n in [1, 2, 3] %}<div class="guide-step"><span class="step-number">0{{ n }}</span><div><h3>{% if n == 1 %}<a href="https://www.wireguard.com/install/" target="_blank" rel="noopener">{{ tr('ui_step1') }} ↗</a>{% else %}{{ tr('ui_step' ~ n) }}{% endif %}</h3><p>{{ tr('ui_step' ~ n ~ '_sub') }}</p></div></div>{% endfor %}</div></section>
 {% endmacro %}

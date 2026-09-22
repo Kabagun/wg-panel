@@ -362,11 +362,11 @@ def _script_environment():
     return environment
 
 
-def _run_script(script_name, wg_name, timeout):
+def _run_script(script_name, wg_name, timeout, *arguments):
     script = os.path.join(WG_DIR, script_name)
     try:
         result = subprocess.run(
-            [script, wg_name],
+            [script, wg_name, *arguments],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -390,6 +390,8 @@ def create_device(username, device):
         user = users.get(username)
         if not user or not user.get("approved") or user.get("revoking"):
             return False, "", "User is not approved"
+        if user.get("paused"):
+            return False, "", "VPN access is paused"
         current = get_user_devices(username)
         if device in current:
             return True, client_name(username, device), ""

@@ -25,6 +25,8 @@ if args == ["pubkey"]:
     raise SystemExit(0)
 state = json.loads(state_path.read_text())
 if args == ["show", "wg0", "peers"]:
+    if os.environ.get("MOCK_FAIL_SHOW"):
+        raise SystemExit("mock show failure")
     print("\\n".join(state))
 elif args[:3] == ["set", "wg0", "peer"]:
     key = args[3]
@@ -126,6 +128,18 @@ class RemoveClientRuntimeTests(unittest.TestCase):
         result = self.revoke("alice-phone")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Live peer still exists after removal", result.stderr)
+        self.assertEqual(self.conf.read_text(), before)
+        self.assertEqual(self.state.read_text(), live)
+        self.assertTrue((self.clients / "alice-phone.conf").exists())
+
+    def test_live_inspection_failure_changes_nothing(self):
+        self.prepare(("alice-phone", "bob-tablet"))
+        before = self.conf.read_text()
+        live = self.state.read_text()
+        self.env["MOCK_FAIL_SHOW"] = "1"
+        result = self.revoke("alice-phone")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Cannot inspect live peers before removal", result.stderr)
         self.assertEqual(self.conf.read_text(), before)
         self.assertEqual(self.state.read_text(), live)
         self.assertTrue((self.clients / "alice-phone.conf").exists())

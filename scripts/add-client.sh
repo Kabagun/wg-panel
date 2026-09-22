@@ -44,8 +44,14 @@ if [ -z "$SERVER_ENDPOINT" ]; then
     exit 6
 fi
 
-USED_IPS=$(grep -oE 'AllowedIPs[[:space:]]*=[[:space:]]*10\.0\.0\.[0-9]+' "$WG_CONF" \
-    | grep -oE '[0-9]+$' | sort -un || true)
+USED_IPS=$({
+    grep -h -oE '(AllowedIPs|Address)[[:space:]]*=[[:space:]]*10\.0\.0\.[0-9]+' \
+        "$WG_CONF" 2>/dev/null || true
+    # Paused peers are intentionally absent from active wg0.conf sections. Their
+    # retained client configurations continue to reserve the assigned address.
+    grep -h -oE '(AllowedIPs|Address)[[:space:]]*=[[:space:]]*10\.0\.0\.[0-9]+' \
+        "$CLIENTS_DIR"/*.conf 2>/dev/null || true
+} | grep -oE '[0-9]+$' | sort -un || true)
 NEXT_IP=""
 for candidate in $(seq 2 254); do
     if ! grep -qx "$candidate" <<<"$USED_IPS"; then

@@ -2,8 +2,10 @@ from datetime import UTC, datetime
 
 from flask import flash, redirect, request, url_for
 
+from ..access import access_status, set_user_paused
 from ..auth import admin_required
-from ..core import app, load_users, mutate_users
+from ..core import _lang, _wireguard_lock, app, load_users, mutate_users
+from ..i18n import t
 from ..payments import (
     effective_due_date,
     next_effective_due_date,
@@ -61,7 +63,7 @@ def admin_panel():
             "created_at": user.get("created_at", ""),
         }
         for username, user in users.items()
-        if not user.get("approved") and user.get("role") != "admin"
+        if access_status(user) == "pending"
     ]
     return render_page(
         "admin.html", "ui_overview", pending=pending,
@@ -78,13 +80,46 @@ def admin_users():
         users.append({
             "username": username, "role": user.get("role", "user"),
             "approved": bool(user.get("approved")), "max_devices": limit,
+            "status": access_status(user),
+            "paused": bool(user.get("paused")),
+            "pause_pending": bool(user.get("pause_pending")),
+            "revoking": bool(user.get("revoking")),
             "device_count": len(get_user_devices(username)),
             "telegram_username": normalize_telegram_username(user.get("telegram_username")),
             "payment_enabled": bool(user.get("payment_enabled")),
             "payment_day": user.get("payment_day"), "price": payment_price(limit),
             "created_at": user.get("created_at", ""),
         })
-    return render_page("users.html", "ui_users", users=users)
+    counts = {key: sum(user["status"] == key for user in users)
+              for key in ("active", "paused", "pending", "attention", "revoking")}
+    selected = request.args.get("status", "all")
+    if selected not in {"all", *counts}:
+        selected = "all"
+    visible = users if selected == "all" else [user for user in users if user["status"] == selected]
+    return render_page(
+        "users.html", "ui_users", users=visible, total_users=len(users),
+        status_counts=counts, selected_status=selected,
+    )
+
+
+@app.route("/admin/users/<username>/pause", methods=["POST"])
+@admin_required
+def admin_pause_user(username):
+    """Suspend every device belonging to an approved non-admin account."""
+    ok, _error = set_user_paused(username, True)
+    flash(t("ui_pause_success" if ok else "ui_pause_failed", _lang()).format(user=username),
+          "ok" if ok else "error")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<username>/resume", methods=["POST"])
+@admin_required
+def admin_resume_user(username):
+    """Restore the account's original peer keys and reserved tunnel addresses."""
+    ok, _error = set_user_paused(username, False)
+    flash(t("ui_resume_success" if ok else "ui_resume_failed", _lang()).format(user=username),
+          "ok" if ok else "error")
+    return redirect(url_for("admin_users"))
 
 
 def _limit_from_form():
@@ -203,4 +238,8 @@ def admin_delete_user(username):
 @app.route("/admin/devices")
 @admin_required
 def admin_devices():
-    return render_page("all_devices.html", "ui_all_devices", devices=get_all_devices())
+    with _wireguard_lock:
+        return render_page(
+            "all_devices.html", "ui_all_devices", devices=get_all_devices(),
+            owner_status={name: access_status(user) for name, user in load_users().items()},
+        )

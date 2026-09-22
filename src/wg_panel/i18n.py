@@ -312,6 +312,59 @@ UI_STRINGS = {
     "ui_history_total": ("Total", "Всего"),
 }
 
+UI_STRINGS.update({
+    "ui_access_heading": ("VPN access", "Доступ к VPN"),
+    "ui_devices_count": ("Devices", "Устройства"),
+    "ui_access_admin": ("Administrator", "Администратор"),
+    "ui_access_active": ("Allowed", "Разрешён"),
+    "ui_access_paused": ("Paused", "На паузе"),
+    "ui_access_pending": ("Awaiting approval", "Ждёт одобрения"),
+    "ui_access_attention": ("Needs attention", "Требует внимания"),
+    "ui_access_revoking": ("Deletion incomplete", "Удаление не завершено"),
+    "ui_filter_status": ("Filter users by VPN access", "Фильтр пользователей по доступу к VPN"),
+    "ui_filter_all": ("All", "Все"),
+    "ui_no_users_status": ("No users with this status.", "Пользователей с таким статусом нет."),
+    "ui_pause": ("Pause", "Приостановить"),
+    "ui_resume": ("Resume", "Возобновить"),
+    "ui_retry_pause": ("Retry pause", "Повторить паузу"),
+    "ui_view_config": ("View configuration", "Открыть конфиг"),
+    "ui_saved_config": ("Saved configuration", "Сохранённая конфигурация"),
+    "ui_saved_config_hint": (
+        "You can save this configuration. VPN access will return after the administrator resumes it.",
+        "Конфиг можно сохранить. Доступ к VPN появится после возобновления администратором.",
+    ),
+    "ui_pause_limit_hint": ("Kept while access is paused", "Сохранён на время паузы"),
+    "ui_revoking_help": ("Retry deletion after fixing the error.", "После устранения ошибки повторите удаление."),
+    "ui_pause_admin_help": (
+        "Pause disables VPN on every device. Accounts, configurations and addresses are kept. Payment reminders stay unchanged.",
+        "Пауза отключает VPN на всех устройствах. Аккаунт, конфиги и адреса сохраняются. Напоминания об оплате не меняются.",
+    ),
+    "ui_pause_title": ("VPN access is paused", "Доступ к VPN приостановлен"),
+    "ui_pause_body": (
+        "An administrator has paused VPN on all your devices. Your configurations are saved and will work again when access is restored. No need to import them again. Contact your administrator to resume access.",
+        "Администратор приостановил VPN на всех ваших устройствах. Конфиги сохранены и снова заработают после возобновления доступа. Импортировать их заново не нужно. Для возобновления обратитесь к администратору.",
+    ),
+    "ui_pause_pending_title": ("VPN pause needs attention", "Пауза VPN требует внимания"),
+    "ui_pause_pending_body": (
+        "The pause has been requested, but disabling every device has not been confirmed. Configurations are saved. Contact your administrator.",
+        "Пауза запрошена, но отключение всех устройств пока не подтверждено. Конфиги сохранены. Обратитесь к администратору.",
+    ),
+    "ui_pause_restricted": (
+        "Device changes are unavailable while VPN access is paused.",
+        "Пока доступ к VPN приостановлен, добавление и изменение устройств недоступны.",
+    ),
+    "ui_pause_success": ("VPN paused for {user}. All configurations are kept.", "VPN пользователя {user} приостановлен. Все конфиги сохранены."),
+    "ui_resume_success": ("VPN resumed for {user}. Existing configurations work again.", "VPN пользователя {user} возобновлён. Прежние конфиги снова работают."),
+    "ui_pause_failed": (
+        "Could not confirm the pause for {user}. Check the account status and server logs, then retry.",
+        "Не удалось подтвердить паузу для {user}. Проверьте статус пользователя и журнал сервера, затем повторите действие.",
+    ),
+    "ui_resume_failed": (
+        "Could not resume VPN for {user}. Check the account status and server logs before retrying.",
+        "Не удалось возобновить VPN для {user}. Перед повтором проверьте статус пользователя и журнал сервера.",
+    ),
+})
+
 for _key, (_en, _ru) in UI_STRINGS.items():
     STRINGS["en"][_key] = _en
     STRINGS["ru"][_key] = _ru

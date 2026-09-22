@@ -7,6 +7,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
+from .access import reconcile_paused_users
 from .core import (
     BIND_HOST,
     CLIENTS_DIR,
@@ -149,6 +150,8 @@ def main():
         f"[DEVICE META] total={migration['total']} migrated={migration['migrated']}",
         flush=True,
     )
+    paused_users = reconcile_paused_users()
+    print(f"[VPN PAUSE] users={paused_users}", flush=True)
     safe_dns = reconcile_safe_dns()
     print(
         f"[SAFE DNS] devices={safe_dns['safe_devices']} ips={len(safe_dns['ips'])}",
