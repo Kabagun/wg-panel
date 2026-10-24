@@ -80,7 +80,7 @@ def test_toggle_applies_firewall_before_persisting_metadata(monkeypatch, tmp_pat
         lambda ips, **_kwargs: calls.append(tuple(ips)),
     )
 
-    assert wireguard.set_device_safe_internet("alice-phone", True)
+    assert wireguard.set_device_safe_internet("alice-phone", True, confirmed=True)
     assert calls == [("10.0.0.2",)]
     assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is True
 
@@ -96,10 +96,10 @@ def test_toggle_rolls_firewall_back_when_metadata_persistence_fails(monkeypatch,
     monkeypatch.setattr(
         wireguard,
         "_set_device_safe_internet",
-        lambda *_args: (_ for _ in ()).throw(OSError("read-only metadata")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("read-only metadata")),
     )
 
-    assert not wireguard.set_device_safe_internet("alice-phone", True)
+    assert not wireguard.set_device_safe_internet("alice-phone", True, confirmed=True)
     assert calls == [("10.0.0.2",), ()]
     assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is False
 
@@ -226,10 +226,16 @@ def test_safe_dns_script_is_scoped_to_managed_table():
         encoding="utf-8"
     )
     assert 'TABLE_NAME="wg_panel_safe_dns"' in script
-    assert 'iifname "$WG_INTERFACE_NAME" ip saddr @$SET_NAME udp dport 53 dnat ip to 1.1.1.3:53' in script
-    assert 'iifname "$WG_INTERFACE_NAME" ip saddr @$SET_NAME tcp dport 53 dnat ip to 1.1.1.3:53' in script
+    assert 'DNS_TARGET="1.1.1.3:53"' in script
+    assert 'iifname "$WG_INTERFACE_NAME" ip saddr @$SET_NAME udp dport 53 dnat ip to $DNS_TARGET' in script
+    assert 'iifname "$WG_INTERFACE_NAME" ip saddr @$SET_NAME tcp dport 53 dnat ip to $DNS_TARGET' in script
     assert 'iifname "$WG_INTERFACE_NAME" ip saddr @$SET_NAME tcp dport 853 counter drop' in script
     assert 'iifname "$WG_INTERFACE_NAME" ip saddr @$SET_NAME udp dport 853 counter drop' in script
+    for protocol in ("tcp", "udp"):
+        assert (
+            'iifname "$WG_INTERFACE_NAME" ip saddr @$SET_NAME ip daddr @$DOH_SET_NAME '
+            f'{protocol} dport {{ 443, 5443, 8853, 9953 }} counter drop'
+        ) in script
     assert "delete table" in script
     assert "flush table" not in script
     assert "flush ruleset" not in script

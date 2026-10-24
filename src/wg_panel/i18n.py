@@ -57,7 +57,7 @@ STRINGS = {
         "safe_status_on":  "Enabled",
         "safe_status_off": "Disabled",
         "safe_toggle":   "Use Safe internet",
-        "safe_help":     "Uses Cloudflare Family to block adult and malicious domains. Enabling it is enforced by the VPN server immediately, and newly downloaded configs follow this setting. If you disable it after this device imported a Family DNS config, re-download and re-import the config to change the client DNS. Encrypted DNS and proxies may bypass this protection.",
+        "safe_help":     "Uses Cloudflare Family to block adult and malicious domains. The VPN server enforces protection for every current and future VPN profile of this account, and newly downloaded configs follow this policy. No panel user, including administrators, can disable it. Deleting profiles or recreating the same account does not reset the policy. Recovery requires deliberate manual server access through SSH. Protection applies to traffic through this VPN; removing the VPN profile, using another connection, some encrypted DNS services and proxies may bypass domain filtering.",
         "safe_save":     "Save setting",
         # traffic
         "tr_sub":        "Monthly traffic per device (collected every 60 seconds)",
@@ -152,7 +152,7 @@ STRINGS = {
         "safe_status_on":  "Включён",
         "safe_status_off": "Выключен",
         "safe_toggle":   "Использовать безопасный интернет",
-        "safe_help":     "Cloudflare Family блокирует сайты для взрослых и вредоносные домены. При включении VPN-сервер сразу применяет Family DNS, а новые скачанные конфиги учитывают эту настройку. Если выключить защиту после того, как устройство импортировало конфиг с Family DNS, чтобы изменить DNS на устройстве, скачайте и заново импортируйте конфиг. Зашифрованный DNS и прокси могут обойти эту защиту.",
+        "safe_help":     "Cloudflare Family блокирует сайты для взрослых и вредоносные домены. VPN-сервер применяет защиту ко всем текущим и будущим VPN-профилям этого аккаунта, а новые скачанные конфиги учитывают эту политику. Ни один пользователь панели, включая администратора, не может её выключить. Удаление профилей или повторное создание того же аккаунта не сбрасывает защиту. Для восстановления нужен намеренный ручной доступ к серверу через SSH. Защита действует на трафик через этот VPN: удаление VPN-профиля, другое подключение, некоторые сервисы зашифрованного DNS и прокси позволяют обойти фильтрацию доменов.",
         "safe_save":     "Сохранить настройку",
         # traffic
         "tr_sub":        "Месячный трафик на устройство (собирается каждые 60 секунд)",
@@ -249,6 +249,38 @@ UI_STRINGS = {
     "ui_or_use_config": ("or use the configuration", "или используйте конфигурацию"),
     "ui_safe_summary": ("Blocks adult websites and malicious domains.", "Блокирует сайты для взрослых и вредоносные домены."),
     "ui_safe_details": ("How protection works", "Как работает защита"),
+    "safe_account_title": ("Safe internet for the account", "Безопасный интернет для аккаунта"),
+    "safe_account_scope": ("All current and future VPN profiles of {owner}.", "Все текущие и будущие VPN-профили аккаунта {owner}."),
+    "safe_account_toggle": ("Protect all account profiles permanently", "Закрепить защиту всех профилей аккаунта"),
+    "safe_account_locked_status": ("Account locked", "Закреплено за аккаунтом"),
+    "safe_account_unlocked_status": ("Not locked", "Не закреплено"),
+    "safe_legacy_account_hint": (
+        "This profile is already protected. Confirm to extend permanent protection to all current and future profiles of this account without turning filtering off.",
+        "Этот профиль уже защищён. Подтвердите закрепление защиты за всеми текущими и будущими профилями аккаунта без отключения фильтрации.",
+    ),
+    "safe_confirm_title": ("Protect this entire account permanently?", "Закрепить защиту за всем аккаунтом?"),
+    "safe_confirm_enable": ("Protect the entire account", "Защитить весь аккаунт"),
+    "safe_lock_action": ("Protect all account profiles", "Закрепить защиту аккаунта"),
+    "safe_confirm_warning": (
+        "After confirming, Safe internet will permanently protect ALL current and future VPN profiles of this account. No panel user, including administrators, can disable it. Deleting profiles or recreating the same account will not reset protection. Resetting it requires manual server access through SSH. Continue?",
+        "После подтверждения безопасный интернет будет постоянно защищать ВСЕ текущие и будущие VPN-профили этого аккаунта. Ни один пользователь панели, включая администратора, не сможет его выключить. Удаление профилей или повторное создание того же аккаунта не сбросит защиту. Для сброса нужен ручной доступ к серверу через SSH. Продолжить?",
+    ),
+    "safe_locked": (
+        "Protection is locked for all current and future VPN profiles of this account. No panel user, including administrators, can turn it off. Recovery requires manual server access through SSH.",
+        "Защита закреплена за всеми текущими и будущими VPN-профилями этого аккаунта. Ни один пользователь панели, включая администратора, не может её выключить. Для восстановления нужен ручной доступ к серверу через SSH.",
+    ),
+    "flash_safe_confirmation": (
+        "Confirm permanent Safe internet protection for all current and future profiles of this account before enabling it.",
+        "Перед включением подтвердите постоянную защиту всех текущих и будущих профилей этого аккаунта.",
+    ),
+    "flash_safe_locked": (
+        "Safe internet cannot be disabled in the panel. Account protection can only be reset through manual server access via SSH.",
+        "Безопасный интернет нельзя выключить в панели. Защиту аккаунта можно сбросить только вручную на сервере через SSH.",
+    ),
+    "flash_safe_account_on": (
+        "Safe internet is permanently enabled for all current and future VPN profiles of this account.",
+        "Безопасный интернет закреплён за всеми текущими и будущими VPN-профилями этого аккаунта.",
+    ),
     "ui_saving": ("Saving…", "Сохраняем…"),
     "ui_switch_requires_js": ("Enable JavaScript in your browser to change this setting.", "Для изменения этой настройки включите JavaScript в браузере."),
     "ui_scan": ("Scan with WireGuard", "Отсканируйте в WireGuard"),

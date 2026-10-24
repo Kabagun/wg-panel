@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
-{% from 'components.html' import heading, metric, flashes, search, no_results, guide, pause_notice, access_badge with context %}
+{% from 'components.html' import heading, metric, flashes, search, no_results, guide, pause_notice, access_badge, account_protection with context %}
 {% block content %}
 {% call heading(tr('ui_devices'), tr('ui_dash_sub'), 'WIREGUARD / PERSONAL VPN') %}{% if can_add %}<a href="{{ url_for('add_device') }}" class="button primary">{{ icon('plus', 18) }}{{ tr('ui_add') }}</a>{% endif %}{% endcall %}
 {{ flashes() }}
 {% if paused %}{{ pause_notice(pause_pending) }}{% endif %}
 <div class="metrics-grid">{{ metric(tr('ui_configured'), devices|length, 'devices', (devices|length|string) ~ ' / ' ~ limit_text) }}{% if paused %}{{ metric(tr('ui_limit'), limit_text, 'lock', tr('ui_pause_limit_hint'), 'slate') }}{% else %}{{ metric(tr('ui_available'), available, 'plus', tr('ui_available_hint'), 'slate') }}{% endif %}{{ metric(tr('ui_protected'), protected_count, 'shield', tr('ui_device_count'), 'green') }}</div>
+{{ account_protection(account_locked, url_for('update_account_safe_internet'), current_username, paused) }}
 <section class="devices-section" data-filter-scope>
   <div class="section-heading"><div><h2>{{ tr('ui_your_devices') }} <span class="count-badge">{{ devices|length }}</span></h2><p>{{ tr('ui_manage_hint') }}</p></div>{% if devices %}{{ search(tr('ui_search')) }}{% endif %}</div>
   <div class="device-grid">

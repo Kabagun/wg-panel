@@ -74,13 +74,54 @@ document.querySelectorAll("[data-password-target]").forEach((button) => {
   });
 });
 
+function confirmSafeInternet(message) {
+  const dialog = document.getElementById("safe-internet-dialog");
+  if (!dialog?.showModal) return Promise.resolve(window.confirm(message));
+  return new Promise((resolve) => {
+    dialog.returnValue = "";
+    dialog.querySelector("[data-safe-cancel]").onclick = () => dialog.close("cancel");
+    dialog.querySelector("[data-safe-accept]").onclick = () => dialog.close("confirm");
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), {once: true});
+    dialog.showModal();
+    dialog.querySelector("[data-safe-cancel]").focus();
+  });
+}
+
 document.querySelectorAll("[data-auto-submit]").forEach((form) => {
   const toggle = form.querySelector("[data-auto-toggle]");
+  const lockButton = form.querySelector("[data-safe-lock]");
+  const savedEnabled = toggle.checked;
   toggle.disabled = false;
+  if (lockButton) {
+    lockButton.disabled = false;
+    lockButton.addEventListener("click", () => { toggle.checked = true; });
+  }
   toggle.addEventListener("change", () => form.requestSubmit());
   form.addEventListener("submit", (event) => {
     if (form.dataset.saving === "true") {
       event.preventDefault();
+      return;
+    }
+    const consent = form.querySelector('[name="safe_internet_confirmed"]');
+    if (toggle.checked && form.dataset.safeConfirmation && consent?.value !== "on") {
+      event.preventDefault();
+      if (form.dataset.confirming === "true") return;
+      form.dataset.confirming = "true";
+      toggle.disabled = true;
+      if (lockButton) lockButton.disabled = true;
+      confirmSafeInternet(form.dataset.safeConfirmation).then((accepted) => {
+        delete form.dataset.confirming;
+        toggle.disabled = false;
+        if (lockButton) lockButton.disabled = false;
+        toggle.checked = accepted || savedEnabled;
+        if (accepted) {
+          consent.value = "on";
+          form.requestSubmit();
+        } else {
+          consent.value = "";
+          toggle.focus();
+        }
+      });
       return;
     }
     // Snapshot the choice before disabling the switch; disabled inputs are not submitted.
@@ -93,6 +134,7 @@ document.querySelectorAll("[data-auto-submit]").forEach((form) => {
       form.append(value);
     }
     toggle.disabled = true;
+    if (lockButton) lockButton.disabled = true;
     form.dataset.saving = "true";
     form.setAttribute("aria-busy", "true");
     form.querySelector('[role="status"]').textContent = form.dataset.savingLabel;
@@ -100,7 +142,7 @@ document.querySelectorAll("[data-auto-submit]").forEach((form) => {
 });
 // A back/forward cache restore must reconcile state instead of showing an old switch/config.
 window.addEventListener("pageshow", (event) => {
-  if (event.persisted && document.querySelector("[data-auto-submit]")) window.location.reload();
+  if (event.persisted && document.querySelector("[data-device-policy]")) window.location.reload();
 });
 
 function copyFallback(text) {

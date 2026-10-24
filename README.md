@@ -8,22 +8,58 @@ optional Telegram notifications. New registrations require a public Telegram
 username. Administrators can opt individual users into monthly payment
 reminders without exposing payment data in customer dashboards.
 
-Users can enable **Safe internet** separately for each device. Its downloaded
-config and QR code then use Cloudflare Family DNS (`1.1.1.3`, `1.0.0.3`) to
-block adult and malicious domains. When the installed nftables helper is
-available, the server also enforces this preference for that device's IPv4
+Users can permanently enable **Safe internet for their entire account**. Every
+current and future VPN profile then inherits protection. Downloaded configs and
+QR codes use Cloudflare Family DNS (`1.1.1.3`, `1.0.0.3`) to block adult and
+malicious domains. The installed nftables helper enforces each protected IPv4
 WireGuard address: DNS TCP/UDP port 53 is redirected to Cloudflare Family and
 DNS-over-TLS port 853 is blocked. Ordinary WireGuard clients are not matched by
 the managed firewall set. Downloaded configs and QR codes continue to reflect
-the selected DNS. Enabling server enforcement is immediate; after disabling,
-a device that previously imported the Family DNS config must import the updated
-config if its local DNS setting should change as well.
+the selected DNS. Enabling server enforcement is immediate. After a
+manual server reset, a device that previously imported the Family
+DNS config must import the updated config to change its local DNS setting.
+
+The dashboard and device pages show the account scope before confirmation. Both
+`POST /account/safe-internet` and the existing authorized device policy endpoint
+require `safe_internet=on` and `safe_internet_confirmed=on` for first activation.
+The account entry is saved only after protection covers every current owner
+address. Stale forms, direct POSTs, administrator roles and forged override fields
+cannot disable it. Existing per-device opt-ins remain effective without silently
+locking their accounts; **Protect all account profiles** confirms account policy
+in place without any off interval. Other owners retain their existing choices.
+
+Permanent policy lives independently in `data/account_policy.json`, keyed by
+normalized login name, with schema `{"version":1,"owners":{"example":{"safe_internet_locked":true}}}`.
+Deleting devices, changing profile names, deleting an account, or registering the
+same login again does not clear this registry. Downloads, QR codes, startup,
+pause/resume, deletion and future provisioning derive effective protection from
+both this registry and legacy device preferences. Malformed policy fails closed.
+Back up this file together with users, device metadata and configurations.
+Resetting a policy requires deliberate manual server maintenance through SSH;
+there is no browser reset path.
+
+New protected profiles use `add-client.sh NAME --prepare`, which reserves the
+address and writes a restart-safe paused peer envelope without a live peer.
+The panel publishes an incomplete provisioning checkpoint, adds the allocated
+address to server enforcement, then calls `set-client-state.sh NAME resume`.
+Incomplete profiles cannot be viewed or downloaded. Failed provisioning removes
+the peer before dropping its safe address; a failed cleanup retains the protected
+checkpoint for manual recovery. The permanent owner policy is never rolled back
+by a failed device creation. Install the updated helper **before** deploying the
+account-policy application: the panel checks its version marker without running
+an old helper and verifies the actual inactive envelope before resume.
+
+These controls apply to one login identity and traffic through this VPN. An
+administrator can still create a different unrelated identity. Removing the VPN
+profile or using another connection also lies outside the panel's control and
+requires managed-device controls. Some encrypted DNS services and proxies can
+still bypass domain filtering.
 
 ## Interface
 
 The panel uses a light, responsive interface in Russian or English, selected by
 the browser language. It includes device cards, local device/user search,
-QR/config setup, per-device Safe internet controls, and administrator pages for
+QR/config setup, account-wide Safe internet controls, and administrator pages for
 approval, limits, payment reminders and monthly traffic. Mobile tables become
 labelled rows, while navigation collapses into a menu.
 
@@ -39,10 +75,11 @@ Templates are rendered once with Jinja autoescaping. Styles, icons and JavaScrip
 are served locally with the Python package; no CDN, frontend build or additional
 runtime is required. Forms retain their existing POST/CSRF and ownership checks.
 JavaScript adds search, password visibility, accessible deletion confirmation,
-clipboard feedback and immediate Safe internet submission. The switch saves
-through the existing CSRF-protected form and reloads the confirmed state, QR and
-configuration together. It requires JavaScript; other forms and navigation
-remain available without it.
+clipboard feedback and Safe internet confirmation. Canceling the first-enable
+dialog leaves protection unchanged; confirming saves through the existing
+CSRF-protected form and reloads the state, QR and configuration together. Locked
+switches stay disabled for every web role. The switch requires JavaScript; other
+forms and navigation remain available without it.
 
 ## What Is Versioned
 
@@ -54,7 +91,8 @@ remain available without it.
 
 Runtime data is intentionally not versioned:
 
-- `/opt/wg-panel/data/` with users, traffic, device metadata, and Flask secret.
+- `/opt/wg-panel/data/` with users, traffic, device metadata, permanent account
+  policies, and Flask secret.
 - `/etc/wireguard/*.key`, `/etc/wireguard/wg0.conf`, and client configs.
 - Runtime nftables state (including `inet wg_panel_safe_dns`).
 - Web server, TLS, and systemd configuration.
@@ -133,7 +171,7 @@ rewrite metadata. To inspect production safely before restarting, run:
 ```
 
 Startup also reconciles the server-side Safe internet policy from persisted
-device metadata. If any device is marked safe but `/etc/wireguard/safe-dns.sh`
+device metadata and permanent account policy. If any profile is effectively safe but `/etc/wireguard/safe-dns.sh`
 or nftables cannot apply the policy, startup aborts rather than serving an
 unenforced configuration. With no safe devices, a fresh install may start
 before the helper has ever created its managed table. The helper owns only
@@ -144,6 +182,16 @@ the current managed state without changing it, run:
 ```bash
 nft list table inet wg_panel_safe_dns
 ```
+
+To use an operator-managed filtering DNS server instead of Cloudflare Family,
+create the root-owned file `/etc/wireguard/safe-dns-target` containing one
+`IPv4:port` endpoint, for example `10.0.0.1:18004`, then reconcile Safe internet.
+The helper validates the entire endpoint before applying any nftables changes.
+The resolver must be running and reachable through the host firewall first.
+Only devices in the managed safe-client set are redirected; other clients retain
+their existing DNS. Downloaded configurations still use the Family DNS addresses,
+which the server redirects to the configured endpoint for opted-in devices.
+Removing this file restores the default destination on the next reconciliation.
 
 Install the helper before provisioning new devices. Provisioning reconciles the
 managed table first so an address left fail-closed by an earlier cleanup error
@@ -184,7 +232,8 @@ If revocation fails, the account remains disabled and cannot be approved again;
 repair the reported helper/storage problem and retry deletion. Unowned client
 configs or unresolved peer metadata block deletion until ownership is recovered.
 Provisioning, migration, policy changes and protected device requests share the
-same transaction boundary. Safe internet remains a per-device setting.
+same transaction boundary. Permanent Safe internet policy is inherited from the
+owner registry, independently of account and device deletion.
 
 VPN pause is separate from approval and deletion. Install the updated add/remove
 helpers **and** `set-client-state.sh` together before using it. Pausing removes

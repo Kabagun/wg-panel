@@ -4,6 +4,34 @@
 {% endfor %}
 {% endmacro %}
 
+{% macro account_protection(locked, action, owner, paused=false, legacy_enabled=false) %}
+<section class="panel protection-settings" data-device-policy>
+  <form method="post" action="{{ action }}" aria-labelledby="safe-internet-title"{% if not paused and not locked %} data-auto-submit data-safe-confirmation="{{ tr('safe_confirm_warning') }}"{% endif %} data-saving-label="{{ tr('ui_saving') }}">
+    {{ csrf() }}<input type="hidden" name="safe_internet_confirmed" value="">
+    <div class="protection-row">
+      <span class="protection-icon">{{ icon('shield', 23) }}</span>
+      <div class="protection-description"><h2 id="safe-internet-title">{{ tr('safe_account_title') }}</h2><p>{{ tr('safe_account_scope').format(owner=owner) }}</p></div>
+      <div class="protection-switch">
+        <span class="tag {{ 'tag-ok' if locked else 'tag-pend' }}" role="status" aria-live="polite">{{ tr('safe_account_locked_status' if locked else 'safe_account_unlocked_status') }}</span>
+        <label class="switch-label" for="safe-internet"><input id="safe-internet" type="checkbox" role="switch" name="safe_internet"{% if locked %} checked{% endif %} aria-describedby="safe-internet-help{% if locked %} safe-internet-lock{% endif %}" data-auto-toggle disabled><span class="switch-track" aria-hidden="true"></span><span class="sr-only">{{ tr('safe_account_toggle') }}</span></label>
+      </div>
+    </div>
+    {% if locked %}<p class="field-help protection-lock" id="safe-internet-lock">{{ icon('lock', 14) }}{{ tr('safe_locked') }}</p>
+    {% else %}
+      {% if legacy_enabled %}<p class="field-help protection-lock">{{ tr('safe_legacy_account_hint') }}</p>{% endif %}
+      <p class="field-help protection-lock">{{ tr('safe_confirm_warning') }}</p>
+      {% if not paused %}<button type="submit" class="button secondary small protection-lock-button" data-safe-lock disabled>{{ tr('safe_lock_action') }}</button>{% endif %}
+      <noscript><p class="field-help">{{ tr('ui_switch_requires_js') }}</p></noscript>
+    {% endif %}
+    <details class="protection-details"><summary>{{ tr('ui_safe_details') }}{{ icon('chevron', 14) }}</summary><p id="safe-internet-help">{{ tr('safe_help') }}</p></details>
+  </form>
+</section>
+{% if not locked %}<dialog id="safe-internet-dialog" class="confirm-dialog" aria-labelledby="safe-confirm-title" aria-describedby="safe-confirm-description">
+  <div class="dialog-icon">{{ icon('shield', 26) }}</div><h2 id="safe-confirm-title">{{ tr('safe_confirm_title') }}</h2><p id="safe-confirm-description">{{ tr('safe_confirm_warning') }}</p>
+  <div class="dialog-actions"><button type="button" class="button secondary" data-safe-cancel autofocus>{{ tr('ui_cancel') }}</button><button type="button" class="button primary" data-safe-accept>{{ tr('safe_confirm_enable') }}</button></div>
+</dialog>{% endif %}
+{% endmacro %}
+
 {% macro heading(title, description, eyebrow='') %}
 <div class="page-heading"><div>{% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}<h1>{{ title }}</h1><p class="page-description">{{ description }}</p></div>{% if caller is defined %}<div class="heading-actions">{{ caller() }}</div>{% endif %}</div>
 {% endmacro %}

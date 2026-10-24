@@ -1,5 +1,6 @@
 from flask import Response, flash, redirect, request, session, url_for
 
+from ..account_policy import account_safe_internet_locked
 from ..auth import approved_required
 from ..core import _lang, _now, app, load_users
 from ..i18n import t
@@ -13,7 +14,7 @@ from ..wireguard import (
     get_device,
     get_user_devices,
     qr_svg_b64,
-    set_device_safe_internet,
+    set_account_safe_internet,
 )
 
 
@@ -22,6 +23,7 @@ from ..wireguard import (
 def dashboard():
     username = session["user"]
     user = load_users().get(username, {})
+    account_locked = account_safe_internet_locked(username)
     device_names = get_user_devices(username)
     max_devices = user.get("max_devices", 3)
     devices = []
@@ -31,7 +33,7 @@ def dashboard():
         devices.append({
             "device": name,
             "wg_name": wg_name,
-            "safe_internet": bool(metadata.get("safe_internet")),
+            "safe_internet": bool(metadata.get("safe_internet")) or account_locked,
         })
     used = len(devices)
     return render_page(
@@ -42,6 +44,7 @@ def dashboard():
         can_add=not user.get("paused") and (max_devices == -1 or used < max_devices),
         paused=bool(user.get("paused")), pause_pending=bool(user.get("pause_pending")),
         protected_count=sum(device["safe_internet"] for device in devices),
+        account_locked=account_locked,
     )
 
 
@@ -120,12 +123,29 @@ def update_device_safe_internet(wg_name):
         flash("Device not found or access denied.", "error")
         return redirect(url_for("dashboard"))
 
+    _update_account_safe_internet(device["owner"])
+    return redirect(url_for("view_device", wg_name=wg_name))
+
+
+def _update_account_safe_internet(owner):
+    """Both entry points activate owner policy; neither accepts an override."""
     enabled = request.form.get("safe_internet") == "on"
-    if set_device_safe_internet(wg_name, enabled):
-        flash(t("flash_safe_on" if enabled else "flash_safe_off", _lang()), "ok")
+    confirmed = request.form.get("safe_internet_confirmed") == "on"
+    if not enabled:
+        flash(t("flash_safe_locked", _lang()), "error")
+    elif not account_safe_internet_locked(owner) and not confirmed:
+        flash(t("flash_safe_confirmation", _lang()), "error")
+    elif set_account_safe_internet(owner, confirmed=confirmed):
+        flash(t("flash_safe_account_on", _lang()), "ok")
     else:
         flash(t("flash_safe_error", _lang()), "error")
-    return redirect(url_for("view_device", wg_name=wg_name))
+
+
+@app.route("/account/safe-internet", methods=["POST"])
+@approved_required
+def update_account_safe_internet():
+    _update_account_safe_internet(session["user"])
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/device/<wg_name>/download")

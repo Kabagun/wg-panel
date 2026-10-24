@@ -1,8 +1,18 @@
 #!/bin/bash
+# WG-PANEL-PREPARE-PROTOCOL v1
 set -Eeuo pipefail
 umask 077
 
 CLIENT_NAME="${1:-}"
+PREPARE_ONLY=0
+DNS_SERVERS="1.1.1.1, 8.8.8.8"
+if [ "${2:-}" = "--prepare" ] && [ "$#" -eq 2 ]; then
+    PREPARE_ONLY=1
+    DNS_SERVERS="1.1.1.3, 1.0.0.3"
+elif [ "$#" -ne 1 ]; then
+    echo "ERROR: Usage: add-client.sh NAME [--prepare]" >&2
+    exit 2
+fi
 if [[ ! "$CLIENT_NAME" =~ ^[a-z0-9][a-z0-9_-]{0,127}$ ]]; then
     echo "ERROR: Invalid client name" >&2
     exit 2
@@ -19,6 +29,12 @@ for command_name in wg flock ip awk grep mktemp; do
         exit 3
     }
 done
+if [ "$PREPARE_ONLY" -eq 1 ]; then
+    command -v python3 >/dev/null || {
+        echo "ERROR: Required command 'python3' is unavailable" >&2
+        exit 3
+    }
+fi
 
 install -d -m 700 "$CLIENTS_DIR"
 exec 9>"$WG_DIR/.wg-panel.lock"
@@ -99,7 +115,7 @@ cat >"$CLIENT_TMP" <<EOF
 [Interface]
 PrivateKey = $CLIENT_PRIV
 Address = 10.0.0.$NEXT_IP/32
-DNS = 1.1.1.1, 8.8.8.8
+DNS = $DNS_SERVERS
 
 [Peer]
 PublicKey = $SERVER_PUB
@@ -109,7 +125,7 @@ AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 EOF
 
-cat >>"$WG_TMP" <<EOF
+PEER_BLOCK=$(cat <<EOF
 
 # $CLIENT_NAME
 [Peer]
@@ -117,10 +133,21 @@ PublicKey = $CLIENT_PUB
 PresharedKey = $CLIENT_PSK
 AllowedIPs = 10.0.0.$NEXT_IP/32
 EOF
+)
 
-wg set "$WG_INTERFACE_NAME" peer "$CLIENT_PUB" preshared-key "$PSK_TMP" \
-    allowed-ips "10.0.0.$NEXT_IP/32"
-LIVE_ADDED=1
+if [ "$PREPARE_ONLY" -eq 1 ]; then
+    # Restart-safe comments keep this peer inactive until the panel has
+    # installed account DNS enforcement and explicitly resumes it.
+    PEER_DATA=$(printf '%s\n' "$PEER_BLOCK" | python3 -c \
+        'import base64,sys; print(base64.b64encode(sys.stdin.buffer.read()).decode("ascii"))')
+    printf '\n# WG-PANEL-PAUSED-BEGIN v1 %s\n# WG-PANEL-PAUSED-DATA %s\n# WG-PANEL-PAUSED-END v1 %s\n' \
+        "$CLIENT_PUB" "$PEER_DATA" "$CLIENT_PUB" >>"$WG_TMP"
+else
+    printf '\n%s\n' "$PEER_BLOCK" >>"$WG_TMP"
+    wg set "$WG_INTERFACE_NAME" peer "$CLIENT_PUB" preshared-key "$PSK_TMP" \
+        allowed-ips "10.0.0.$NEXT_IP/32"
+    LIVE_ADDED=1
+fi
 chmod 600 "$WG_TMP" "$CLIENT_TMP"
 mv -f -- "$WG_TMP" "$WG_CONF"
 WG_REPLACED=1

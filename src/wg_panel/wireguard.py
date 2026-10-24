@@ -4,6 +4,13 @@ import os
 import re
 import subprocess
 
+from .account_policy import (
+    AccountPolicyError,
+    account_safe_internet_locked,
+    effective_safe_internet,
+    load_account_policies,
+    save_account_policies,
+)
 from .core import (
     CLIENTS_DIR,
     WG_DIR,
@@ -76,6 +83,11 @@ def _migrate_device_metadata(dry_run):
         current = meta.get(wg_name, {})
         owner = current.get("owner")
         device = current.get("device")
+        if current.get("revoked"):
+            # A restored file is not authority to revive a revoked peer or to
+            # discard its permanent protection checkpoint.
+            unowned.append(wg_name)
+            continue
         if owner in users and isinstance(device, str) and device:
             current["vpn_type"] = "wireguard"
             current.setdefault("safe_internet", False)
@@ -121,7 +133,10 @@ def _migrate_device_metadata(dry_run):
         )
     if not dry_run:
         for name in stale:
-            if not users.get(meta[name].get("owner"), {}).get("revoking"):
+            if (
+                not meta[name].get("safe_internet_locked")
+                and not users.get(meta[name].get("owner"), {}).get("revoking")
+            ):
                 meta.pop(name, None)
         save_device_meta(meta)
         for wg_name in config_names:
@@ -142,7 +157,10 @@ def _get_all_devices():
     result = []
     for wg_name, item in meta.items():
         path = _config_path(wg_name)
-        if path and os.path.exists(path) and item.get("owner") and item.get("device"):
+        if (
+            path and os.path.exists(path) and not item.get("revoked")
+            and item.get("owner") and item.get("device")
+        ):
             result.append((item["owner"], item["device"], wg_name))
     return sorted(result, key=lambda item: (item[0], item[1], item[2]))
 
@@ -161,11 +179,21 @@ def client_name(username, device):
 def get_device(wg_name):
     item = load_device_meta().get(wg_name)
     path = _config_path(wg_name)
-    if not item or item.get("revoked") or not path or not os.path.exists(path):
+    if (
+        not item or item.get("revoked") or item.get("provisioning")
+        or not path or not os.path.exists(path)
+    ):
         return None
     if not item.get("owner") or not item.get("device"):
         return None
-    return {"wg_name": wg_name, **item, "safe_internet": bool(item.get("safe_internet"))}
+    account_locked = account_safe_internet_locked(item["owner"])
+    if account_locked and item.get("vpn_type", "wireguard") != "wireguard":
+        return None
+    return {
+        "wg_name": wg_name, **item,
+        "safe_internet": effective_safe_internet(item),
+        "account_safe_internet_locked": account_locked,
+    }
 
 
 def user_owns_device(username, wg_name):
@@ -189,17 +217,21 @@ def _client_ipv4(wg_name):
     return None
 
 
-def _safe_dns_ips(meta, excluded=None, override=None):
+def _safe_dns_ips(meta, excluded=None, override=None, policies=None):
     """Return the exact IPv4 set represented by Safe internet metadata."""
     ips = []
+    if policies is None:
+        policies = load_account_policies()
     for name, item in meta.items():
         if name == excluded or item.get("revoked"):
             continue
-        enabled = bool(item.get("safe_internet"))
+        enabled = effective_safe_internet(item, policies)
         if override and name in override:
-            enabled = bool(override[name])
+            enabled = bool(override[name]) or account_safe_internet_locked(item.get("owner"), policies)
         if not enabled:
             continue
+        if item.get("vpn_type", "wireguard") != "wireguard":
+            raise SafeDnsEnforcementError("Safe internet requires a WireGuard profile")
         address = _client_ipv4(name)
         if not address:
             raise SafeDnsEnforcementError(
@@ -229,7 +261,8 @@ def reconcile_safe_dns(*, require_helper=None, allow_unavailable=False):
     """
     with _wireguard_lock:
         meta = load_device_meta()
-        ips = _safe_dns_ips(meta)
+        policies = load_account_policies()
+        ips = _safe_dns_ips(meta, policies=policies)
         if require_helper is None:
             require_helper = bool(ips)
         _sync_safe_dns(
@@ -239,14 +272,62 @@ def reconcile_safe_dns(*, require_helper=None, allow_unavailable=False):
         )
         return {
             "safe_devices": sum(
-                bool(item.get("safe_internet")) and not item.get("revoked", False)
+                effective_safe_internet(item, policies) and not item.get("revoked", False)
                 for item in meta.values()
             ),
             "ips": ips,
         }
 
 
-def set_device_safe_internet(wg_name, enabled):
+def set_account_safe_internet(owner, *, confirmed=False):
+    """Enforce every current profile before permanently locking this owner.
+
+    The owner key is the normalized login name, deliberately independent of the
+    user's replaceable account_id. Deleting/recreating that login inherits it.
+    Only deliberate SSH maintenance can remove the registry entry.
+    """
+    with _wireguard_lock:
+        user = load_users().get(owner)
+        if not user or not user.get("approved") or user.get("revoking"):
+            return False
+        if not SAFE_NAME_RE.fullmatch(owner):
+            return False
+        policies = load_account_policies()
+        already_locked = account_safe_internet_locked(owner, policies)
+        if not already_locked and not confirmed:
+            return False
+        desired = {**policies, owner: {"safe_internet_locked": True}}
+        meta = load_device_meta()
+        try:
+            previous_ips = _safe_dns_ips(meta, policies=policies)
+            desired_ips = _safe_dns_ips(meta, policies=desired)
+            _sync_safe_dns(desired_ips, allow_unavailable=bool(app.config.get("TESTING")))
+        except SafeDnsEnforcementError as exc:
+            logger.error("Account Safe internet enforcement failed: %s", exc)
+            return False
+        if already_locked:
+            return True
+        try:
+            save_account_policies(desired)
+        except (OSError, ValueError, AccountPolicyError) as exc:
+            logger.error("Account Safe internet policy persistence failed: %s", exc)
+            # Atomic replacement may have committed before a final chmod or
+            # fsync reported an error. Never roll back enforcement beneath a
+            # lock that is already durably visible.
+            try:
+                if account_safe_internet_locked(owner):
+                    return True
+            except AccountPolicyError:
+                return False
+            try:
+                _sync_safe_dns(previous_ips, allow_unavailable=bool(app.config.get("TESTING")))
+            except SafeDnsEnforcementError as rollback_exc:
+                logger.critical("Account Safe internet rollback failed: %s", rollback_exc)
+            return False
+        return True
+
+
+def set_device_safe_internet(wg_name, enabled, *, confirmed=False, allow_locked_disable=False):
     """Persist Safe internet only after server enforcement succeeds.
 
     The firewall is reconciled before metadata changes. If metadata persistence
@@ -261,7 +342,13 @@ def set_device_safe_internet(wg_name, enabled):
         current = meta.get(wg_name)
         if not current:
             return False
+        if not enabled and account_safe_internet_locked(current.get("owner")):
+            return False
         was_enabled = bool(current.get("safe_internet"))
+        if enabled and not was_enabled and not confirmed:
+            return False
+        if not enabled and current.get("safe_internet_locked") and not allow_locked_disable:
+            return False
         try:
             previous_ips = _safe_dns_ips(meta)
             desired_ips = _safe_dns_ips(meta, override={wg_name: enabled})
@@ -269,9 +356,14 @@ def set_device_safe_internet(wg_name, enabled):
             logger.warning("Safe internet state rejected for %s: %s", wg_name, exc)
             return False
 
-        # Reconciliation on an already-enabled device repairs drift without
-        # changing metadata. Disabling an already-disabled device is a no-op.
-        if was_enabled == enabled:
+        # A legacy enabled device may explicitly confirm its permanent lock
+        # without an unprotected interval. Plain retries only repair drift.
+        changes_lock = (
+            enabled and confirmed and not current.get("safe_internet_locked")
+        ) or (
+            not enabled and current.get("safe_internet_locked") and allow_locked_disable
+        )
+        if was_enabled == enabled and not changes_lock:
             if not enabled:
                 return True
             try:
@@ -288,7 +380,12 @@ def set_device_safe_internet(wg_name, enabled):
             return False
 
         try:
-            changed = _set_device_safe_internet(wg_name, enabled)
+            changed = _set_device_safe_internet(
+                wg_name,
+                enabled,
+                confirmed=confirmed,
+                allow_locked_disable=allow_locked_disable,
+            )
         except Exception as exc:  # noqa: BLE001 - every storage failure must trigger rollback.
             changed = False
             logger.error("Safe internet metadata update failed for %s: %s", wg_name, exc)
@@ -314,7 +411,9 @@ def get_config(wg_name):
         return None
 
     device = get_device(wg_name)
-    dns_servers = SAFE_DNS_SERVERS if device and device["safe_internet"] else DEFAULT_DNS_SERVERS
+    if not device:
+        return None
+    dns_servers = SAFE_DNS_SERVERS if device["safe_internet"] else DEFAULT_DNS_SERVERS
     return _render_config_dns(config, dns_servers)
 
 
@@ -381,6 +480,60 @@ def _run_script(script_name, wg_name, timeout, *arguments):
     return True, ""
 
 
+def _supports_prepared_clients():
+    """Inspect versioned source before any helper mutation, including on skew."""
+    try:
+        with open(os.path.join(WG_DIR, "add-client.sh"), encoding="utf-8") as handle:
+            return "# WG-PANEL-PREPARE-PROTOCOL v1" in handle.read(512).splitlines()
+    except (OSError, UnicodeError):
+        return False
+
+
+def _is_prepared_client(wg_name):
+    """Recognize one inactive persistent envelope before enabling a new peer."""
+    try:
+        with open(os.path.join(WG_DIR, "wg0.conf"), encoding="utf-8") as handle:
+            config = handle.read()
+        envelopes = re.findall(
+            r"(?m)^# WG-PANEL-PAUSED-BEGIN v1 (\S+)\n"
+            r"# WG-PANEL-PAUSED-DATA ([A-Za-z0-9+/]*={0,2})\n"
+            r"# WG-PANEL-PAUSED-END v1 \1$", config,
+        )
+        matches = []
+        address = _client_ipv4(wg_name)
+        for public_key, encoded in envelopes:
+            decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+            if f"# {wg_name}" not in decoded.splitlines():
+                continue
+            if (
+                re.findall(r"(?m)^\[[^\]\r\n]+\]$", decoded) != ["[Peer]"]
+                or re.findall(r"(?m)^PublicKey = (.+)$", decoded) != [public_key]
+                or re.findall(r"(?m)^AllowedIPs = (.+)$", decoded) != [f"{address}/32"]
+                or re.search(
+                    rf"(?m)^\s*PublicKey\s*=\s*{re.escape(public_key)}\s*(?:#.*)?$", config,
+                )
+            ):
+                return False
+            matches.append(public_key)
+        return len(matches) == 1
+    except (OSError, ValueError, UnicodeError):
+        return False
+
+
+def _rollback_provision(wg_name, previous_meta):
+    """Remove the peer before dropping its inherited safe address or checkpoint."""
+    ok, error = _run_script("remove-client.sh", wg_name, 30)
+    path = _config_path(wg_name)
+    if not ok or (path and os.path.exists(path)):
+        return False, error or "Prepared profile cleanup is incomplete"
+    try:
+        save_device_meta(previous_meta)
+        reconcile_safe_dns(allow_unavailable=bool(app.config.get("TESTING")))
+    except (OSError, SafeDnsEnforcementError) as exc:
+        return False, str(exc)
+    return True, ""
+
+
 def create_device(username, device):
     """Provision a device under one process-wide quota/IP transaction."""
     if not SAFE_NAME_RE.fullmatch(username) or not SAFE_NAME_RE.fullmatch(device):
@@ -392,9 +545,19 @@ def create_device(username, device):
             return False, "", "User is not approved"
         if user.get("paused"):
             return False, "", "VPN access is paused"
+        account_locked = account_safe_internet_locked(username)
+        if not account_locked and any(
+            item.get("owner") == username and item.get("device") == device
+            and item.get("safe_internet_locked") and item.get("revoked")
+            for item in load_device_meta().values()
+        ):
+            return False, "", "A permanently protected device requires manual server recovery via SSH"
         current = get_user_devices(username)
         if device in current:
-            return True, client_name(username, device), ""
+            existing_name = client_name(username, device)
+            if load_device_meta().get(existing_name, {}).get("provisioning"):
+                return False, "", "Incomplete profile provisioning requires manual server recovery via SSH"
+            return True, existing_name, ""
         limit = user.get("max_devices", 3)
         if limit != -1 and len(current) >= limit:
             return False, "", "Device limit reached"
@@ -403,8 +566,15 @@ def create_device(username, device):
         if not SAFE_NAME_RE.fullmatch(wg_name):
             return False, "", "Generated client name is invalid"
         path = _config_path(wg_name)
-        if wg_name in load_device_meta() or (path and os.path.exists(path)):
+        existing = load_device_meta().get(wg_name, {})
+        replacing_tombstone = (
+            account_locked and existing.get("revoked")
+            and existing.get("owner") == username and existing.get("device") == device
+        )
+        if (existing and not replacing_tombstone) or (path and os.path.exists(path)):
             return False, "", "Client name collision"
+        if account_locked and not _supports_prepared_clients():
+            return False, "", "Protected provisioning requires the current add-client.sh helper"
 
         # A failed cleanup after an earlier peer revoke can leave its address in
         # the fail-closed nftables set. Reconcile before the allocator can reuse
@@ -418,17 +588,29 @@ def create_device(username, device):
             logger.error("Safe internet reconciliation blocked device creation: %s", exc)
             return False, "", f"Safe internet firewall reconciliation failed: {exc}"
 
-        ok, error = _run_script("add-client.sh", wg_name, 45)
+        previous_meta = load_device_meta()
+        arguments = ("--prepare",) if account_locked else ()
+        ok, error = _run_script("add-client.sh", wg_name, 45, *arguments)
         if not ok:
             return False, "", error
         if not path or not os.path.exists(path):
             return False, "", "Provisioning completed without a client configuration"
         os.chmod(path, 0o600)
+        if account_locked and not _is_prepared_client(wg_name):
+            _rollback_provision(wg_name, previous_meta)
+            return False, "", "Protected provisioning did not produce a recognized inactive peer"
         try:
-            set_device_meta(wg_name, username, device)
-        except OSError as exc:
-            _run_script("remove-client.sh", wg_name, 30)
-            return False, "", f"Failed to persist device ownership: {exc}"
+            set_device_meta(wg_name, username, device, provisioning=account_locked)
+            if account_locked:
+                reconcile_safe_dns(allow_unavailable=bool(app.config.get("TESTING")))
+                ok, error = _run_script("set-client-state.sh", wg_name, 30, "resume")
+                if not ok:
+                    raise SafeDnsEnforcementError(error)
+                mutate_device_meta(lambda meta: meta[wg_name].pop("provisioning", None))
+        except (OSError, ValueError, SafeDnsEnforcementError) as exc:
+            _ok, cleanup_error = _rollback_provision(wg_name, previous_meta)
+            suffix = f"; cleanup requires recovery: {cleanup_error}" if not _ok else ""
+            return False, "", f"Failed to provision device: {exc}{suffix}"
         return True, wg_name, ""
 
 
@@ -443,7 +625,7 @@ def delete_device(wg_name):
             return False, "Device not found"
         if revoked and os.path.exists(path):
             return False, "Revoked device has an unexpected client configuration"
-        was_safe = bool(device_meta.get("safe_internet"))
+        was_safe = effective_safe_internet(device_meta)
         previous_ips = []
         desired_ips = []
         if was_safe:

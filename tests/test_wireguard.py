@@ -199,7 +199,7 @@ def test_listing_is_read_only_and_cannot_overwrite_metadata(monkeypatch, tmp_pat
     clients = configure_paths(monkeypatch, tmp_path, {"alice": {"approved": True}})
     write_config(clients, "alice-phone")
     traffic.set_device_meta("alice-phone", "alice", "phone")
-    traffic.set_device_safe_internet("alice-phone", True)
+    traffic.set_device_safe_internet("alice-phone", True, confirmed=True)
     original = traffic.load_device_meta()
     monkeypatch.setattr(wireguard, "save_device_meta", lambda *_args: pytest.fail("listing wrote metadata"))
     assert wireguard.get_all_devices() == [("alice", "phone", "alice-phone")]
@@ -234,7 +234,7 @@ def test_account_revocation_retries_dns_cleanup_after_peer_is_gone(monkeypatch, 
     monkeypatch.setattr(wireguard, "mutate_users", lambda callback: callback(users))
     config = write_config(clients, "u5-alice-phone")
     traffic.set_device_meta("u5-alice-phone", "alice", "phone")
-    traffic.set_device_safe_internet("u5-alice-phone", True)
+    traffic.set_device_safe_internet("u5-alice-phone", True, confirmed=True)
     removals = []
 
     def remove(*args):
@@ -255,7 +255,9 @@ def test_account_revocation_retries_dns_cleanup_after_peer_is_gone(monkeypatch, 
     assert wireguard.reconcile_safe_dns() == {"safe_devices": 0, "ips": []}
     assert wireguard.delete_user("alice")[0]
     assert len(removals) == 1
-    assert not users and not traffic.load_device_meta()
+    assert not users
+    assert traffic.load_device_meta()["u5-alice-phone"]["safe_internet_locked"]
+    assert traffic.load_device_meta()["u5-alice-phone"]["revoked"]
 
 
 def test_migration_waits_for_ownership_publication(monkeypatch, tmp_path):
@@ -311,7 +313,7 @@ def test_migration_serializes_safe_internet_write(monkeypatch, tmp_path):
 
     def enable():
         writer_started.set()
-        results["enabled"] = wireguard.set_device_safe_internet("alice-phone", True)
+        results["enabled"] = wireguard.set_device_safe_internet("alice-phone", True, confirmed=True)
 
     monkeypatch.setattr(wireguard, "load_device_meta", pause_snapshot)
     migrator = threading.Thread(target=wireguard.migrate_device_metadata, name="migration-test")

@@ -3,6 +3,7 @@ import os
 import subprocess
 from datetime import UTC, datetime
 
+from .account_policy import account_safe_internet_locked
 from .core import (
     CLIENTS_DIR,
     DEVICE_META_FILE,
@@ -72,33 +73,72 @@ def mutate_device_meta(mutator):
         return result
 
 
-def set_device_meta(wg_name, owner, device):
+def set_device_meta(wg_name, owner, device, *, provisioning=False):
     """Create metadata for a newly provisioned WireGuard device."""
     def update(meta):
+        existing = meta.get(wg_name, {})
+        if existing.get("safe_internet_locked") and not (
+            existing.get("owner") == owner and existing.get("revoked")
+            and account_safe_internet_locked(owner)
+        ):
+            raise ValueError("A permanently protected device requires manual server recovery via SSH")
         meta[wg_name] = {
             "owner": owner,
             "device": device,
             "vpn_type": "wireguard",
             "safe_internet": False,
         }
+        if provisioning:
+            meta[wg_name]["provisioning"] = True
 
     mutate_device_meta(update)
 
 
-def set_device_safe_internet(wg_name, enabled):
-    """Set the Safe internet preference for an existing device."""
+def set_device_safe_internet(wg_name, enabled, *, confirmed=False, allow_locked_disable=False):
+    """Commit a confirmed first enable and retain its permanent owner lock.
+
+    The WireGuard layer applies firewall changes before calling this mutator.
+    The same checks here prevent other policy writers from bypassing consent
+    or clearing the lock. ``allow_locked_disable`` is reserved for deliberate
+    server maintenance through SSH; no web route may pass it.
+    """
     def update(meta):
         device = meta.get(wg_name)
-        if not device:
+        if not device or device.get("revoked"):
+            return False
+        if not enabled and account_safe_internet_locked(device.get("owner")):
+            return False
+        if enabled and not device.get("safe_internet") and not confirmed:
+            return False
+        if not enabled and device.get("safe_internet_locked") and not allow_locked_disable:
             return False
         device["safe_internet"] = bool(enabled)
+        if enabled and confirmed:
+            device["safe_internet_locked"] = True
+        elif not enabled and allow_locked_disable:
+            device.pop("safe_internet_locked", None)
         return True
 
     return mutate_device_meta(update)
 
 
-def remove_device_meta(wg_name):
-    mutate_device_meta(lambda meta: meta.pop(wg_name, None))
+def remove_device_meta(wg_name, *, preserve_locked=True):
+    """Retain a locked identity after peer revocation to prevent name reuse."""
+    def update(meta):
+        device = meta.get(wg_name, {})
+        if preserve_locked and device.get("safe_internet_locked"):
+            meta[wg_name] = {
+                "owner": device["owner"],
+                "device": device["device"],
+                "vpn_type": "wireguard",
+                "safe_internet": True,
+                "safe_internet_locked": True,
+                "revoked": True,
+            }
+        else:
+            meta.pop(wg_name, None)
+
+    mutate_device_meta(update)
 
 
 def get_device_type(wg_name):

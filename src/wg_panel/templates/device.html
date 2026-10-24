@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from 'components.html' import flashes, pause_notice with context %}
+{% from 'components.html' import flashes, pause_notice, account_protection with context %}
 {% block content %}
 <div class="device-workspace">
   <a class="back-link" href="{{ url_for('dashboard') }}">{{ icon('back', 17) }}{{ tr('ui_back_devices') }}</a>
@@ -32,24 +32,7 @@
       </div>
     </div>
   </section>
-  <section class="panel protection-settings">
-    <form method="post" action="{{ url_for('update_device_safe_internet', wg_name=wg_name) }}" aria-labelledby="safe-internet-title"{% if not current_paused %} data-auto-submit{% endif %} data-saving-label="{{ tr('ui_saving') }}">
-      {{ csrf() }}
-      <div class="protection-row">
-        <span class="protection-icon">{{ icon('shield', 23) }}</span>
-        <div class="protection-description"><h2 id="safe-internet-title">{{ tr('safe_title') }}</h2><p id="safe-internet-summary">{{ tr('ui_safe_summary') }}</p></div>
-        <div class="protection-switch">
-          <span class="tag {{ 'tag-ok' if device.safe_internet else 'tag-pend' }}" role="status" aria-live="polite">{{ tr('safe_status_on' if device.safe_internet else 'safe_status_off') }}</span>
-          <label class="switch-label" for="safe-internet">
-            <input id="safe-internet" type="checkbox" role="switch" name="safe_internet"{% if device.safe_internet %} checked{% endif %} aria-describedby="safe-internet-help" data-auto-toggle disabled>
-            <span class="switch-track" aria-hidden="true"></span><span class="sr-only">{{ tr('safe_toggle') }}</span>
-          </label>
-        </div>
-      </div>
-      <details class="protection-details"><summary>{{ tr('ui_safe_details') }}{{ icon('chevron', 14) }}</summary><p id="safe-internet-help">{{ tr('safe_help') }}</p></details>
-      <noscript><p class="field-help">{{ tr('ui_switch_requires_js') }}</p></noscript>
-    </form>
-  </section>
+  {{ account_protection(device.account_safe_internet_locked, url_for('update_device_safe_internet', wg_name=wg_name), device.owner, current_paused, device.safe_internet) }}
   {% if not current_paused %}<div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><form method="post" action="{{ url_for('delete_device_route', wg_name=wg_name) }}" data-confirm="{{ tr('ui_remove_device') }}">{{ csrf() }}<button class="button danger-outline small" type="submit">{{ icon('trash', 16) }}{{ tr('ui_danger') }}</button></form></div>{% endif %}
 </div>
 {% endblock %}

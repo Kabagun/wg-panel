@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from wg_panel import app, core, security, traffic, wireguard
+from wg_panel import account_policy, app, core, security, traffic, wireguard
 from wg_panel import auth as auth_helpers
 from wg_panel.routes import auth as auth_routes
 
@@ -420,7 +420,7 @@ def test_exact_device_authorization_get_delete_rejection_and_no_store(runtime):
     assert "PrivateKey = secret" in response.get_data(as_text=True)
 
 
-def test_device_safe_internet_toggle_updates_existing_config_download(runtime):
+def test_device_safe_internet_first_enable_locks_existing_config_download(runtime):
     _data, clients = runtime
     core.save_users({"alice": user_record()})
     config = clients / "alice-phone.conf"
@@ -437,18 +437,21 @@ def test_device_safe_internet_toggle_updates_existing_config_download(runtime):
 
     response = client.post(
         "/device/alice-phone/safe-internet",
-        data={"csrf_token": token, "safe_internet": "on"},
+        data={"csrf_token": token, "safe_internet": "on", "safe_internet_confirmed": "on"},
     )
     assert response.status_code == 302
-    assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is True
+    assert wireguard.get_device("alice-phone")["safe_internet"] is True
+    assert account_policy.account_safe_internet_locked("alice")
     enabled_page = client.get("/device/alice-phone").get_data(as_text=True)
     assert 'name="safe_internet" checked' in enabled_page
-    assert '<span class="tag tag-ok" role="status" aria-live="polite">Enabled</span>' in enabled_page
-    assert 'aria-describedby="safe-internet-help"' in enabled_page
-    assert "VPN server enforces Family DNS immediately" in enabled_page
-    assert "newly downloaded configs follow this setting" in enabled_page
-    assert "If you disable it after this device imported a Family DNS config" in enabled_page
-    assert "Encrypted DNS and proxies may bypass" in enabled_page
+    assert '<span class="tag tag-ok" role="status" aria-live="polite">Account locked</span>' in enabled_page
+    assert 'aria-describedby="safe-internet-help safe-internet-lock"' in enabled_page
+    assert "VPN server enforces protection for every current and future VPN profile" in enabled_page
+    assert "newly downloaded configs follow this policy" in enabled_page
+    assert "No panel user, including administrators, can disable it" in enabled_page
+    assert "removing the VPN profile" in enabled_page
+    assert "Protection is locked for all current and future VPN profiles" in enabled_page
+    assert 'data-auto-submit' not in enabled_page
     assert '<pre id="conf-block" hidden>' in enabled_page
     assert 'data-copy-target="conf-block"' in enabled_page
     enabled_config = client.get("/device/alice-phone/download").get_data(as_text=True)
@@ -460,15 +463,11 @@ def test_device_safe_internet_toggle_updates_existing_config_download(runtime):
         data={"csrf_token": token},
     )
     assert response.status_code == 302
-    assert traffic.load_device_meta()["alice-phone"]["safe_internet"] is False
-    disabled_page = client.get("/device/alice-phone").get_data(as_text=True)
-    assert 'name="safe_internet" checked' not in disabled_page
-    assert '<span class="tag tag-pend" role="status" aria-live="polite">Disabled</span>' in disabled_page
-    assert "Safe internet disabled on the VPN server" in disabled_page
-    assert "previously imported a Family DNS config" in disabled_page
-    assert "re-download and re-import the config" in disabled_page
-    disabled_config = client.get("/device/alice-phone/download").get_data(as_text=True)
-    assert "DNS = 1.1.1.1, 8.8.8.8" in disabled_config
+    assert wireguard.get_device("alice-phone")["safe_internet"] is True
+    locked_page = client.get("/device/alice-phone").get_data(as_text=True)
+    assert "Safe internet cannot be disabled in the panel" in locked_page
+    locked_config = client.get("/device/alice-phone/download").get_data(as_text=True)
+    assert "DNS = 1.1.1.3, 1.0.0.3" in locked_config
 
 
 def test_device_safe_internet_copy_is_localized_in_russian(runtime):
@@ -488,12 +487,12 @@ def test_device_safe_internet_copy_is_localized_in_russian(runtime):
         "/device/alice-phone", headers={"Accept-Language": "ru-RU,ru;q=0.9"}
     ).get_data(as_text=True)
 
-    assert '<span class="tag tag-pend" role="status" aria-live="polite">Выключен</span>' in body
-    assert "VPN-сервер сразу применяет Family DNS" in body
-    assert "новые скачанные конфиги учитывают эту настройку" in body
-    assert "Если выключить защиту после того, как устройство импортировало конфиг с Family DNS" in body
-    assert "скачайте и заново импортируйте конфиг" in body
-    assert "Зашифрованный DNS и прокси могут обойти" in body
+    assert '<span class="tag tag-pend" role="status" aria-live="polite">Не закреплено</span>' in body
+    assert "VPN-сервер применяет защиту ко всем текущим и будущим VPN-профилям" in body
+    assert "новые скачанные конфиги учитывают эту политику" in body
+    assert "Ни один пользователь панели, включая администратора, не может её выключить" in body
+    assert "ВСЕ текущие и будущие VPN-профили этого аккаунта" in body
+    assert 'id="safe-internet-dialog"' in body
 
 
 def test_route_map_preserves_public_pages_and_removes_destructive_gets():
