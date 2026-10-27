@@ -10,6 +10,7 @@ from ..i18n import t
 from ..payments import normalize_telegram_username
 from ..security import (
     client_ip,
+    csrf_token,
     login_failure_limiter,
     login_request_limiter,
     public_rate_limiter,
@@ -74,6 +75,9 @@ def login():
             session["user"] = username
             session["account_id"] = authenticated["account_id"]
             session["session_version"] = authenticated["session_version"]
+            # Seed the rotated token in the login response so concurrent first
+            # page loads cannot generate competing tokens for the same session.
+            csrf_token()
             return redirect(url_for("dashboard"))
 
         login_failure_limiter.record_failure(rate_key)

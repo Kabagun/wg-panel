@@ -56,6 +56,47 @@ def csrf_session(client, username=None, version=1):
     return "csrf-test-token"
 
 
+@pytest.mark.parametrize("approved", [True, False])
+def test_login_csrf_rotation_survives_parallel_first_page_requests(runtime, approved):
+    core.save_users({"alice": user_record(approved=approved)})
+    browser = app.test_client()
+    login_page = browser.get("/login")
+    old_token = re.search(
+        r'name="csrf_token" value="([^"]+)"', login_page.get_data(as_text=True)
+    ).group(1)
+    response = browser.post("/login", data={
+        "csrf_token": old_token, "u": "alice", "p": "password123",
+    })
+    assert response.status_code == 302
+    cookie_header = response.headers["Set-Cookie"]
+    assert "; Secure" in cookie_header and "; HttpOnly" in cookie_header
+    assert "; SameSite=Lax" in cookie_header
+    login_cookie = browser.get_cookie("session").value
+
+    # Concurrent first page requests start from the same post-login cookie.
+    # Model their independent snapshots, then apply the response that arrives last.
+    pages = []
+    for _ in range(2):
+        page = app.test_client()
+        page.set_cookie("session", login_cookie)
+        response = page.get("/dashboard")
+        assert response.status_code == 200
+        tokens = re.findall(
+            r'name="csrf_token" value="([^"]+)"', response.get_data(as_text=True)
+        )
+        assert tokens and len(set(tokens)) == 1
+        pages.append((page, tokens[0]))
+    browser.set_cookie("session", pages[-1][0].get_cookie("session").value)
+
+    # Authentication rotates the token; absent, invalid and pre-login tokens fail.
+    for token in ("", "invalid-token", old_token):
+        assert browser.post("/logout", data={"csrf_token": token}).status_code == 400
+    assert pages[0][1] == pages[1][1]
+    assert pages[0][1] != old_token
+    assert browser.post("/logout", data={"csrf_token": pages[0][1]}).status_code == 302
+    assert browser.get("/dashboard").status_code == 302
+
+
 def test_recreated_account_rejects_retained_cookie_but_new_login_works(runtime, monkeypatch):
     _data, clients = runtime
     core.save_users({"alice": user_record()})
