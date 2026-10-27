@@ -10,14 +10,16 @@ reminders without exposing payment data in customer dashboards.
 
 Users can permanently enable **Safe internet for their entire account**. Every
 current and future VPN profile then inherits protection. Downloaded configs and
-QR codes use Cloudflare Family DNS (`1.1.1.3`, `1.0.0.3`) to block adult and
-malicious domains. The installed nftables helper enforces each protected IPv4
-WireGuard address: DNS TCP/UDP port 53 is redirected to Cloudflare Family and
+QR codes use the operator's shared resolver, configured by `safe-dns-target`.
+Without that file, they retain Cloudflare Family DNS (`1.1.1.3`, `1.0.0.3`).
+The installed nftables helper enforces each protected IPv4
+WireGuard address: DNS TCP/UDP port 53 is redirected to the configured resolver and
 DNS-over-TLS port 853 is blocked. Ordinary WireGuard clients are not matched by
 the managed firewall set. Downloaded configs and QR codes continue to reflect
-the selected DNS. Enabling server enforcement is immediate. After a
-manual server reset, a device that previously imported the Family
-DNS config must import the updated config to change its local DNS setting.
+the selected DNS. Enabling server enforcement is immediate. Existing profiles
+also reach the shared resolver through destination-independent DNS redirection;
+they do not need to be imported again. A deliberate manual policy reset may
+require reimporting a profile to change its local DNS setting.
 
 The dashboard and device pages show the account scope before confirmation. Both
 `POST /account/safe-internet` and the existing authorized device policy endpoint
@@ -189,8 +191,11 @@ create the root-owned file `/etc/wireguard/safe-dns-target` containing one
 The helper validates the entire endpoint before applying any nftables changes.
 The resolver must be running and reachable through the host firewall first.
 Only devices in the managed safe-client set are redirected; other clients retain
-their existing DNS. Downloaded configurations still use the Family DNS addresses,
-which the server redirects to the configured endpoint for opted-in devices.
+their existing DNS. Protected downloads, QR codes and prepared profiles use the
+bare endpoint IPv4 in their DNS field. The selected-source port-53 rules deliver
+their queries to the configured port. Older profiles advertising public DNS
+addresses continue through the same rules. An existing invalid target aborts
+provisioning/config export/reconciliation rather than selecting a public fallback.
 Removing this file restores the default destination on the next reconciliation.
 
 Install the helper before provisioning new devices. Provisioning reconciles the
@@ -202,6 +207,45 @@ The implementation currently covers IPv4 clients in `10.0.0.2` through
 forwarding policy are intentionally outside this repository's runtime state;
 verify that the host already forwards and masquerades WireGuard IPv4 traffic
 before enabling Safe internet.
+
+### Infrastructure peers and startup
+
+A router can remain connected to WireGuard without belonging to a web account.
+Root-managed infrastructure profiles live in `/etc/wireguard/infrastructure/`,
+with identity, address and config-hash claims in
+`data/infrastructure_peers.json`. They are absent from every web device list,
+config download and QR endpoint, including for administrators. Their names and
+addresses remain reserved, and their DNS protection is included independently
+of personal account locks, deletion or pause operations. Back up this registry
+and its private configurations together with the normal runtime state.
+
+To adopt an existing, already protected router, take a private runtime backup,
+stop the panel and its collector, and leave WireGuard running. Identify the exact
+router public key first. The operator command requires its fingerprint, defined
+as `SHA256:` followed by unpadded base64 of SHA-256 over the decoded 32-byte
+public key:
+
+```bash
+/opt/wg-panel/venv/bin/python -m wg_panel.infrastructure_cli adopt OPAQUE_PEER_NAME \
+  --maintenance --expected-public-key-fingerprint SHA256:EXPECTED_FINGERPRINT \
+  --label home-router
+```
+
+This preserves the config bytes, peer key, address and WireGuard stanza. It removes
+only that personal metadata entry; account locks and traffic history remain.
+An interrupted adoption retains a recovery checkpoint and blocks panel startup.
+Resume the same command with the same identity; do not delete its checkpoint.
+There is no web operation to undo an infrastructure claim.
+
+Install the updated application and `/etc/wireguard/safe-dns.sh` before installing
+the generic examples in `systemd/`. Adapt the Python path and environment-file
+path to the deployment. The one-shot `wg-panel-safe-dns.service` validates the
+target, infrastructure and already prepared personal ownership, then installs
+the managed DNS rules **before** `wg-quick@wg0.service` can activate peers. Both
+WireGuard and the panel require it. It neither starts peers nor runs ownership
+migrations. Prepare legacy ownership separately before enabling the dependencies.
+The DNS listener may start after WireGuard; protection remains restrictive while
+that listener is unavailable. Inspect the dependency graph before restarting.
 
 Start the application through the server's deployment layer. Do not store
 server-specific systemd, nginx, TLS, or domain configuration in this repository.

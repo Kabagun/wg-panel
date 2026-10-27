@@ -25,6 +25,7 @@ from .core import (
     ensure_admin,
     ensure_private_dir,
 )
+from .infrastructure import assert_infrastructure_ready
 from .payments import process_payment_reminders
 from .telegram import set_tg_webhook
 from .traffic import collect_traffic
@@ -105,6 +106,7 @@ class BoundedRedirectServer(ThreadingMixIn, HTTPServer):
 
 def main():
     """Reconcile persisted state and start the single-process panel service."""
+    assert_infrastructure_ready()
 
     def run_redirect():
         try:

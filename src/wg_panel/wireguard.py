@@ -21,6 +21,13 @@ from .core import (
     mutate_users,
 )
 from .dns_enforcement import SafeDnsEnforcementError, sync_safe_dns
+from .infrastructure import (
+    assert_infrastructure_ready,
+    infrastructure_dir,
+    infrastructure_registry_path,
+    load_infrastructure_peers,
+)
+from .safe_dns_settings import load_safe_dns_target
 from .traffic import (
     load_device_meta,
     mutate_device_meta,
@@ -62,6 +69,7 @@ def migrate_device_metadata(dry_run=False):
 
 
 def _migrate_device_metadata(dry_run):
+    infrastructure = assert_infrastructure_ready(wg_dir=WG_DIR)
     if not os.path.isdir(CLIENTS_DIR):
         if dry_run:
             return {"total": 0, "migrated": 0, "ambiguous": [], "unowned": [], "stale": []}
@@ -76,7 +84,7 @@ def _migrate_device_metadata(dry_run):
     config_names = sorted(
         filename[:-5]
         for filename in os.listdir(CLIENTS_DIR)
-        if filename.endswith(".conf")
+        if filename.endswith(".conf") and filename[:-5] not in infrastructure
     )
 
     for wg_name in config_names:
@@ -119,7 +127,7 @@ def _migrate_device_metadata(dry_run):
         }
         migrated += 1
 
-    stale = sorted(name for name in meta if name not in config_names)
+    stale = sorted(name for name in meta if name not in config_names and name not in infrastructure)
     report = {
         "total": len(config_names),
         "migrated": migrated,
@@ -153,9 +161,12 @@ def get_all_devices():
 
 
 def _get_all_devices():
+    infrastructure = assert_infrastructure_ready(wg_dir=WG_DIR)
     meta = load_device_meta()
     result = []
     for wg_name, item in meta.items():
+        if wg_name in infrastructure:
+            continue
         path = _config_path(wg_name)
         if (
             path and os.path.exists(path) and not item.get("revoked")
@@ -177,6 +188,8 @@ def client_name(username, device):
 
 
 def get_device(wg_name):
+    if wg_name in assert_infrastructure_ready(wg_dir=WG_DIR):
+        return None
     item = load_device_meta().get(wg_name)
     path = _config_path(wg_name)
     if (
@@ -218,12 +231,17 @@ def _client_ipv4(wg_name):
 
 
 def _safe_dns_ips(meta, excluded=None, override=None, policies=None):
-    """Return the exact IPv4 set represented by Safe internet metadata."""
-    ips = []
+    """Combine account protection with independent infrastructure protection.
+
+    Read registered claims during adoption, when the enforcer must run before
+    its recovery checkpoint is removed. Ordinary callers check readiness first.
+    """
+    infrastructure = load_infrastructure_peers(wg_dir=WG_DIR)
+    ips = [item["ipv4"] for item in infrastructure.values()]
     if policies is None:
         policies = load_account_policies()
     for name, item in meta.items():
-        if name == excluded or item.get("revoked"):
+        if name in infrastructure or name == excluded or item.get("revoked"):
             continue
         enabled = effective_safe_internet(item, policies)
         if override and name in override:
@@ -260,8 +278,10 @@ def reconcile_safe_dns(*, require_helper=None, allow_unavailable=False):
     installed; once a device is enabled, the helper is mandatory.
     """
     with _wireguard_lock:
+        load_safe_dns_target(WG_DIR)
         meta = load_device_meta()
         policies = load_account_policies()
+        infrastructure = load_infrastructure_peers(wg_dir=WG_DIR)
         ips = _safe_dns_ips(meta, policies=policies)
         if require_helper is None:
             require_helper = bool(ips)
@@ -273,7 +293,8 @@ def reconcile_safe_dns(*, require_helper=None, allow_unavailable=False):
         return {
             "safe_devices": sum(
                 effective_safe_internet(item, policies) and not item.get("revoked", False)
-                for item in meta.values()
+                for name, item in meta.items()
+                if name not in infrastructure
             ),
             "ips": ips,
         }
@@ -287,6 +308,7 @@ def set_account_safe_internet(owner, *, confirmed=False):
     Only deliberate SSH maintenance can remove the registry entry.
     """
     with _wireguard_lock:
+        assert_infrastructure_ready(wg_dir=WG_DIR)
         user = load_users().get(owner)
         if not user or not user.get("approved") or user.get("revoking"):
             return False
@@ -401,6 +423,9 @@ def set_device_safe_internet(wg_name, enabled, *, confirmed=False, allow_locked_
 
 def get_config(wg_name):
     """Return a client config rendered with its device's current DNS preference."""
+    device = get_device(wg_name)
+    if not device:
+        return None
     path = _config_path(wg_name)
     if not path or not os.path.exists(path):
         return None
@@ -410,10 +435,10 @@ def get_config(wg_name):
     except OSError:
         return None
 
-    device = get_device(wg_name)
-    if not device:
-        return None
-    dns_servers = SAFE_DNS_SERVERS if device["safe_internet"] else DEFAULT_DNS_SERVERS
+    dns_servers = (
+        load_safe_dns_target(WG_DIR).client_dns_servers
+        if device["safe_internet"] else DEFAULT_DNS_SERVERS
+    )
     return _render_config_dns(config, dns_servers)
 
 
@@ -457,7 +482,11 @@ def _render_config_dns(config, dns_servers):
 
 def _script_environment():
     environment = os.environ.copy()
-    environment.update({"WG_DIR": WG_DIR, "CLIENTS_DIR": CLIENTS_DIR})
+    environment.update({
+        "WG_DIR": WG_DIR, "CLIENTS_DIR": CLIENTS_DIR,
+        "INFRASTRUCTURE_CLIENTS_DIR": infrastructure_dir(wg_dir=WG_DIR),
+        "INFRASTRUCTURE_REGISTRY": infrastructure_registry_path(),
+    })
     return environment
 
 
@@ -565,6 +594,8 @@ def create_device(username, device):
         wg_name = f"u{len(username)}-{username}-{device}"
         if not SAFE_NAME_RE.fullmatch(wg_name):
             return False, "", "Generated client name is invalid"
+        if wg_name in assert_infrastructure_ready(wg_dir=WG_DIR):
+            return False, "", "Client name is reserved for infrastructure"
         path = _config_path(wg_name)
         existing = load_device_meta().get(wg_name, {})
         replacing_tombstone = (
@@ -617,6 +648,8 @@ def create_device(username, device):
 def delete_device(wg_name):
     """Revoke a device and remove metadata only after verified helper success."""
     with _wireguard_lock:
+        if wg_name in assert_infrastructure_ready(wg_dir=WG_DIR):
+            return False, "Device not found"
         meta = load_device_meta()
         device_meta = meta.get(wg_name, {})
         revoked = bool(device_meta.get("revoked"))
@@ -681,6 +714,7 @@ def delete_user(username):
     to retry. Provisioning and protected device requests share this lock.
     """
     with _wireguard_lock:
+        infrastructure = assert_infrastructure_ready(wg_dir=WG_DIR)
         def begin(users):
             user = users.get(username)
             if not user or user.get("role") == "admin":
@@ -705,7 +739,7 @@ def delete_user(username):
         # Include stale metadata as well as visible configs. Unresolved peer
         # state must block successful deletion, never silently disappear.
         for wg_name, item in meta.items():
-            if item.get("owner") != username:
+            if wg_name in infrastructure or item.get("owner") != username:
                 continue
             ok, error = delete_device(wg_name)
             if not ok:

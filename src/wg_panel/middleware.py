@@ -2,7 +2,13 @@ from flask import g, redirect, request, url_for
 
 from .auth import _current_user
 from .core import _request_slots, app
+from .dns_enforcement import SafeDnsEnforcementError
 from .security import validate_csrf
+
+
+@app.errorhandler(SafeDnsEnforcementError)
+def safe_dns_unavailable(_error):
+    return "Safe internet configuration is unavailable. Contact the server administrator.", 503
 
 
 @app.before_request

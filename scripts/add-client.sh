@@ -20,6 +20,9 @@ fi
 
 WG_DIR="${WG_DIR:-/etc/wireguard}"
 CLIENTS_DIR="${CLIENTS_DIR:-$WG_DIR/clients}"
+INFRASTRUCTURE_CLIENTS_DIR="${INFRASTRUCTURE_CLIENTS_DIR:-$WG_DIR/infrastructure}"
+INFRASTRUCTURE_REGISTRY="${INFRASTRUCTURE_REGISTRY:-${WG_PANEL_DATA_DIR:-/opt/wg-panel/data}/infrastructure_peers.json}"
+INFRASTRUCTURE_ADOPTION_CHECKPOINT="${INFRASTRUCTURE_REGISTRY%/*}/infrastructure_adoption.json"
 WG_INTERFACE_NAME="${WG_INTERFACE_NAME:-wg0}"
 WG_CONF="$WG_DIR/wg0.conf"
 
@@ -40,6 +43,50 @@ install -d -m 700 "$CLIENTS_DIR"
 exec 9>"$WG_DIR/.wg-panel.lock"
 flock -x 9
 
+# The same operator file drives nftables DNAT and protected profile exports.
+# WireGuard's DNS field takes an address only; the selected-source firewall
+# redirects UDP/TCP 53 to the configured listener port. Never silently fall
+# back when an existing target is malformed or cannot be read.
+if [ "$PREPARE_ONLY" -eq 1 ]; then
+    if ! DNS_SERVERS=$(python3 - "$WG_DIR/safe-dns-target" <<'PY'
+import ipaddress
+import os
+import re
+import stat
+import sys
+
+try:
+    path = sys.argv[1]
+    try:
+        initial = os.lstat(path)
+    except FileNotFoundError:
+        print("1.1.1.3, 1.0.0.3")
+        raise SystemExit(0)
+    if not stat.S_ISREG(initial.st_mode) or initial.st_size > 64:
+        raise ValueError()
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    with os.fdopen(os.open(path, flags), "rb") as handle:
+        opened = os.fstat(handle.fileno())
+        if (not stat.S_ISREG(opened.st_mode) or not os.path.samestat(initial, opened)
+                or not os.path.samestat(opened, os.lstat(path))):
+            raise ValueError()
+        content = handle.read(65)
+    match = re.fullmatch(rb"([0-9]{1,3}(?:\.[0-9]{1,3}){3}):([1-9][0-9]{0,4})(?:\r?\n)?", content)
+    if not match:
+        raise ValueError()
+    address = ipaddress.IPv4Address(match[1].decode("ascii"))
+    if (address.is_loopback or address.is_multicast or address.is_unspecified
+            or address.is_reserved or int(address) < 0x01000000 or int(match[2]) > 65535):
+        raise ValueError()
+    print(address)
+except (OSError, ValueError):
+    raise SystemExit("ERROR: Safe DNS target configuration is unavailable or invalid")
+PY
+    ); then
+        exit 9
+    fi
+fi
+
 FINAL_CONFIG="$CLIENTS_DIR/${CLIENT_NAME}.conf"
 if [ -e "$FINAL_CONFIG" ]; then
     echo "ERROR: Client '$CLIENT_NAME' already exists" >&2
@@ -48,6 +95,134 @@ fi
 if [ ! -f "$WG_CONF" ] || [ ! -f "$WG_DIR/server_public.key" ]; then
     echo "ERROR: WireGuard server configuration is incomplete" >&2
     exit 5
+fi
+
+# Read the root-only registry with the standard library, never the web package.
+# Retained configs reserve infrastructure names/addresses even when the peer is
+# paused (its persistent AllowedIPs are then inside a base64 envelope). Invalid
+# state aborts before key generation or any WireGuard/configuration mutation.
+INFRASTRUCTURE_RESERVED_OCTETS=""
+if [ -e "$INFRASTRUCTURE_CLIENTS_DIR" ] || [ -L "$INFRASTRUCTURE_CLIENTS_DIR" ] \
+        || [ -e "$INFRASTRUCTURE_REGISTRY" ] || [ -L "$INFRASTRUCTURE_REGISTRY" ] \
+        || [ -e "$INFRASTRUCTURE_ADOPTION_CHECKPOINT" ] \
+        || [ -L "$INFRASTRUCTURE_ADOPTION_CHECKPOINT" ]; then
+    command -v python3 >/dev/null || {
+        echo "ERROR: Infrastructure reservations require python3" >&2
+        exit 3
+    }
+    if ! INFRASTRUCTURE_RESERVATIONS=$(python3 - "$INFRASTRUCTURE_CLIENTS_DIR" \
+            "$INFRASTRUCTURE_REGISTRY" <<'PY'
+import base64
+import configparser
+import hashlib
+import ipaddress
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+
+directory, registry = sys.argv[1:]
+
+
+def private(path, directory=False):
+    info = os.lstat(path)
+    valid_type = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
+    if not valid_type or info.st_mode & 0o077 or info.st_uid != os.geteuid():
+        raise ValueError("Expected private owned infrastructure state")
+
+
+def key(value):
+    decoded = base64.b64decode(value, validate=True)
+    if len(decoded) != 32 or base64.b64encode(decoded).decode("ascii") != value:
+        raise ValueError("Invalid infrastructure identity")
+    return value
+
+
+def unique(pairs):
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise ValueError("Duplicate JSON field")
+        result[name] = value
+    return result
+
+
+try:
+    if os.path.lexists(os.path.join(os.path.dirname(registry), "infrastructure_adoption.json")):
+        raise ValueError("Incomplete infrastructure adoption")
+    if os.path.exists(os.path.dirname(registry)):
+        private(os.path.dirname(registry), directory=True)
+    peers = {}
+    if os.path.lexists(registry):
+        private(registry)
+        with open(registry, encoding="utf-8") as handle:
+            state = json.load(handle, object_pairs_hook=unique)
+        if (not isinstance(state, dict) or set(state) != {"version", "peers"}
+                or type(state["version"]) is not int or state["version"] != 1
+                or not isinstance(state["peers"], dict)):
+            raise ValueError("Invalid infrastructure registry")
+        peers = state["peers"]
+    files = set()
+    if os.path.lexists(directory):
+        private(directory, directory=True)
+        files = set(os.listdir(directory))
+    if files != {f"{name}.conf" for name in peers}:
+        raise ValueError("Infrastructure registry/configuration mismatch")
+    addresses, identities = set(), set()
+    for name, record in peers.items():
+        if (not isinstance(name, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", name)
+                or not isinstance(record, dict)
+                or set(record) != {"kind", "label", "public_key", "ipv4", "config_sha256"}
+                or record["kind"] != "router" or not isinstance(record["label"], str)
+                or not re.fullmatch(r"[a-z0-9][a-z0-9 _-]{0,63}", record["label"])
+                or not isinstance(record["config_sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", record["config_sha256"])):
+            raise ValueError("Invalid infrastructure peer")
+        address = ipaddress.IPv4Address(record["ipv4"])
+        if not ipaddress.IPv4Address("10.0.0.2") <= address <= ipaddress.IPv4Address("10.0.0.254"):
+            raise ValueError("Invalid infrastructure address")
+        if str(address) != record["ipv4"]:
+            raise ValueError("Invalid infrastructure address")
+        public_key = key(record["public_key"])
+        if address in addresses or public_key in identities:
+            raise ValueError("Duplicate infrastructure identity/address")
+        addresses.add(address)
+        identities.add(public_key)
+        path = os.path.join(directory, f"{name}.conf")
+        private(path)
+        with open(path, "rb") as handle:
+            content = handle.read()
+        if hashlib.sha256(content).hexdigest() != record["config_sha256"]:
+            raise ValueError("Infrastructure configuration changed")
+        config = configparser.ConfigParser(interpolation=None, inline_comment_prefixes=("#",))
+        config.read_string(content.decode("utf-8"))
+        if config.sections() != ["Interface", "Peer"] or config.defaults():
+            raise ValueError("Invalid infrastructure client sections")
+        if config["Interface"]["Address"] != f"{address}/32":
+            raise ValueError("Infrastructure address mismatch")
+        key(config["Peer"]["PublicKey"])
+        key(config["Peer"]["PresharedKey"])
+        result = subprocess.run(["wg", "pubkey"], input=key(config["Interface"]["PrivateKey"]) + "\n",
+                                capture_output=True, text=True, check=False, timeout=5)
+        if result.returncode or key(result.stdout.strip()) != public_key:
+            raise ValueError("Infrastructure identity mismatch")
+        print(name, str(address).rsplit(".", 1)[1])
+except (OSError, ValueError, TypeError, KeyError, configparser.Error, subprocess.SubprocessError):
+    raise SystemExit("ERROR: Invalid infrastructure reservations; operator recovery required")
+PY
+    ); then
+        exit 9
+    fi
+    while read -r infrastructure_name infrastructure_octet; do
+        [ -n "$infrastructure_name" ] || continue
+        if [ "$infrastructure_name" = "$CLIENT_NAME" ]; then
+            echo "ERROR: Client name is reserved for infrastructure" >&2
+            exit 4
+        fi
+        INFRASTRUCTURE_RESERVED_OCTETS+="$infrastructure_octet"$'\n'
+    done <<<"$INFRASTRUCTURE_RESERVATIONS"
 fi
 
 SERVER_PUB=$(<"$WG_DIR/server_public.key")
@@ -67,6 +242,7 @@ USED_IPS=$({
     # retained client configurations continue to reserve the assigned address.
     grep -h -oE '(AllowedIPs|Address)[[:space:]]*=[[:space:]]*10\.0\.0\.[0-9]+' \
         "$CLIENTS_DIR"/*.conf 2>/dev/null || true
+    printf '%s' "$INFRASTRUCTURE_RESERVED_OCTETS"
 } | grep -oE '[0-9]+$' | sort -un || true)
 NEXT_IP=""
 for candidate in $(seq 2 254); do
