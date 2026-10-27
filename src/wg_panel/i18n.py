@@ -57,7 +57,7 @@ STRINGS = {
         "safe_status_on":  "Enabled",
         "safe_status_off": "Disabled",
         "safe_toggle":   "Use Safe internet",
-        "safe_help":     "Uses Cloudflare Family to block adult and malicious domains. The VPN server enforces protection for every current and future VPN profile of this account, and newly downloaded configs follow this policy. No panel user, including administrators, can disable it. Deleting profiles or recreating the same account does not reset the policy. Recovery requires deliberate manual server access through SSH. Protection applies to traffic through this VPN; removing the VPN profile, using another connection, some encrypted DNS services and proxies may bypass domain filtering.",
+        "safe_help":     "Uses the shared family DNS protection to block adult and malicious domains. Home internet and protected VPN profiles use the same exceptions, managed by administrators. The VPN server enforces protection for every current and future VPN profile of this account, and newly downloaded configs follow this policy. No panel user, including administrators, can disable it. Deleting profiles or recreating the same account does not reset the policy. Recovery requires deliberate manual server access through SSH. Protection applies to traffic through this VPN; removing the VPN profile, using another connection, some encrypted DNS services and proxies may bypass domain filtering.",
         "safe_save":     "Save setting",
         # traffic
         "tr_sub":        "Monthly traffic per device (collected every 60 seconds)",
@@ -152,7 +152,7 @@ STRINGS = {
         "safe_status_on":  "Включён",
         "safe_status_off": "Выключен",
         "safe_toggle":   "Использовать безопасный интернет",
-        "safe_help":     "Cloudflare Family блокирует сайты для взрослых и вредоносные домены. VPN-сервер применяет защиту ко всем текущим и будущим VPN-профилям этого аккаунта, а новые скачанные конфиги учитывают эту политику. Ни один пользователь панели, включая администратора, не может её выключить. Удаление профилей или повторное создание того же аккаунта не сбрасывает защиту. Для восстановления нужен намеренный ручной доступ к серверу через SSH. Защита действует на трафик через этот VPN: удаление VPN-профиля, другое подключение, некоторые сервисы зашифрованного DNS и прокси позволяют обойти фильтрацию доменов.",
+        "safe_help":     "Общая семейная DNS-защита блокирует сайты для взрослых и вредоносные домены. Домашний интернет и защищённые VPN-профили используют единые исключения, которыми управляют администраторы. VPN-сервер применяет защиту ко всем текущим и будущим VPN-профилям этого аккаунта, а новые скачанные конфиги учитывают эту политику. Ни один пользователь панели, включая администратора, не может её выключить. Удаление профилей или повторное создание того же аккаунта не сбрасывает защиту. Для восстановления нужен намеренный ручной доступ к серверу через SSH. Защита действует на трафик через этот VPN: удаление VPN-профиля, другое подключение, некоторые сервисы зашифрованного DNS и прокси позволяют обойти фильтрацию доменов.",
         "safe_save":     "Сохранить настройку",
         # traffic
         "tr_sub":        "Месячный трафик на устройство (собирается каждые 60 секунд)",
@@ -394,6 +394,102 @@ UI_STRINGS.update({
     "ui_resume_failed": (
         "Could not resume VPN for {user}. Check the account status and server logs before retrying.",
         "Не удалось возобновить VPN для {user}. Перед повтором проверьте статус пользователя и журнал сервера.",
+    ),
+})
+
+UI_STRINGS.update({
+    "family_dns_title": ("Family DNS exceptions", "Исключения семейного DNS"),
+    "family_dns_scope": (
+        "One shared list for home internet and every VPN profile with Safe internet enabled.",
+        "Единый список для домашнего интернета и всех VPN-профилей с безопасным интернетом.",
+    ),
+    "family_dns_domains": ("Allowed domains", "Разрешённые домены"),
+    "family_dns_descendants": (
+        "Each exception allows the domain and all its subdomains for everyone using this protection.",
+        "Исключение разрешает домен и все его поддомены для всех, кто использует эту защиту.",
+    ),
+    "family_dns_add_label": ("Domain to allow", "Домен для разрешения"),
+    "family_dns_domain": ("Domain", "Домен"),
+    "family_dns_domain_hint": (
+        "Enter one domain, such as example.com, without a URL, path or wildcard.",
+        "Введите один домен, например example.com, без ссылки, пути или звёздочки.",
+    ),
+    "family_dns_add": ("Allow domain", "Разрешить домен"),
+    "family_dns_empty": ("No exceptions yet", "Исключений пока нет"),
+    "family_dns_empty_hint": (
+        "Add a domain here if family protection blocks a website you want to allow.",
+        "Добавьте домен, если семейная защита блокирует сайт, который нужно разрешить.",
+    ),
+    "family_dns_list_unavailable": (
+        "The current exceptions could not be loaded. Editing will return when the list is available.",
+        "Не удалось загрузить текущие исключения. Изменения станут доступны после загрузки списка.",
+    ),
+    "family_dns_remove_confirm": (
+        "Remove this exception for home internet and all protected VPN profiles? The domain and its subdomains will follow family filtering again.",
+        "Удалить исключение для домашнего интернета и всех защищённых VPN-профилей? Домен и его поддомены снова будут проходить семейную фильтрацию.",
+    ),
+    "family_dns_added": ("Domain allowed. The shared protection has applied the change.",
+                         "Домен разрешён. Общая защита применила изменение."),
+    "family_dns_removed": ("Exception removed. The shared protection has applied the change.",
+                           "Исключение удалено. Общая защита применила изменение."),
+    "family_dns_application": ("Protection status", "Состояние защиты"),
+    "family_dns_applied": ("Current list applied", "Текущий список применён"),
+    "family_dns_not_applied": ("Application needs attention", "Применение требует внимания"),
+    "family_dns_applied_at": ("Last applied", "Последнее применение"),
+    "family_dns_application_warning": (
+        "The current list has not been confirmed as applied. Check the protection status before making another change.",
+        "Применение текущего списка не подтверждено. Проверьте состояние защиты перед следующим изменением.",
+    ),
+    "family_dns_backup": ("Daily GitHub backup", "Ежедневная копия в GitHub"),
+    "family_dns_backup_never": ("No backup yet", "Копия ещё не создана"),
+    "family_dns_backup_updated": ("Backup saved", "Копия сохранена"),
+    "family_dns_backup_unchanged": ("No changes to save", "Изменений для сохранения нет"),
+    "family_dns_backup_error": ("Backup delayed", "Копия задерживается"),
+    "family_dns_backup_attempt": ("Last check", "Последняя проверка"),
+    "family_dns_backup_success": ("Last successful backup", "Последняя успешная копия"),
+    "family_dns_backup_pending": (
+        "The latest changes are awaiting the next daily backup.",
+        "Последние изменения ожидают следующего ежедневного сохранения.",
+    ),
+    "family_dns_backup_hint": (
+        "Changes are backed up once a day. A delayed backup does not affect DNS protection or editing.",
+        "Изменения сохраняются в резервную копию раз в день. Задержка копии не мешает DNS-защите и редактированию.",
+    ),
+    "family_dns_error_unconfigured": (
+        "Family DNS exceptions have not been connected to this panel yet.",
+        "Исключения семейного DNS пока не подключены к этой панели.",
+    ),
+    "family_dns_error_invalid_domain": (
+        "Enter a valid domain without a URL, path, wildcard or IP address. This domain may also be reserved for protection checks.",
+        "Введите допустимый домен без ссылки, пути, звёздочки или IP-адреса. Домен также может быть зарезервирован для проверки защиты.",
+    ),
+    "family_dns_error_invalid_request": (
+        "The change could not be submitted. Refresh the page and try again.",
+        "Не удалось отправить изменение. Обновите страницу и повторите действие.",
+    ),
+    "family_dns_error_stale_generation": (
+        "The list changed after this page was opened. Refresh it and review the current exceptions before trying again.",
+        "Список изменился после открытия страницы. Обновите её и проверьте текущие исключения перед повтором.",
+    ),
+    "family_dns_error_busy": (
+        "Another change is being applied. Refresh the page in a moment.",
+        "Сейчас применяется другое изменение. Обновите страницу чуть позже.",
+    ),
+    "family_dns_error_uninitialized": (
+        "Family DNS exceptions are not ready yet. Contact the server administrator.",
+        "Исключения семейного DNS ещё не готовы. Обратитесь к администратору сервера.",
+    ),
+    "family_dns_error_unavailable": (
+        "Family DNS is temporarily unavailable. Refresh this page to check the current list before trying again.",
+        "Семейный DNS временно недоступен. Перед повтором обновите страницу и проверьте текущий список.",
+    ),
+    "family_dns_error_apply_failed": (
+        "The change could not be confirmed as applied. Refresh the page and check the current list and protection status before trying again.",
+        "Не удалось подтвердить применение изменения. Перед повтором обновите страницу и проверьте текущий список и состояние защиты.",
+    ),
+    "family_dns_error_degraded": (
+        "Family DNS protection needs attention. Refresh the page and contact the server administrator before making another change.",
+        "Семейная DNS-защита требует внимания. Обновите страницу и обратитесь к администратору сервера перед следующим изменением.",
     ),
 })
 

@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% from 'components.html' import heading, metric, flashes with context %}
+{% block content %}
+{{ heading(tr('family_dns_title'), tr('family_dns_scope'), tr('ui_admin_section')) }}
+{{ flashes() }}
+{% if error %}<div class="notice notice-error" role="alert">{{ tr('family_dns_error_' ~ error) }}</div>{% endif %}
+{% if state %}
+<div class="metrics-grid">
+  {{ metric(tr('family_dns_domains'), state.domains|length, 'globe') }}
+  <div class="metric"><div class="metric-top"><span>{{ tr('family_dns_application') }}</span><span class="metric-icon {{ 'green' if state.applied else 'amber' }}">{{ icon('shield', 18) }}</span></div><p><strong>{{ tr('family_dns_applied' if state.applied else 'family_dns_not_applied') }}</strong></p><p class="metric-detail">{{ tr('family_dns_applied_at') }}: {{ time_label(state.applied_at) }}</p></div>
+  <div class="metric"><div class="metric-top"><span>{{ tr('family_dns_backup') }}</span><span class="metric-icon {{ 'amber' if state.backup.status == 'error' else 'blue' }}">{{ icon('clock', 18) }}</span></div><p><strong>{{ tr('family_dns_backup_' ~ state.backup.status) }}</strong></p><p class="metric-detail">{{ tr('family_dns_backup_attempt') }}: {{ time_label(state.backup.last_attempt_at) }}</p><p class="metric-detail">{{ tr('family_dns_backup_success') }}: {{ time_label(state.backup.last_success_at) }}</p>{% if state.backup.generation is not none and state.backup.generation < state.generation %}<p class="metric-detail">{{ tr('family_dns_backup_pending') }}</p>{% endif %}</div>
+</div>
+{% if not state.applied %}<div class="notice notice-error" role="alert">{{ tr('family_dns_application_warning') }}</div>{% endif %}
+{% endif %}
+<section class="panel form-panel">
+  <div class="section-heading"><div><h2>{{ tr('family_dns_domains') }}{% if state %} <span class="count-badge">{{ state.domains|length }}</span>{% endif %}</h2><p>{{ tr('family_dns_descendants') }}</p></div>{{ icon('globe', 25) }}</div>
+  {% if state %}
+  <form method="post" action="{{ url_for('admin_family_dns_allow') }}" class="form-stack">
+    {{ csrf() }}<input type="hidden" name="expected_generation" value="{{ state.generation }}">
+    <label for="family-domain">{{ tr('family_dns_add_label') }}</label><input id="family-domain" name="domain" maxlength="253" placeholder="example.com" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="family-domain-help" required><p class="field-help" id="family-domain-help">{{ tr('family_dns_domain_hint') }}</p>
+    <div class="form-actions"><button type="submit" class="button primary">{{ icon('plus', 18) }}{{ tr('family_dns_add') }}</button></div>
+  </form>
+  <div class="form-divider"></div>
+  {% if state.domains %}<div class="table-scroll"><table class="responsive-table"><thead><tr><th>{{ tr('family_dns_domain') }}</th><th>{{ tr('dash_col_act') }}</th></tr></thead><tbody>
+  {% for domain in state.domains %}<tr><td data-label="{{ tr('family_dns_domain') }}"><strong>{{ domain }}</strong></td><td data-label="{{ tr('dash_col_act') }}"><div class="table-actions"><form method="post" action="{{ url_for('admin_family_dns_remove') }}" data-confirm="{{ tr('family_dns_remove_confirm') }}">{{ csrf() }}<input type="hidden" name="domain" value="{{ domain }}"><input type="hidden" name="expected_generation" value="{{ state.generation }}"><button type="submit" class="button secondary small" aria-label="{{ tr('ui_remove') }}: {{ domain }}">{{ icon('trash', 17) }}{{ tr('ui_remove') }}</button></form></div></td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<div class="empty-state compact"><span class="empty-icon">{{ icon('globe', 28) }}</span><h3>{{ tr('family_dns_empty') }}</h3><p>{{ tr('family_dns_empty_hint') }}</p></div>{% endif %}
+  {% else %}<p class="muted">{{ tr('family_dns_list_unavailable') }}</p>{% endif %}
+</section>
+<p class="limit-note">{{ icon('info', 17) }}{{ tr('family_dns_backup_hint') }}</p>
+{% endblock %}

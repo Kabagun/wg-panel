@@ -202,6 +202,28 @@ Install the helper before provisioning new devices. Provisioning reconciles the
 managed table first so an address left fail-closed by an earlier cleanup error
 cannot be reassigned to an ordinary client.
 
+### Shared family DNS exceptions
+
+An optional administrator page at `/admin/family-dns` manages domain exceptions
+shared by home DNS and protected VPN profiles. Ordinary profiles retain their
+public resolvers. Set `WG_PANEL_FAMILY_DNS_HELPER` to the absolute installed
+`allowlist_admin.py` path in the panel's private environment. An unset/unavailable
+helper leaves other panel features usable and shows an explicit unavailable state.
+
+The helper owns strict local state and uses the DNS updater's lock, validation,
+transaction and rollback. Requests are bounded JSON on stdin; responses are
+bounded JSON on stdout, without shell invocation or forwarded diagnostics.
+Status reads never initialize or apply policy. Add/remove requests require an
+administrator, CSRF and the current exception generation, and are never silently
+retried. Exceptions include the domain and its descendants; dedicated DNS/relay
+controls remain enforced. Activation failures do not report success.
+
+The server applies local edits without depending on GitHub. A separate daily
+server timer backs up changed domains to GitHub; it changes only the allowlist
+and never force-pushes. The page shows DNS activation and Git backup outcomes
+separately. Initialize the reviewed installed allowlist once before enabling the
+helper. Do not copy runtime state, credentials or production endpoints into Git.
+
 The implementation currently covers IPv4 clients in `10.0.0.2` through
 `10.0.0.254` on `wg0`. IPv6 traffic and a production server's existing NAT or
 forwarding policy are intentionally outside this repository's runtime state;

@@ -27,6 +27,7 @@
     {{ nav_link('admin_panel', 'ui_overview', 'grid', request.endpoint == 'admin_panel') }}
     {{ nav_link('admin_users', 'ui_users', 'users', request.endpoint in ['admin_users', 'admin_edit']) }}
     {{ nav_link('admin_devices', 'ui_all_devices', 'devices', request.endpoint == 'admin_devices') }}
+    {{ nav_link('admin_family_dns', 'family_dns_title', 'globe', request.endpoint == 'admin_family_dns') }}
     {{ nav_link('traffic_page', 'ui_traffic', 'chart', request.endpoint == 'traffic_page') }}
     {% endif %}
   </nav>
