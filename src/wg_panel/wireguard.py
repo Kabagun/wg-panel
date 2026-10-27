@@ -261,6 +261,7 @@ def _safe_dns_ips(meta, excluded=None, override=None, policies=None):
 
 def _sync_safe_dns(ips, *, allow_unavailable=False, require_helper=True):
     """Apply the managed firewall policy through the installed helper."""
+    load_safe_dns_target(WG_DIR)
     return sync_safe_dns(
         ips,
         wg_dir=WG_DIR,

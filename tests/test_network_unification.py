@@ -9,6 +9,8 @@ import pytest
 from wg_panel import account_policy, app, core, infrastructure, runner, traffic, wireguard
 from wg_panel.dns_enforcement import SafeDnsEnforcementError
 
+REAL_SYNC_SAFE_DNS = wireguard._sync_safe_dns
+
 PRIVATE = base64.b64encode(bytes([11]) * 32).decode()
 PUBLIC = base64.b64encode(bytes([12]) * 32).decode()
 SERVER = base64.b64encode(bytes([13]) * 32).decode()
@@ -204,6 +206,20 @@ def test_account_policy_and_infrastructure_protection_are_independent(unified_ru
         ROUTER_IP, PHONE_IP
     }
     assert wireguard.get_device(PHONE)["safe_internet"]
+
+
+def test_account_activation_validates_target_before_firewall_or_policy_changes(
+    unified_runtime, monkeypatch
+):
+    unified_runtime.target.write_text("127.0.0.1:18004\n", encoding="ascii")
+    monkeypatch.setattr(wireguard, "_sync_safe_dns", REAL_SYNC_SAFE_DNS)
+
+    def unexpected_firewall(*_args, **_kwargs):
+        pytest.fail("invalid target reached firewall execution")
+
+    monkeypatch.setattr(wireguard, "sync_safe_dns", unexpected_firewall)
+    assert not wireguard.set_account_safe_internet("alice", confirmed=True)
+    assert account_policy.load_account_policies() == {}
 
 
 def test_router_remains_enforced_without_personal_users_profiles_or_policies(unified_runtime):
