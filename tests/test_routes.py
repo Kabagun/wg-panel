@@ -97,6 +97,70 @@ def test_login_csrf_rotation_survives_parallel_first_page_requests(runtime, appr
     assert browser.get("/dashboard").status_code == 302
 
 
+@pytest.mark.parametrize("role, approved", [("admin", True), ("user", True), ("user", False)])
+def test_authenticated_login_replays_only_navigate_current_account(runtime, monkeypatch, role, approved):
+    core.save_users({
+        "alice": user_record(role=role, approved=approved), "bob": user_record(),
+    })
+    browser = app.test_client()
+    login_page = browser.get("/login")
+    old_token = re.search(
+        r'name="csrf_token" value="([^"]+)"', login_page.get_data(as_text=True)
+    ).group(1)
+    original_form = {"csrf_token": old_token, "u": "alice", "p": "password123"}
+    assert browser.post("/login", data=original_form).status_code == 302
+    with browser.session_transaction() as browser_session:
+        authenticated_session = dict(browser_session)
+
+    def unexpected_authentication(*_args, **_kwargs):
+        pytest.fail("Authenticated login navigation must not process credentials or update users")
+
+    monkeypatch.setattr(auth_routes, "verify_password", unexpected_authentication)
+    monkeypatch.setattr(auth_routes, "mutate_users", unexpected_authentication)
+    # A double submit or a form from another tab can carry the pre-login token.
+    # Even valid credentials for another account must never switch this session.
+    for form in (
+        original_form,
+        {**original_form, "u": "bob"},
+        {"u": "bob", "p": "password123"},
+        {"csrf_token": authenticated_session["_csrf_token"], "u": "bob", "p": "password123"},
+    ):
+        response = browser.post("/login", data=form)
+        assert response.status_code == 303 and response.location.endswith("/dashboard")
+        assert "Set-Cookie" not in response.headers
+        with browser.session_transaction() as browser_session:
+            assert dict(browser_session) == authenticated_session
+    for method in ("GET", "HEAD"):
+        response = browser.open("/login", method=method)
+        assert response.status_code == 302 and response.location.endswith("/dashboard")
+    assert browser.get("/dashboard").status_code == 200
+    assert browser.post("/logout", data={"csrf_token": old_token}).status_code == 400
+
+
+@pytest.mark.parametrize("state", ["anonymous", "revoked", "recreated", "deleted", "revoking"])
+def test_login_navigation_cannot_bypass_csrf_with_invalid_authentication(runtime, state):
+    core.save_users({"alice": user_record()})
+    browser = app.test_client()
+    csrf_session(browser, None if state == "anonymous" else "alice")
+    if state == "revoked":
+        core.mutate_users(lambda users: users["alice"].update(session_version=2))
+    elif state == "recreated":
+        core.mutate_users(lambda users: users["alice"].update(account_id="new-account-identity"))
+    elif state == "deleted":
+        core.save_users({})
+    elif state == "revoking":
+        core.mutate_users(lambda users: users["alice"].update(revoking=True))
+
+    for token in ("", "incorrect-token"):
+        response = browser.post("/login", data={
+            "csrf_token": token, "u": "alice", "p": "password123",
+        })
+        assert response.status_code == 400
+    assert browser.get("/login").status_code == 200
+    with browser.session_transaction() as browser_session:
+        assert "user" not in browser_session
+
+
 def test_recreated_account_rejects_retained_cookie_but_new_login_works(runtime, monkeypatch):
     _data, clients = runtime
     core.save_users({"alice": user_record()})

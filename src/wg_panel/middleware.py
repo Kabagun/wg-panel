@@ -1,5 +1,6 @@
-from flask import g, request
+from flask import g, redirect, request, url_for
 
+from .auth import _current_user
 from .core import _request_slots, app
 from .security import validate_csrf
 
@@ -9,6 +10,18 @@ def limit_concurrent_requests():
     if not _request_slots.acquire(blocking=False):
         return "Server is busy. Please retry in a moment.", 503, {"Retry-After": "5"}
     g._request_slot_acquired = True
+    return None
+
+
+@app.before_request
+def redirect_authenticated_login():
+    if request.endpoint != "login" or request.method not in {"GET", "HEAD", "POST"}:
+        return None
+    username, _user = _current_user()
+    if username:
+        # A repeated/stale login form must only navigate the existing account.
+        # Return before CSRF and credential processing; no session state changes.
+        return redirect(url_for("dashboard"), code=303 if request.method == "POST" else 302)
     return None
 
 
