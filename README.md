@@ -8,6 +8,13 @@ optional Telegram notifications. New registrations require a public Telegram
 username. Administrators can opt individual users into monthly payment
 reminders without exposing payment data in customer dashboards.
 
+New client profiles use `AllowedIPs = 0.0.0.0/1, 128.0.0.0/1, ::/1, 8000::/1`.
+These routes cover all IPv4 and IPv6 destinations without enabling WireGuard for
+Windows' automatic `/0` kill switch. Downloads and QR codes also expand existing
+client `/0` defaults into the corresponding `/1` routes; custom split routes,
+stored configurations, keys and server peer routes are preserved. Import the
+downloaded profile again to apply this route change to an existing client.
+
 Users can permanently enable **Safe internet for their entire account**. Every
 current and future VPN profile then inherits protection. Downloaded configs and
 QR codes use the operator's shared resolver, configured by `safe-dns-target`.

@@ -143,7 +143,7 @@ add rule $TABLE_FAMILY $TABLE_NAME forward iifname "$WG_INTERFACE_NAME" ip saddr
 add rule $TABLE_FAMILY $TABLE_NAME forward iifname "$WG_INTERFACE_NAME" ip saddr @$SET_NAME ip daddr @$DOH_SET_NAME udp dport { 443, 5443, 8853, 9953 } counter drop
 EOF
 
-# IPv6 is not allocated to peers: generated profiles capture ::/0 and server
+# IPv6 is not allocated to peers: generated profiles capture both IPv6 /1s and server
 # peer AllowedIPs authorize only each IPv4 /32. Keep that boundary in place.
 # These IPv4-scoped rules cannot control native/off-tunnel IPv6 or arbitrary
 # HTTPS proxies/VPNs on unmanaged devices. Do not block wg0 IPv6 globally: the

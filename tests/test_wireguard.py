@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import threading
 from types import SimpleNamespace
@@ -177,6 +178,69 @@ def test_qr_uses_safe_internet_dns(monkeypatch, tmp_path):
     assert wireguard.qr_svg_b64("alice-phone").startswith("data:image/svg+xml;base64,")
     assert b"DNS = 1.1.1.3, 1.0.0.3" in captured["input"]
     assert b"DNS = 1.1.1.1, 8.8.8.8" not in captured["input"]
+
+
+@pytest.mark.parametrize(
+    "routes,expected",
+    [
+        (
+            "0.0.0.0/0, ::/0",
+            "0.0.0.0/1, 128.0.0.0/1, ::/1, 8000::/1",
+        ),
+        ("0.0.0.0/0", "0.0.0.0/1, 128.0.0.0/1"),
+        ("::/0", "::/1, 8000::/1"),
+        ("0:0:0:0:0:0:0:0/0", "::/1, 8000::/1"),
+        (
+            "192.0.2.0/24, 0.0.0.0/0, 2001:DB8::/32",
+            "192.0.2.0/24, 0.0.0.0/1, 128.0.0.0/1, 2001:DB8::/32",
+        ),
+    ],
+)
+def test_export_expands_only_default_route_families(routes, expected):
+    config = f"[Interface]\nAddress = 10.0.0.2/32\n\n[Peer]\nAllowedIPs = {routes}\n"
+    rendered = wireguard._render_config_allowed_ips(config)
+    assert rendered == config.replace(f"AllowedIPs = {routes}", f"AllowedIPs = {expected}")
+    assert wireguard._render_config_allowed_ips(rendered) == rendered
+
+
+def test_export_default_halves_cover_both_address_families_exactly():
+    rendered = wireguard._render_config_allowed_ips("[Peer]\nAllowedIPs = 0.0.0.0/0, ::/0\n")
+    routes = [ipaddress.ip_network(value.strip()) for value in rendered.split("=", 1)[1].split(",")]
+    assert all(route.prefixlen == 1 for route in routes)
+    for version, default in ((4, "0.0.0.0/0"), (6, "::/0")):
+        family = [route for route in routes if route.version == version]
+        assert len(family) == 2
+        assert not family[0].overlaps(family[1])
+        assert list(ipaddress.collapse_addresses(family)) == [ipaddress.ip_network(default)]
+
+
+def test_export_route_normalization_respects_sections_comments_and_whitespace():
+    config = (
+        "[Interface]\r\nAllowedIPs = 0.0.0.0/0\r\n"
+        "  [ pEeR ] # server\r\n"
+        "\taLlOwEdIpS\t=\t0.0.0.0/0 ,\t::/0  # all destinations\r\n"
+        "# AllowedIPs = 0.0.0.0/0\r\n"
+        "[Other]\r\nAllowedIPs = ::/0\r\n"
+        "[PEER]\r\nAllowedIPs = 192.0.2.1/32"
+    )
+    expected = config.replace(
+        "0.0.0.0/0 ,\t::/0  #",
+        "0.0.0.0/1, 128.0.0.0/1, ::/1, 8000::/1  #",
+    )
+    assert wireguard._render_config_allowed_ips(config) == expected
+
+
+@pytest.mark.parametrize(
+    "routes",
+    [
+        "192.0.2.0/24,\t2001:DB8::/32",
+        "10.0.0.2/32",
+        "0.0.0.0/1, 128.0.0.0/1, ::/1, 8000::/1",
+    ],
+)
+def test_export_preserves_custom_and_already_expanded_routes_verbatim(routes):
+    config = f"[Peer]\r\n  AllowedIPs  = {routes}  # retained\r\n"
+    assert wireguard._render_config_allowed_ips(config) == config
 
 
 @pytest.mark.parametrize("victim,attacker", [("alice", "u5-alice"), ("victimuser", "u10")])

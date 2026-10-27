@@ -297,7 +297,7 @@ DNS = $DNS_SERVERS
 PublicKey = $SERVER_PUB
 PresharedKey = $CLIENT_PSK
 Endpoint = $SERVER_ENDPOINT:$SERVER_PORT
-AllowedIPs = 0.0.0.0/0, ::/0
+AllowedIPs = 0.0.0.0/1, 128.0.0.0/1, ::/1, 8000::/1
 PersistentKeepalive = 25
 EOF
 

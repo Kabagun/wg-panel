@@ -1,4 +1,5 @@
 import base64
+import ipaddress
 import logging
 import os
 import re
@@ -423,7 +424,7 @@ def set_device_safe_internet(wg_name, enabled, *, confirmed=False, allow_locked_
 
 
 def get_config(wg_name):
-    """Return a client config rendered with its device's current DNS preference."""
+    """Render current client DNS and routes without changing its stored config."""
     device = get_device(wg_name)
     if not device:
         return None
@@ -440,7 +441,45 @@ def get_config(wg_name):
         load_safe_dns_target(WG_DIR).client_dns_servers
         if device["safe_internet"] else DEFAULT_DNS_SERVERS
     )
-    return _render_config_dns(config, dns_servers)
+    return _render_config_allowed_ips(_render_config_dns(config, dns_servers))
+
+
+def _render_config_allowed_ips(config):
+    """Expand default routes without triggering Windows' automatic /0 kill switch."""
+    default_routes = {
+        4: ("0.0.0.0/1", "128.0.0.0/1"),
+        6: ("::/1", "8000::/1"),
+    }
+    section = None
+    rendered = []
+    for line in config.splitlines(keepends=True):
+        content = line.rstrip("\r\n")
+        ending = line[len(content) :]
+        header = re.fullmatch(r"\s*\[\s*([^\]]+?)\s*\]\s*(?:#.*)?", content)
+        if header:
+            section = header[1].strip().lower()
+        match = (
+            re.fullmatch(r"(\s*AllowedIPs\s*=\s*)([^#]*?)(\s*(?:#.*)?)", content, re.IGNORECASE)
+            if section == "peer" else None
+        )
+        if match:
+            routes = []
+            changed = False
+            for value in match[2].split(","):
+                route = value.strip()
+                try:
+                    network = ipaddress.ip_network(route, strict=False)
+                except ValueError:
+                    network = None
+                if network is not None and network.prefixlen == 0:
+                    routes.extend(default_routes[network.version])
+                    changed = True
+                else:
+                    routes.append(route)
+            if changed:
+                line = f"{match[1]}{', '.join(routes)}{match[3]}{ending}"
+        rendered.append(line)
+    return "".join(rendered)
 
 
 def _render_config_dns(config, dns_servers):

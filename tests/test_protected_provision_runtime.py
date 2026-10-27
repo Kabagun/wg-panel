@@ -12,6 +12,7 @@ from pathlib import Path
 from test_peer_pause_runtime import MOCK_IP, MOCK_WG
 
 ROOT = Path(__file__).resolve().parents[1]
+CLIENT_ALLOWED_IPS = "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1, ::/1, 8000::/1"
 
 
 @unittest.skipUnless(os.name == "posix", "Actual Bash helpers are tested on Linux")
@@ -54,6 +55,10 @@ class ProtectedProvisionRuntimeTests(unittest.TestCase):
         self.assertEqual(json.loads(self.state.read_text()), {})
         config = (self.clients / "alice-new.conf").read_text()
         self.assertIn("DNS = 1.1.1.3, 1.0.0.3", config)
+        self.assertEqual(
+            [line for line in config.splitlines() if line.startswith("AllowedIPs")],
+            [CLIENT_ALLOWED_IPS],
+        )
         persistent = self.server.read_text()
         self.assertNotIn("[Peer]", persistent)
         match = re.search(r"# WG-PANEL-PAUSED-DATA ([A-Za-z0-9+/=]+)", persistent)
@@ -65,6 +70,18 @@ class ProtectedProvisionRuntimeTests(unittest.TestCase):
         self.assertEqual(resumed.returncode, 0, resumed.stderr)
         self.assertEqual(json.loads(self.state.read_text()), {"public_new=": "10.0.0.2/32"})
         self.assertNotIn("WG-PANEL-PAUSED-BEGIN", self.server.read_text())
+
+    def test_new_live_profile_uses_full_routes_without_default_prefixes(self):
+        result = self.run_helper("add-client.sh", "alice-new")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.clients / "alice-new.conf").read_text()
+        self.assertEqual(
+            [line for line in config.splitlines() if line.startswith("AllowedIPs")],
+            [CLIENT_ALLOWED_IPS],
+        )
+        self.assertIn("DNS = 1.1.1.1, 8.8.8.8", config)
+        self.assertIn("AllowedIPs = 10.0.0.2/32", self.server.read_text())
+        self.assertEqual(json.loads(self.state.read_text()), {"public_new=": "10.0.0.2/32"})
 
     def test_failed_resume_remains_inactive_and_prepared_profile_can_be_revoked(self):
         result = self.run_helper("add-client.sh", "alice-new", "--prepare")

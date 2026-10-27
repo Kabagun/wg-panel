@@ -133,8 +133,11 @@ def contents(root):
 def test_custom_dns_is_identical_in_rendered_config_qr_and_download(unified_runtime):
     runtime = unified_runtime
     runtime.target.write_text("10.0.0.1:18004\n", encoding="ascii")
-    original = runtime.phone.read_text(encoding="utf-8")
-    expected = original.replace("DNS = 1.1.1.1, 8.8.8.8", "DNS = 10.0.0.1")
+    original = runtime.phone.read_bytes()
+    expected = config(PHONE_IP).replace("DNS = 1.1.1.1, 8.8.8.8", "DNS = 10.0.0.1").replace(
+        "AllowedIPs = 0.0.0.0/0, ::/0",
+        "AllowedIPs = 0.0.0.0/1, 128.0.0.0/1, ::/1, 8000::/1",
+    )
     assert wireguard.get_config(PHONE) == expected
     assert wireguard.qr_svg_b64(PHONE).startswith("data:image/svg+xml;base64,")
     assert runtime.qr_inputs == [expected.encode()]
@@ -142,7 +145,7 @@ def test_custom_dns_is_identical_in_rendered_config_qr_and_download(unified_runt
     assert response.status_code == 200
     assert response.get_data(as_text=True) == expected
     assert "no-store" in response.headers["Cache-Control"]
-    assert runtime.phone.read_text(encoding="utf-8") == original
+    assert runtime.phone.read_bytes() == original
 
 
 def test_missing_custom_target_preserves_legacy_protected_dns(unified_runtime):
