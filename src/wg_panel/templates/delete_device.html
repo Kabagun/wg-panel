@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% from 'components.html' import flashes, deletion_badge with context %}
+{% block content %}
+<div class="deletion-workspace" data-device-deletion>
+  <a class="back-link" href="{{ cancel_url }}" data-delete-cancel>{{ icon('back', 17) }}{{ tr('ui_cancel') }}</a>
+  <header class="page-heading"><div><h1 id="deletion-title">{{ tr('delete_title') }}</h1></div></header>
+  {{ flashes() }}
+  <section class="panel deletion-panel" aria-labelledby="deletion-title">
+    {% if device.deletion_protected %}{{ deletion_badge() }}{% endif %}
+    <p id="deletion-description">{{ tr('delete_intro') }}</p>
+    <strong class="deletion-device-name" id="deletion-device-name">{{ device.device }}</strong>
+    <p class="muted">{{ tr('delete_consequence') }}</p>
+    {% if device.deletion_protected %}<p class="deletion-warning">{{ tr('delete_protected_help') }}</p>{% endif %}
+    <form method="post" action="{{ url_for('delete_device_route', wg_name=wg_name) }}" class="form-stack" aria-describedby="deletion-device-name">
+      {{ csrf() }}
+      <input type="hidden" name="challenge" value="{{ challenge }}">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      {% if device.deletion_protected %}
+      <label for="typed-device-name">{{ tr('delete_type_label') }}</label>
+      <input id="typed-device-name" name="typed_name" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="delete-type-help deletion-device-name" data-delete-exact-name="{{ device.device }}" data-mismatch-message="{{ tr('delete_name_mismatch') }}">
+      <p class="field-help" id="delete-type-help">{{ tr('delete_type_help') }}</p>
+      <p class="field-help deletion-input-status" data-delete-input-status role="status" aria-live="polite" data-paste-message="{{ tr('delete_paste_blocked') }}"></p>
+      {% endif %}
+      <div class="form-actions deletion-actions"><a class="button secondary" href="{{ cancel_url }}" data-delete-cancel>{{ tr('ui_cancel') }}</a><button class="button danger" type="submit" name="confirmed" value="on" data-delete-submit>{{ tr('delete_final_action') }}</button></div>
+    </form>
+  </section>
+</div>
+{% endblock %}

@@ -1,15 +1,20 @@
+import secrets
+
 from flask import Response, flash, redirect, request, session, url_for
 
 from ..account_policy import account_safe_internet_locked
 from ..auth import approved_required
+from ..connection_config import connection_details
 from ..core import _lang, _now, app, load_users
 from ..i18n import t
+from ..security import csrf_token
 from ..telegram import send_telegram
 from ..ui import render_page
 from ..wireguard import (
+    begin_device_deletion,
     client_name,
     create_device,
-    delete_device,
+    delete_device_confirmed,
     get_config,
     get_device,
     get_user_devices,
@@ -34,6 +39,8 @@ def dashboard():
             "device": name,
             "wg_name": wg_name,
             "safe_internet": bool(metadata.get("safe_internet")) or account_locked,
+            "deletion_protected": bool(metadata.get("deletion_protected")),
+            "connection": connection_details(get_config(wg_name)),
         })
     used = len(devices)
     return render_page(
@@ -110,6 +117,7 @@ def view_device(wg_name):
     return render_page(
         "device.html", "ui_devices", device=device, wg_name=wg_name,
         config=config, qr=qr_svg_b64(wg_name),
+        connection=connection_details(config, include_public_key=True),
         owner_paused=bool(load_users().get(device["owner"], {}).get("paused")),
         owner_pause_pending=bool(load_users().get(device["owner"], {}).get("pause_pending")),
     )
@@ -162,6 +170,44 @@ def download_device(wg_name):
     return response
 
 
+def _deletion_actor():
+    # This session-specific random value also separates browser sessions for
+    # the same account. Authentication and CSRF rotations invalidate consent.
+    if not session.get("_device_delete_session"):
+        session["_device_delete_session"] = secrets.token_urlsafe(32)
+    return (
+        session["user"], session.get("account_id"), session.get("session_version"),
+        csrf_token(), session["_device_delete_session"],
+    )
+
+
+def _delete_return_to(user):
+    source = request.form if request.method == "POST" else request.args
+    return "admin" if user.get("role") == "admin" and source.get("return_to") == "admin" else ""
+
+
+@app.route("/device/<wg_name>/delete/confirm")
+@approved_required
+def confirm_device_deletion(wg_name):
+    device, user = _authorized_device(wg_name)
+    if not device:
+        flash("Device not found or access denied.", "error")
+        return redirect(url_for("dashboard"))
+    return_to = _delete_return_to(user)
+    nonce = begin_device_deletion(wg_name, _deletion_actor())
+    if not nonce:
+        flash(t("delete_confirmation_invalid", _lang()), "error")
+        return redirect(url_for("dashboard"))
+    cancel_url = (
+        url_for("admin_devices") if return_to == "admin"
+        else url_for("view_device", wg_name=wg_name)
+    )
+    return render_page(
+        "delete_device.html", "delete_title", device=device, wg_name=wg_name,
+        challenge=nonce, return_to=return_to, cancel_url=cancel_url,
+    )
+
+
 @app.route("/device/<wg_name>/delete", methods=["POST"])
 @approved_required
 def delete_device_route(wg_name):
@@ -170,9 +216,18 @@ def delete_device_route(wg_name):
         flash("Device not found or access denied.", "error")
         return redirect(url_for("dashboard"))
 
-    ok, error = delete_device(wg_name)
+    ok, error = delete_device_confirmed(
+        wg_name, _deletion_actor(), request.form.get("challenge", ""),
+        confirmed=request.form.get("confirmed") == "on",
+        typed_name=request.form.get("typed_name", ""),
+    )
     if not ok:
-        flash(f"Failed to remove device: {error}", "error")
+        if error == "Deletion confirmation is invalid or expired":
+            flash(t("delete_confirmation_invalid", _lang()), "error")
+        else:
+            flash(t("delete_failed", _lang()), "error")
+        return redirect(url_for("confirm_device_deletion", wg_name=wg_name,
+                                return_to=_delete_return_to(user)), code=303)
     else:
         send_telegram(
             "🗑️ *Device removed*\n\n"
@@ -181,7 +236,7 @@ def delete_device_route(wg_name):
             f"🕐 Time: {_now()}",
             silent=True,
         )
-        flash(f"Device '{device['device']}' removed.", "ok")
+        flash(t("delete_success", _lang()).format(device=device["device"]), "ok")
 
     if user.get("role") == "admin" and request.form.get("return_to") == "admin":
         return redirect(url_for("admin_devices"))

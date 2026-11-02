@@ -110,7 +110,8 @@ def test_web_admin_cannot_disable_own_or_other_locked_device(policy_runtime, own
     calls.clear()
     admin = authenticated_client("admin")
     body = admin.get(f"/device/{name}").get_data(as_text=True)
-    assert "including administrators, can turn it off" in body
+    assert 'name="safe_internet"' not in body
+    assert 'safe-internet-title' not in body
     assert "data-auto-submit" not in body
     response = post_policy(admin, name, allow_locked_disable="on", admin_override="on")
     assert "Safe internet cannot be disabled in the panel" in response.get_data(as_text=True)
@@ -150,7 +151,7 @@ def test_legacy_enabled_state_is_not_silently_locked_by_read_migration_or_reconc
     assert wireguard.set_device_safe_internet(name, True)
     post_policy(authenticated_client("alice"), name, safe_internet="on")
     assert not traffic.load_device_meta()[name].get("safe_internet_locked")
-    page = authenticated_client("alice").get(f"/device/{name}").get_data(as_text=True)
+    page = authenticated_client("alice").get('/dashboard').get_data(as_text=True)
     assert "Protect all account profiles" in page
     assert "data-safe-lock" in page
     post_policy(

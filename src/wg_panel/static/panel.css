@@ -56,7 +56,7 @@ strong{font-weight:600}
 .breadcrumb strong{font-weight:500;color:#515967;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .protocol-pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#687280;white-space:nowrap}
 .menu-toggle{display:none}
-.main-content{width:100%;max-width:1440px;margin:0 auto;padding:42px 42px 30px;flex:1;min-width:0}
+.main-content{width:100%;max-width:1600px;margin:0 auto;padding:42px 42px 30px;flex:1;min-width:0}
 .app-footer{display:flex;align-items:center;justify-content:space-between;margin:20px 42px 0;padding:20px 0 26px;border-top:1px solid var(--line);color:#8a909c;font-size:10px}
 .page-heading{display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:30px}
 .page-description{color:var(--muted);font-size:13px;line-height:1.75;max-width:660px;margin-top:10px}
@@ -157,7 +157,7 @@ input:not([type=checkbox]):focus,select:focus{outline:none;border-color:#8c9ff5;
 .form-aside .guide-step p{font-size:12px;max-width:280px}
 .check-row{display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-size:12px!important;line-height:1.6}
 input[type=checkbox]{width:17px;height:17px;accent-color:var(--blue);margin:2px 0 0;flex-shrink:0}
-.device-workspace{max-width:930px;margin:0 auto}
+.device-workspace{max-width:1200px;margin:0 auto}
 .device-heading{display:flex;align-items:center;gap:16px;margin:0 0 27px}
 .device-heading-icon{width:57px;height:57px;display:grid;place-items:center;border:1px solid #e1e7f1;background:#fff;border-radius:16px;color:#7487b4;flex-shrink:0}
 .device-heading .eyebrow{font-size:9px;margin-bottom:4px}
@@ -172,6 +172,24 @@ input[type=checkbox]{width:17px;height:17px;accent-color:var(--blue);margin:2px 
 .qr-unavailable{min-height:200px;display:flex;flex-direction:column;justify-content:center;align-items:center;color:#a2adc4;padding:15px;gap:14px;text-align:center}
 .qr-unavailable p{font-size:12px;color:var(--muted)}
 .connection-instructions{min-width:0}
+.device-connection{margin:14px 0 20px;font-size:11px}
+.device-connection>div{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;margin:5px 0}
+.device-connection dt{color:var(--muted)}
+.device-connection dd{margin:0;font-family:Consolas,monospace;overflow-wrap:anywhere}
+.config-summary{margin-top:18px}
+.config-summary>h2{font-size:19px}
+.config-summary-hint{font-size:11px;color:var(--muted);margin:5px 0 20px}
+.config-summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:40px}
+.config-summary-grid h3{font-size:12px;color:var(--muted);margin:0 0 14px}
+.config-values{margin:0}
+.config-values>div{margin:12px 0}
+.config-values dt{font-size:12px;color:var(--muted);margin-bottom:5px}
+.config-values dd{margin:0;font:14px/1.8 Consolas,monospace;overflow-wrap:anywhere}
+.config-file{margin-top:26px;border-top:1px solid var(--line);padding-top:18px;min-width:0}
+.config-file summary{font-size:13px;font-weight:600;cursor:pointer;color:var(--blue)}
+.config-file pre{margin:16px 0 0;padding:22px 24px;border:1px solid #dce4f2;border-radius:12px;background:#f6f8fc;color:#243653;font:14px/1.9 Consolas,"SFMono-Regular",monospace;white-space:pre;overflow-x:auto;tab-size:4}
+.config-file .field-help{margin-top:12px}
+@media(max-width:600px){.config-summary-grid{grid-template-columns:1fr;gap:18px}.config-summary-grid>div+div{border-top:1px solid var(--line);padding-top:20px}}
 .connection-instructions h3{font-size:16px;font-weight:600}
 .connection-instructions>p:not(.copy-toast){color:var(--muted);font-size:12px;line-height:1.8;margin-top:8px;max-width:360px}
 .install-link{display:inline-block;margin-top:12px;font-size:12px}
@@ -182,12 +200,12 @@ input[type=checkbox]{width:17px;height:17px;accent-color:var(--blue);margin:2px 
 .connection-instructions>.connection-note{font-size:10px!important;color:#8a94a6!important;margin-top:11px!important}
 .clipboard-buffer{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0}
 .protection-settings{padding:24px 28px;margin-top:18px}
-.protection-settings+.devices-section{margin-top:28px}
+.protection-settings~.devices-section{margin-top:28px}
 .protection-row{display:flex;align-items:center;gap:13px}
 .protection-icon{display:grid;place-items:center;width:41px;height:41px;flex-shrink:0;border-radius:11px;background:var(--green-soft);color:var(--green)}
 .protection-description{flex:1;min-width:0}
 .protection-description h2{font-size:15px}
-.protection-description p{font-size:11px;color:var(--muted);margin-top:4px}
+.protection-description p{font-size:11px;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
 .protection-switch{display:flex;align-items:center;gap:13px;margin-left:auto}
 .protection-switch .switch-track{width:39px;height:23px}
 .protection-switch .switch-track:after{width:17px;height:17px}
@@ -345,6 +363,23 @@ meter::-moz-meter-bar{background:#8b9eeb;border-radius:5px}
 .confirm-dialog h2{font-size:20px}
 .confirm-dialog p{color:var(--muted);font-size:13px;margin:12px 0 25px;line-height:1.8}
 .dialog-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.deletion-protected-badge{display:inline-flex;align-items:center;gap:5px;background:#fff4df;color:#80520b;border:1px solid #e9d3a8;white-space:normal;line-height:1.5;margin:6px 0}
+.deletion-workspace{max-width:680px;margin:0 auto}
+.deletion-panel>p{font-size:14px;line-height:1.8;margin:14px 0}
+.deletion-device-name{display:block;overflow-wrap:anywhere;white-space:pre-wrap;font-size:clamp(22px,4vw,32px);line-height:1.5;padding:16px 20px;margin:16px 0;background:#fff0f2;border:2px solid #e8b3bc;color:#99243b;border-radius:10px}
+.deletion-warning{border-left:3px solid #c08b2b;padding:8px 14px;background:#fff9ed}
+.deletion-actions{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap}
+.deletion-actions .button{white-space:normal;text-align:center;min-height:44px}
+.deletion-input-status:empty{display:none}
+.device-delete-dialog{border:1px solid var(--line);border-radius:18px;padding:32px;max-width:760px;width:calc(100% - 32px);max-height:calc(100dvh - 32px);overflow:auto;color:var(--ink);box-shadow:0 24px 100px #24304f30}
+.device-delete-dialog::backdrop{background:#1b274966;backdrop-filter:blur(3px)}
+.device-delete-dialog .deletion-workspace>.back-link{display:none}
+.device-delete-dialog .page-heading{margin:0 0 18px}
+.device-delete-dialog .page-heading h1{font-size:24px}
+.device-delete-dialog .deletion-panel{border:0;box-shadow:none;padding:0}
+.device-delete-dialog .deletion-device-name{font-size:clamp(22px,4vw,30px)}
+.device-delete-dialog .deletion-actions .button{flex:1}
+.device-delete-dialog .deletion-panel input[type=text]{font-size:16px}
 @media(min-width:1500px){.main-content{padding-top:48px}.device-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(max-width:1180px){:root{--sidebar:212px}.sidebar{padding-left:15px;padding-right:15px}.topbar{padding:0 28px}.main-content{padding:32px 28px 25px}.app-footer{margin-left:28px;margin-right:28px}.device-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics-grid{gap:12px}.metric{padding:18px}.heading-actions .button{font-size:11px}.guide-steps{gap:15px}.guide-step{gap:8px}.panel{padding:22px}.auth-story{padding:32px}}
 @media(max-width:940px){.page-heading{align-items:flex-start;flex-wrap:wrap;gap:18px}.metric-top{font-size:10px}.metric-detail{font-size:9px}.guide-steps{grid-template-columns:1fr}.setup-guide .guide-step h3{font-size:12px}.setup-guide .guide-step p{font-size:11px;margin-top:2px}.section-heading{flex-wrap:wrap}.shortcut-grid{grid-template-columns:1fr}.form-layout{grid-template-columns:1fr;gap:10px}.form-aside{padding:22px 10px}.form-aside .guide-step p{max-width:none}.auth-story h2{font-size:36px}.auth-story{padding:28px}.auth-form-side{padding:35px 30px}.auth-story-content>p{font-size:12px}.auth-features{font-size:10px}}

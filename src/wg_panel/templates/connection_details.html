@@ -1,0 +1,21 @@
+<section class="panel config-summary" aria-labelledby="connection-details-title">
+  <h2 id="connection-details-title">{{ tr('conn_title') }}</h2>
+  <p class="config-summary-hint">{{ tr('conn_hint') }}</p>
+  <div class="config-summary-grid">
+    <div><h3>{{ tr('conn_interface') }}</h3><dl class="config-values">
+      <div><dt>{{ tr('conn_address') }}</dt><dd>{{ connection.address or '—' }}</dd></div>
+      <div><dt>{{ tr('conn_dns') }}</dt><dd>{{ connection.dns or '—' }}</dd></div>
+      {% if connection.client_public_key %}<div><dt>{{ tr('conn_public_key') }}</dt><dd>{{ connection.client_public_key }}</dd></div>{% endif %}
+      <div><dt>{{ tr('conn_listen_port') }}</dt><dd>{{ connection.listen_port or tr('conn_auto') }}</dd></div>
+      <div><dt>MTU</dt><dd>{{ connection.mtu or tr('conn_auto') }}</dd></div>
+    </dl></div>
+    <div><h3>{{ tr('conn_peer') }}</h3><dl class="config-values">
+      <div><dt>{{ tr('conn_endpoint') }}</dt><dd>{{ connection.endpoint or '—' }}</dd></div>
+      <div><dt>AllowedIPs</dt><dd>{{ connection.allowed_ips or '—' }}</dd></div>
+      <div><dt>{{ tr('conn_public_key') }}</dt><dd>{{ connection.server_public_key or '—' }}</dd></div>
+      <div><dt>{{ tr('conn_preshared_key') }}</dt><dd>{{ tr('conn_enabled' if connection.preshared_key_enabled else 'conn_disabled') }}</dd></div>
+      <div><dt>PersistentKeepalive</dt><dd>{{ connection.keepalive or tr('conn_disabled') }}</dd></div>
+    </dl></div>
+  </div>
+  <details class="config-file"><summary>{{ tr('ui_config') }}</summary><p class="field-help">{{ tr('ui_private_config') }}</p><pre id="conf-block" tabindex="0" aria-label="{{ tr('ui_config') }}"><code>{{ config }}</code></pre></details>
+</section>

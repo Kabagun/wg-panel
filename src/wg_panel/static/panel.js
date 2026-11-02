@@ -211,3 +211,99 @@ confirmation?.addEventListener("close", () => {
   pendingSubmitter = null;
   if (dialogOpener?.isConnected) dialogOpener.focus();
 });
+
+function setupDeviceDeletion(workspace, dialog = null) {
+  workspace.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    if (dialog) dialog.close();
+    else workspace.querySelector("[data-delete-cancel]")?.click();
+  });
+  if (dialog) workspace.querySelectorAll("[data-delete-cancel]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      dialog.close();
+    });
+  });
+  const field = workspace.querySelector("[data-delete-exact-name]");
+  if (!field) return;
+  const status = workspace.querySelector("[data-delete-input-status]");
+  const submit = workspace.querySelector("[data-delete-submit]");
+  let lastTypedValue = "";
+  let manualInputPending = false;
+  let composing = false;
+  const validate = () => {
+    const matches = field.value === field.dataset.deleteExactName;
+    field.setCustomValidity(matches ? "" : field.dataset.mismatchMessage);
+    submit.disabled = !matches;
+  };
+  const blockTransfer = (event) => {
+    event.preventDefault();
+    status.textContent = status.dataset.pasteMessage;
+    field.focus();
+  };
+  field.addEventListener("paste", blockTransfer);
+  field.addEventListener("drop", blockTransfer);
+  field.addEventListener("dragover", (event) => event.preventDefault());
+  field.addEventListener("compositionstart", () => { composing = true; });
+  field.addEventListener("compositionend", () => { composing = false; });
+  field.addEventListener("beforeinput", (event) => {
+    manualInputPending = /^(insertText|insertCompositionText|delete.*|historyUndo|historyRedo)$/.test(event.inputType || "");
+    if (!manualInputPending || event.dataTransfer) {
+      manualInputPending = false;
+      blockTransfer(event);
+    }
+  });
+  field.addEventListener("input", (event) => {
+    // Some autofill engines emit input without a cancelable beforeinput. Keep
+    // only changes preceded by ordinary typing, deletion or IME composition.
+    if ((!manualInputPending && !composing) || event.inputType === "insertReplacementText") {
+      field.value = lastTypedValue;
+      status.textContent = status.dataset.pasteMessage;
+    } else {
+      lastTypedValue = field.value;
+      status.textContent = "";
+    }
+    manualInputPending = false;
+    validate();
+  });
+  field.value = "";
+  validate();
+}
+
+document.querySelectorAll("[data-device-deletion]").forEach((workspace) => setupDeviceDeletion(workspace));
+
+document.querySelectorAll("[data-delete-open]").forEach((opener) => {
+  opener.addEventListener("click", async (event) => {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey
+        || !window.HTMLDialogElement?.prototype.showModal || !window.fetch) return;
+    event.preventDefault();
+    if (opener.getAttribute("aria-busy") === "true") return;
+    opener.setAttribute("aria-busy", "true");
+    try {
+      const response = await fetch(opener.href, {credentials: "same-origin", headers: {Accept: "text/html"}});
+      if (!response.ok || response.redirected) throw new Error("Confirmation unavailable");
+      const page = new DOMParser().parseFromString(await response.text(), "text/html");
+      const content = page.querySelector("[data-device-deletion]");
+      if (!content) throw new Error("Confirmation unavailable");
+      const dialog = document.createElement("dialog");
+      dialog.className = "device-delete-dialog";
+      dialog.setAttribute("aria-labelledby", "deletion-title");
+      dialog.setAttribute("aria-describedby", "deletion-description deletion-device-name");
+      const workspace = document.importNode(content, true);
+      dialog.append(workspace);
+      document.body.append(dialog);
+      setupDeviceDeletion(workspace, dialog);
+      dialog.addEventListener("close", () => {
+        dialog.remove();
+        if (opener.isConnected) opener.focus();
+      }, {once: true});
+      dialog.showModal();
+      workspace.querySelector("[data-delete-cancel]").focus();
+    } catch {
+      window.location.assign(opener.href);
+    } finally {
+      opener.removeAttribute("aria-busy");
+    }
+  });
+});

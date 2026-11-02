@@ -258,6 +258,26 @@ UI_STRINGS = {
         "This profile is already protected. Confirm to extend permanent protection to all current and future profiles of this account without turning filtering off.",
         "Этот профиль уже защищён. Подтвердите закрепление защиты за всеми текущими и будущими профилями аккаунта без отключения фильтрации.",
     ),
+    "conn_safe_enable_hint": (
+        "Enabling protection is permanent for this account. Review and confirm before enabling.",
+        "Защита включается навсегда для всего аккаунта. Перед включением появится окно подтверждения.",
+    ),
+    "conn_title": ("Connection parameters", "Параметры подключения"),
+    "conn_hint": (
+        "These values match the configuration currently offered for download. An earlier import on your device may differ.",
+        "Данные из текущего файла для скачивания. В ранее импортированном профиле на устройстве настройки могут отличаться.",
+    ),
+    "conn_interface": ("Your device · Interface", "Ваше устройство · Interface"),
+    "conn_peer": ("VPN server · Peer", "VPN-сервер · Peer"),
+    "conn_address": ("VPN IP address", "IP-адрес в VPN"),
+    "conn_dns": ("DNS servers", "DNS-серверы"),
+    "conn_public_key": ("Public key", "Публичный ключ"),
+    "conn_listen_port": ("Local port", "Локальный порт"),
+    "conn_auto": ("Automatic", "Автоматически"),
+    "conn_endpoint": ("Server address", "Адрес сервера"),
+    "conn_preshared_key": ("Preshared key", "Общий ключ"),
+    "conn_enabled": ("Enabled", "Включён"),
+    "conn_disabled": ("Disabled", "Выключен"),
     "safe_confirm_title": ("Protect this entire account permanently?", "Закрепить защиту за всем аккаунтом?"),
     "safe_confirm_enable": ("Protect the entire account", "Защитить весь аккаунт"),
     "safe_lock_action": ("Protect all account profiles", "Закрепить защиту аккаунта"),
@@ -491,6 +511,43 @@ UI_STRINGS.update({
         "Family DNS protection needs attention. Refresh the page and contact the server administrator before making another change.",
         "Семейная DNS-защита требует внимания. Обновите страницу и обратитесь к администратору сервера перед следующим изменением.",
     ),
+})
+
+UI_STRINGS.update({
+    "delete_protected_badge": ("Deletion protected", "Защищено от удаления"),
+    "delete_title": ("Remove device", "Удаление устройства"),
+    "delete_intro": (
+        "Remove this device? Check its exact name:",
+        "Удалить это устройство? Проверьте его точное имя:",
+    ),
+    "delete_consequence": (
+        "Its VPN access and saved configuration will be revoked. This cannot be undone.",
+        "Его доступ к VPN и сохранённая конфигурация будут отозваны. Отменить удаление нельзя.",
+    ),
+    "delete_protected_help": (
+        "This device has separate deletion protection. Removing it requires its exact name. This protection is independent of Safe internet and Family DNS.",
+        "У устройства включена отдельная защита от удаления. Для удаления потребуется его точное имя. Эта защита не связана с безопасным интернетом и семейным DNS.",
+    ),
+    "delete_final_action": ("Permanently remove device", "Окончательно удалить устройство"),
+    "delete_type_label": ("Type the exact device name", "Введите точное имя устройства"),
+    "delete_type_help": (
+        "Enter the highlighted name manually, including case and punctuation. JavaScript blocks pasting, dropping text and autofill replacements.",
+        "Введите выделенное имя вручную, учитывая регистр и знаки. JavaScript блокирует вставку, перетаскивание текста и замену автозаполнением.",
+    ),
+    "delete_paste_blocked": (
+        "Please type the device name manually. Pasting, dropping text and autofill replacements are blocked.",
+        "Введите имя устройства вручную. Вставка, перетаскивание текста и замена автозаполнением заблокированы.",
+    ),
+    "delete_name_mismatch": ("Enter the exact displayed name.", "Введите точное имя, указанное выше."),
+    "delete_confirmation_invalid": (
+        "Confirmation is missing, expired, or no longer matches this device. Review the device and start again.",
+        "Подтверждение отсутствует, истекло или больше не соответствует устройству. Проверьте устройство и начните заново.",
+    ),
+    "delete_failed": (
+        "The device could not be removed. Review its current state before trying again.",
+        "Не удалось удалить устройство. Перед повтором проверьте его текущее состояние.",
+    ),
+    "delete_success": ("Device '{device}' removed.", "Устройство «{device}» удалено."),
 })
 
 for _key, (_en, _ru) in UI_STRINGS.items():

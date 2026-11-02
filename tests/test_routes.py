@@ -548,16 +548,19 @@ def test_device_safe_internet_first_enable_locks_existing_config_download(runtim
     assert wireguard.get_device("alice-phone")["safe_internet"] is True
     assert account_policy.account_safe_internet_locked("alice")
     enabled_page = client.get("/device/alice-phone").get_data(as_text=True)
-    assert 'name="safe_internet" checked' in enabled_page
-    assert '<span class="tag tag-ok" role="status" aria-live="polite">Account locked</span>' in enabled_page
-    assert 'aria-describedby="safe-internet-help safe-internet-lock"' in enabled_page
-    assert "VPN server enforces protection for every current and future VPN profile" in enabled_page
-    assert "newly downloaded configs follow this policy" in enabled_page
-    assert "No panel user, including administrators, can disable it" in enabled_page
-    assert "removing the VPN profile" in enabled_page
-    assert "Protection is locked for all current and future VPN profiles" in enabled_page
+    policy_page = client.get("/dashboard").get_data(as_text=True)
+    assert 'name="safe_internet" checked' in policy_page
+    assert '<span class="tag tag-ok" role="status" aria-live="polite">Account locked</span>' in policy_page
+    assert 'aria-describedby="safe-internet-help safe-internet-lock"' in policy_page
+    assert "VPN server enforces protection for every current and future VPN profile" in policy_page
+    assert "newly downloaded configs follow this policy" in policy_page
+    assert "No panel user, including administrators, can disable it" in policy_page
+    assert "removing the VPN profile" in policy_page
+    assert "Protection is locked for all current and future VPN profiles" in policy_page
+    assert 'name="safe_internet"' not in enabled_page
     assert 'data-auto-submit' not in enabled_page
-    assert '<pre id="conf-block" hidden>' in enabled_page
+    assert '<details class="config-file">' in enabled_page
+    assert '<pre id="conf-block" tabindex="0"' in enabled_page
     assert 'data-copy-target="conf-block"' in enabled_page
     enabled_config = client.get("/device/alice-phone/download").get_data(as_text=True)
     assert "DNS = 1.1.1.3, 1.0.0.3" in enabled_config
@@ -569,7 +572,7 @@ def test_device_safe_internet_first_enable_locks_existing_config_download(runtim
     )
     assert response.status_code == 302
     assert wireguard.get_device("alice-phone")["safe_internet"] is True
-    locked_page = client.get("/device/alice-phone").get_data(as_text=True)
+    locked_page = client.get("/dashboard").get_data(as_text=True)
     assert "Safe internet cannot be disabled in the panel" in locked_page
     locked_config = client.get("/device/alice-phone/download").get_data(as_text=True)
     assert "DNS = 1.1.1.3, 1.0.0.3" in locked_config
@@ -589,7 +592,7 @@ def test_device_safe_internet_copy_is_localized_in_russian(runtime):
     csrf_session(client, "alice")
 
     body = client.get(
-        "/device/alice-phone", headers={"Accept-Language": "ru-RU,ru;q=0.9"}
+        "/dashboard", headers={"Accept-Language": "ru-RU,ru;q=0.9"}
     ).get_data(as_text=True)
 
     assert '<span class="tag tag-pend" role="status" aria-live="polite">Не закреплено</span>' in body
@@ -689,11 +692,14 @@ def test_device_and_admin_action_forms_keep_csrf_and_post_contracts(runtime):
     owner = app.test_client()
     csrf_session(owner, "alice")
     device_body = owner.get("/device/alice-phone").get_data(as_text=True)
-    _assert_form_has_csrf(device_body, "/device/alice-phone/safe-internet")
-    _assert_form_has_csrf(device_body, "/device/alice-phone/delete")
+    assert 'name="safe_internet"' not in device_body
+    _assert_form_has_csrf(owner.get('/dashboard').get_data(as_text=True), '/account/safe-internet')
+    assert 'href="/device/alice-phone/delete/confirm" data-delete-open' in device_body
+    deletion_body = owner.get("/device/alice-phone/delete/confirm").get_data(as_text=True)
+    _assert_form_has_csrf(deletion_body, "/device/alice-phone/delete")
     _assert_form_has_csrf(device_body, "/logout")
     assert 'href="/device/alice-phone/download"' in device_body
-    assert 'data-confirm=' in device_body
+    assert 'name="confirmed" value="on"' in deletion_body
 
     admin = app.test_client()
     csrf_session(admin, "admin")

@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from 'components.html' import heading, flashes, search, no_results, access_badge with context %}
+{% from 'components.html' import heading, flashes, search, no_results, access_badge, deletion_badge with context %}
 {% block content %}
 {{ heading(tr('ui_all_devices'), tr('ui_all_devices_sub'), tr('ui_admin_section')) }}{{ flashes() }}
 <section class="panel" data-filter-scope>
@@ -8,10 +8,10 @@
     <thead><tr><th>{{ tr('tr_col_dev') }}</th><th>{{ tr('tr_col_owner') }}</th><th>{{ tr('ui_access_heading') }}</th><th>{{ tr('dash_col_act') }}</th></tr></thead>
     <tbody>{% for owner, device, wg_name in devices %}
       <tr data-search-item="{{ owner }} {{ device }}">
-        <td data-label="{{ tr('tr_col_dev') }}"><div class="table-person"><span class="table-device-icon">{{ icon(device_icon(device), 21) }}</span><a href="{{ url_for('view_device', wg_name=wg_name) }}"><strong>{{ device }}</strong></a></div></td>
+        <td data-label="{{ tr('tr_col_dev') }}"><div class="table-person"><span class="table-device-icon">{{ icon(device_icon(device), 21) }}</span><div><a href="{{ url_for('view_device', wg_name=wg_name) }}"><strong>{{ device }}</strong></a>{% if deletion_protected.get(wg_name) %}<div>{{ deletion_badge() }}</div>{% endif %}</div></div></td>
         <td data-label="{{ tr('tr_col_owner') }}">{{ owner }}</td>
         <td data-label="{{ tr('ui_access_heading') }}">{{ access_badge(owner_status.get(owner, 'attention')) }}</td>
-        <td data-label="{{ tr('dash_col_act') }}"><div class="table-actions"><a href="{{ url_for('view_device', wg_name=wg_name) }}" class="button secondary small">{{ tr('ui_manage') }}</a><form method="post" action="{{ url_for('delete_device_route', wg_name=wg_name) }}" data-confirm="{{ tr('ui_remove_device') }}">{{ csrf() }}<input type="hidden" name="return_to" value="admin"><button class="icon-button danger-text" type="submit" aria-label="{{ tr('ui_remove') }}: {{ device }}">{{ icon('trash', 17) }}</button></form></div></td>
+        <td data-label="{{ tr('dash_col_act') }}"><div class="table-actions"><a href="{{ url_for('view_device', wg_name=wg_name) }}" class="button secondary small">{{ tr('ui_manage') }}</a><a class="icon-button danger-text" href="{{ url_for('confirm_device_deletion', wg_name=wg_name, return_to='admin') }}" aria-label="{{ tr('ui_remove') }}: {{ device }}" data-delete-open>{{ icon('trash', 17) }}</a></div></td>
       </tr>
     {% else %}<tr><td colspan="4"><div class="empty-state compact">{{ tr('tr_nodiv') }}</div></td></tr>{% endfor %}</tbody>
   </table></div>{{ no_results() }}

@@ -1,9 +1,11 @@
 import base64
+import hashlib
 import logging
 import os
 import re
 import subprocess
 
+from . import deletion
 from .account_policy import (
     AccountPolicyError,
     account_safe_internet_locked,
@@ -143,6 +145,7 @@ def _migrate_device_metadata(dry_run):
         for name in stale:
             if (
                 not meta[name].get("safe_internet_locked")
+                and not meta[name].get("deletion_protected")
                 and not users.get(meta[name].get("owner"), {}).get("revoking")
             ):
                 meta.pop(name, None)
@@ -204,6 +207,7 @@ def get_device(wg_name):
         return None
     return {
         "wg_name": wg_name, **item,
+        "deletion_protected": bool(item.get("deletion_protected")),
         "safe_internet": effective_safe_internet(item),
         "account_safe_internet_locked": account_locked,
     }
@@ -646,7 +650,69 @@ def create_device(username, device):
         return True, wg_name, ""
 
 
+def set_device_deletion_protected(wg_name, enabled=True):
+    """Set independent deletion protection during deliberate server maintenance.
+
+    No web route exposes this setter; changing it requires server access.
+    It does not change ownership, Safe internet, or the client configuration.
+    """
+    with _wireguard_lock:
+        if not get_device(wg_name):
+            return False
+        mutate_device_meta(
+            lambda records: records[wg_name].update(deletion_protected=bool(enabled))
+        )
+        return True
+
+
+def _deletion_identity(wg_name):
+    device = get_device(wg_name)
+    if not device:
+        return None
+    try:
+        with open(_config_path(wg_name), "rb") as handle:
+            config_hash = hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return None
+    return (
+        wg_name, device["owner"], device["device"], config_hash,
+        device["deletion_protected"],
+    )
+
+
+def begin_device_deletion(wg_name, actor):
+    """Create a confirmation challenge without removing or changing a peer."""
+    with _wireguard_lock:
+        identity = _deletion_identity(wg_name)
+        return deletion.issue(actor, identity) if identity else None
+
+
+def delete_device_confirmed(wg_name, actor, nonce, *, confirmed=False, typed_name=""):
+    """Validate final consent and revoke under the same lifecycle lock.
+
+    Exact-name input is consent, not proof of physical keystrokes: a server
+    cannot distinguish typing from a crafted HTTP request or clipboard input.
+    """
+    with _wireguard_lock:
+        identity = _deletion_identity(wg_name)
+        valid = deletion.consume(nonce, actor, identity)
+        if (
+            not identity or not valid or not confirmed
+            or (identity[-1] and typed_name != identity[2])
+        ):
+            return False, "Deletion confirmation is invalid or expired"
+        return _delete_device(wg_name)
+
+
 def delete_device(wg_name):
+    """Reject protected profiles unless the complete confirmation flow passed."""
+    with _wireguard_lock:
+        if load_device_meta().get(wg_name, {}).get("deletion_protected"):
+            return False, "Device is protected from deletion; confirm it separately"
+        return _delete_device(wg_name)
+
+
+def _delete_device(wg_name):
     """Revoke a device and remove metadata only after verified helper success."""
     with _wireguard_lock:
         if wg_name in assert_infrastructure_ready(wg_dir=WG_DIR):
@@ -716,6 +782,14 @@ def delete_user(username):
     """
     with _wireguard_lock:
         infrastructure = assert_infrastructure_ready(wg_dir=WG_DIR)
+        # Preflight every owned record before disabling the account or revoking
+        # even its ordinary peers. Stale records still carry protection.
+        meta = load_device_meta()
+        if any(
+            item.get("owner") == username and item.get("deletion_protected")
+            for item in meta.values()
+        ):
+            return False, "Account has deletion-protected devices; confirm each device separately"
         def begin(users):
             user = users.get(username)
             if not user or user.get("role") == "admin":

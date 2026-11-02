@@ -77,6 +77,8 @@ def set_device_meta(wg_name, owner, device, *, provisioning=False):
     """Create metadata for a newly provisioned WireGuard device."""
     def update(meta):
         existing = meta.get(wg_name, {})
+        if existing.get("deletion_protected"):
+            raise ValueError("A deletion-protected identity cannot be overwritten")
         if existing.get("safe_internet_locked") and not (
             existing.get("owner") == owner and existing.get("revoked")
             and account_safe_internet_locked(owner)

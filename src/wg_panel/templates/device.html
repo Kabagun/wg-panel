@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
-{% from 'components.html' import flashes, pause_notice, account_protection with context %}
+{% from 'components.html' import flashes, pause_notice, deletion_badge with context %}
 {% block content %}
 <div class="device-workspace">
   <a class="back-link" href="{{ url_for('dashboard') }}">{{ icon('back', 17) }}{{ tr('ui_back_devices') }}</a>
   <header class="device-heading">
     <span class="device-heading-icon">{{ icon(device_icon(device.device), 29) }}</span>
-    <div><p class="eyebrow">WIREGUARD</p><h1>{{ device.device }}</h1></div>
+    <div><p class="eyebrow">WIREGUARD</p><h1>{{ device.device }}</h1>{% if device.deletion_protected %}{{ deletion_badge() }}{% endif %}</div>
   </header>
   {{ flashes() }}
   {% if owner_paused %}{{ pause_notice(owner_pause_pending) }}{% endif %}
@@ -28,11 +28,10 @@
         </div>
         <p class="connection-note">{{ tr('ui_file_hint') }}</p>
         <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
-        <pre id="conf-block" hidden>{{ config }}</pre>
       </div>
     </div>
   </section>
-  {{ account_protection(device.account_safe_internet_locked, url_for('update_device_safe_internet', wg_name=wg_name), device.owner, current_paused, device.safe_internet) }}
-  {% if not current_paused %}<div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><form method="post" action="{{ url_for('delete_device_route', wg_name=wg_name) }}" data-confirm="{{ tr('ui_remove_device') }}">{{ csrf() }}<button class="button danger-outline small" type="submit">{{ icon('trash', 16) }}{{ tr('ui_danger') }}</button></form></div>{% endif %}
+  {% include 'connection_details.html' %}
+  {% if not current_paused %}<div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><a class="button danger-outline small" href="{{ url_for('confirm_device_deletion', wg_name=wg_name) }}" data-delete-open>{{ icon('trash', 16) }}{{ tr('ui_danger') }}</a></div>{% endif %}
 </div>
 {% endblock %}

@@ -15,7 +15,7 @@ from ..payments import (
 )
 from ..traffic import collect_traffic, load_traffic
 from ..ui import render_page
-from ..wireguard import delete_user, get_all_devices, get_user_devices
+from ..wireguard import delete_user, get_all_devices, get_device, get_user_devices
 
 
 @app.route("/traffic")
@@ -239,7 +239,12 @@ def admin_delete_user(username):
 @admin_required
 def admin_devices():
     with _wireguard_lock:
+        devices = get_all_devices()
         return render_page(
-            "all_devices.html", "ui_all_devices", devices=get_all_devices(),
+            "all_devices.html", "ui_all_devices", devices=devices,
             owner_status={name: access_status(user) for name, user in load_users().items()},
+            deletion_protected={
+                name: bool((get_device(name) or {}).get("deletion_protected"))
+                for _owner, _device, name in devices
+            },
         )
