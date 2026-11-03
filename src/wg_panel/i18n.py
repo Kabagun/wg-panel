@@ -551,49 +551,14 @@ UI_STRINGS.update({
 })
 
 UI_STRINGS.update({
-    "kill_switch_card_hint": (
-        "Windows PCs only: you can turn off the kill switch →",
-        "Только для ПК с Windows: kill switch можно выключить самостоятельно →",
+    "kill_switch_notice_title": ("Kill switch", "Kill switch"),
+    "kill_switch_notice_windows": (
+        "Windows: deactivate the tunnel, open Edit and uncheck “Block untunneled traffic (kill-switch)”. Save and reconnect. This permits traffic outside the VPN.",
+        "Windows: отключите туннель, откройте «Редактировать» и снимите «Блокировать трафик… (kill-switch)». Сохраните и подключитесь снова. Это разрешит трафик вне VPN.",
     ),
-    "kill_switch_title": (
-        "Kill switch — Windows PCs only",
-        "Kill switch — только для ПК с Windows",
-    ),
-    "kill_switch_intro": (
-        "In WireGuard for Windows, the kill switch blocks traffic outside the VPN while the tunnel is active. This is a local setting; the panel cannot see whether it is enabled.",
-        "В WireGuard для Windows kill switch блокирует трафик вне VPN, пока туннель активен. Это локальная настройка: панель не видит, включена ли она.",
-    ),
-    "kill_switch_windows_title": (
-        "Windows: how to turn it off",
-        "Windows: как выключить",
-    ),
-    "kill_switch_windows_help": (
-        "You can change this yourself in the official WireGuard app on Windows:",
-        "Вы можете изменить эту настройку самостоятельно в официальном приложении WireGuard для Windows:",
-    ),
-    "kill_switch_step_open": (
-        "Select this device’s tunnel, deactivate it and choose Edit.",
-        "Выберите туннель этого устройства, отключите его и нажмите «Редактировать» (Edit).",
-    ),
-    "kill_switch_step_uncheck": (
-        "Uncheck “Block untunneled traffic (kill-switch)”.",
-        "Снимите флажок «Block untunneled traffic (kill-switch)» — блокировать трафик вне туннеля.",
-    ),
-    "kill_switch_step_save": (
-        "Save and activate the tunnel again. To turn the kill switch back on, repeat these steps and check the box.",
-        "Сохраните и снова включите туннель. Чтобы вернуть kill switch, повторите эти шаги и установите флажок.",
-    ),
-    "kill_switch_effect": (
-        "Turning it off permits traffic outside the VPN. It does not guarantee an automatic switch to your regular connection if the VPN server becomes unreachable.",
-        "Отключение разрешает трафик вне VPN. Оно не гарантирует автоматический переход на обычное подключение, если VPN-сервер станет недоступен.",
-    ),
-    "kill_switch_reminder": (
-        "After importing a configuration again, remember to check this setting in WireGuard.",
-        "После повторного импорта конфигурации не забудьте проверить эту настройку в WireGuard.",
-    ),
-    "kill_switch_ios_help": (
-        "WireGuard on iPhone and iPad has no equivalent Windows kill-switch checkbox. Keep the exported configuration as it is; the Windows steps above do not apply. Connect or disconnect the VPN in the WireGuard app.",
-        "В WireGuard на iPhone и iPad нет аналогичного флажка kill switch из Windows. Используйте экспортированную конфигурацию без изменений: инструкция для Windows выше здесь не применяется. Включайте и выключайте VPN в приложении WireGuard.",
+    "kill_switch_notice_apple": (
+        "macOS, iPhone and iPad: the official WireGuard app has no equivalent checkbox. On-Demand reconnects automatically; disable it too if you want to keep the VPN off.",
+        "macOS, iPhone и iPad: в официальном WireGuard такой галочки нет. On-Demand подключает VPN автоматически; выключите и его, если хотите оставить VPN отключённым.",
     ),
     "device_cleanup_policy": (
         "Automatic cleanup: devices with no observed VPN traffic for more than 60 days are removed. Deletion-protected devices and paused devices or accounts are excluded. If activity history is missing, a new 60-day observation period starts.",

@@ -16,7 +16,6 @@
       {% if device.deletion_protected %}{{ deletion_badge() }}{% endif %}
       <div class="device-protection {{ 'is-protected' if device.safe_internet }}">{{ icon('shield', 16) }}{{ tr('safe_title' if device.safe_internet else 'ui_standard_dns') }}</div>
       <dl class="device-connection"><div><dt>IP</dt><dd>{{ device.connection.address or '—' }}</dd></div><div><dt>DNS</dt><dd>{{ device.connection.dns or '—' }}</dd></div></dl>
-      <p class="device-client-help"><a href="{{ url_for('view_device', wg_name=device.wg_name) }}#kill-switch-help">{{ tr('kill_switch_card_hint') }}</a></p>
       <div class="device-card-actions"><a href="{{ url_for('view_device', wg_name=device.wg_name) }}" class="device-action">{{ icon('qr', 17) }}{{ tr('ui_view_config' if paused else 'ui_manage') }}{{ icon('arrow', 16) }}</a><a class="icon-button" href="{{ url_for('download_device', wg_name=device.wg_name) }}" aria-label="{{ tr('ui_download') }}: {{ device.device }}" title="{{ tr('ui_download') }}">{{ icon('down', 18) }}</a></div>
     </article>
   {% else %}

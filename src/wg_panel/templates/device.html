@@ -27,12 +27,12 @@
           <button type="button" class="button secondary" data-copy-target="conf-block" data-copy-success="{{ tr('ui_copied') }}" data-copy-error="{{ tr('ui_copy_error') }}">{{ icon('copy', 18) }}{{ tr('ui_copy') }}</button>
         </div>
         <p class="connection-note">{{ tr('ui_file_hint') }}</p>
+        {% include 'kill_switch_help.html' %}
         <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
       </div>
     </div>
   </section>
   {% include 'connection_details.html' %}
-  {% include 'kill_switch_help.html' %}
   {% if not current_paused %}<div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><a class="button danger-outline small" href="{{ url_for('confirm_device_deletion', wg_name=wg_name) }}" data-delete-open>{{ icon('trash', 16) }}{{ tr('ui_danger') }}</a></div>{% endif %}
 </div>
 {% endblock %}

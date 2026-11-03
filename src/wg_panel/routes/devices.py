@@ -166,7 +166,7 @@ def download_device(wg_name):
     if not config:
         return "Device not found", 404
     response = Response(config, mimetype="application/octet-stream")
-    response.headers["Content-Disposition"] = f'inline; filename="{device["device"]}.conf"'
+    response.headers.set("Content-Disposition", "attachment", filename=f"{device['device']}.conf")
     return response
 
 

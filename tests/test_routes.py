@@ -521,6 +521,8 @@ def test_exact_device_authorization_get_delete_rejection_and_no_store(runtime):
     csrf_session(owner, "alice")
     response = owner.get("/device/alice-phone/download")
     assert response.status_code == 200
+    assert response.headers["Content-Disposition"].startswith("attachment;")
+    assert "phone.conf" in response.headers["Content-Disposition"]
     assert response.headers["Cache-Control"].startswith("no-store")
     assert "PrivateKey = secret" in response.get_data(as_text=True)
 

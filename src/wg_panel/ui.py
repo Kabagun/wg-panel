@@ -9,6 +9,7 @@ from .security import csrf_input
 from .traffic import fmt_bytes
 
 ICONS = {
+    "alert": '<path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3h.01"/>',
     "shield": '<path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/>',
     "grid": '<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
     "devices": '<rect x="3" y="4" width="14" height="11" rx="2"/><path d="M7 20h7m-4-5v5"/><rect x="16" y="10" width="6" height="11" rx="1.5"/>',
