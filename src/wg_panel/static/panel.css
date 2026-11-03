@@ -103,6 +103,8 @@ strong{font-weight:600}
 .device-protection{display:flex;align-items:center;gap:6px;color:#858d9b;font-size:10px;margin-top:20px;margin-bottom:19px;min-height:20px}
 .device-protection.is-protected{color:var(--green)}
 .device-card-actions{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #eff1f5;margin:0 -22px;padding:9px 15px 9px 22px}
+.device-client-help{font-size:12px;line-height:1.65;margin:0 0 16px}
+.device-client-help a{text-decoration:underline;text-underline-offset:3px}
 .device-action{font-size:11px;display:flex;align-items:center;gap:7px;font-weight:550;min-height:36px}
 .device-action svg:last-child{margin-left:4px}
 .add-device-card{border:1px dashed #d5dcea;min-height:240px;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:24px;color:#73809a;background:#f8f9fc;transition:background .15s,border-color .15s}
@@ -222,6 +224,12 @@ input[type=checkbox]{width:17px;height:17px;accent-color:var(--blue);margin:2px 
 .protection-details>p{color:var(--muted);font-size:11px;line-height:1.9;max-width:730px;margin-top:12px}
 .device-footer{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-top:22px;padding:0 3px}
 .device-footer p{font-size:11px;color:#939ba8}
+.client-help{margin-top:18px;scroll-margin-top:24px}
+.client-help h2{font-size:18px}
+.client-help h3{font-size:14px;margin-top:20px}
+.client-help p,.client-help ol{font-size:13px;line-height:1.8;color:var(--muted);margin-top:10px;max-width:760px}
+.client-help ol{padding-left:22px}
+.client-help li+li{margin-top:6px}
 .switch-label{position:relative;display:flex;align-items:center;gap:10px;cursor:pointer;font-size:11px;color:#515c70}
 .switch-label input{position:absolute;opacity:0;width:35px;height:22px}
 .switch-track{width:35px;height:21px;background:#d7dce7;border-radius:20px;position:relative;transition:background .15s;flex-shrink:0}

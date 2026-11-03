@@ -32,6 +32,7 @@
     </div>
   </section>
   {% include 'connection_details.html' %}
+  {% include 'kill_switch_help.html' %}
   {% if not current_paused %}<div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><a class="button danger-outline small" href="{{ url_for('confirm_device_deletion', wg_name=wg_name) }}" data-delete-open>{{ icon('trash', 16) }}{{ tr('ui_danger') }}</a></div>{% endif %}
 </div>
 {% endblock %}

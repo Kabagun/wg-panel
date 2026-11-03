@@ -550,6 +550,53 @@ UI_STRINGS.update({
     "delete_success": ("Device '{device}' removed.", "Устройство «{device}» удалено."),
 })
 
+UI_STRINGS.update({
+    "kill_switch_card_hint": (
+        "Windows PCs only: you can turn off the kill switch →",
+        "Только для ПК с Windows: kill switch можно выключить самостоятельно →",
+    ),
+    "kill_switch_title": (
+        "Kill switch — Windows PCs only",
+        "Kill switch — только для ПК с Windows",
+    ),
+    "kill_switch_intro": (
+        "In WireGuard for Windows, the kill switch blocks traffic outside the VPN while the tunnel is active. This is a local setting; the panel cannot see whether it is enabled.",
+        "В WireGuard для Windows kill switch блокирует трафик вне VPN, пока туннель активен. Это локальная настройка: панель не видит, включена ли она.",
+    ),
+    "kill_switch_windows_title": (
+        "Windows: how to turn it off",
+        "Windows: как выключить",
+    ),
+    "kill_switch_windows_help": (
+        "You can change this yourself in the official WireGuard app on Windows:",
+        "Вы можете изменить эту настройку самостоятельно в официальном приложении WireGuard для Windows:",
+    ),
+    "kill_switch_step_open": (
+        "Select this device’s tunnel, deactivate it and choose Edit.",
+        "Выберите туннель этого устройства, отключите его и нажмите «Редактировать» (Edit).",
+    ),
+    "kill_switch_step_uncheck": (
+        "Uncheck “Block untunneled traffic (kill-switch)”.",
+        "Снимите флажок «Block untunneled traffic (kill-switch)» — блокировать трафик вне туннеля.",
+    ),
+    "kill_switch_step_save": (
+        "Save and activate the tunnel again. To turn the kill switch back on, repeat these steps and check the box.",
+        "Сохраните и снова включите туннель. Чтобы вернуть kill switch, повторите эти шаги и установите флажок.",
+    ),
+    "kill_switch_effect": (
+        "Turning it off permits traffic outside the VPN. It does not guarantee an automatic switch to your regular connection if the VPN server becomes unreachable.",
+        "Отключение разрешает трафик вне VPN. Оно не гарантирует автоматический переход на обычное подключение, если VPN-сервер станет недоступен.",
+    ),
+    "kill_switch_reminder": (
+        "After importing a configuration again, remember to check this setting in WireGuard.",
+        "После повторного импорта конфигурации не забудьте проверить эту настройку в WireGuard.",
+    ),
+    "kill_switch_ios_help": (
+        "WireGuard on iPhone and iPad has no equivalent Windows kill-switch checkbox. Keep the exported configuration as it is; the Windows steps above do not apply. Connect or disconnect the VPN in the WireGuard app.",
+        "В WireGuard на iPhone и iPad нет аналогичного флажка kill switch из Windows. Используйте экспортированную конфигурацию без изменений: инструкция для Windows выше здесь не применяется. Включайте и выключайте VPN в приложении WireGuard.",
+    ),
+})
+
 for _key, (_en, _ru) in UI_STRINGS.items():
     STRINGS["en"][_key] = _en
     STRINGS["ru"][_key] = _ru
