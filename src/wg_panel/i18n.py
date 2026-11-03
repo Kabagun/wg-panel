@@ -553,12 +553,12 @@ UI_STRINGS.update({
 UI_STRINGS.update({
     "kill_switch_notice_title": ("Kill switch", "Kill switch"),
     "kill_switch_notice_windows": (
-        "Windows: deactivate the tunnel, open Edit and uncheck “Block untunneled traffic (kill-switch)”. Save and reconnect. This permits traffic outside the VPN.",
-        "Windows: отключите туннель, откройте «Редактировать» и снимите «Блокировать трафик… (kill-switch)». Сохраните и подключитесь снова. Это разрешит трафик вне VPN.",
+        "Windows: deactivate → Edit → uncheck “Block untunneled traffic (kill-switch)” → Save and reconnect. Traffic outside the VPN will be allowed.",
+        "Windows: отключите туннель → «Редактировать» → снимите «Блокировать трафик… (kill-switch)» → сохраните и подключитесь. Это разрешит трафик вне VPN.",
     ),
     "kill_switch_notice_apple": (
-        "macOS, iPhone and iPad: the official WireGuard app has no equivalent checkbox. On-Demand reconnects automatically; disable it too if you want to keep the VPN off.",
-        "macOS, iPhone и iPad: в официальном WireGuard такой галочки нет. On-Demand подключает VPN автоматически; выключите и его, если хотите оставить VPN отключённым.",
+        "macOS / iPhone / iPad: the official WireGuard app has no equivalent checkbox. For your regular connection, turn off the VPN and, if enabled, On-Demand.",
+        "macOS / iPhone / iPad: в официальном WireGuard такой галочки нет. Для обычного интернета выключите VPN и, если включено, автоподключение On-Demand.",
     ),
     "device_cleanup_policy": (
         "Automatic cleanup: devices with no observed VPN traffic for more than 60 days are removed. Deletion-protected devices and paused devices or accounts are excluded. If activity history is missing, a new 60-day observation period starts.",

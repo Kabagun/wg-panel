@@ -27,9 +27,9 @@
           <button type="button" class="button secondary" data-copy-target="conf-block" data-copy-success="{{ tr('ui_copied') }}" data-copy-error="{{ tr('ui_copy_error') }}">{{ icon('copy', 18) }}{{ tr('ui_copy') }}</button>
         </div>
         <p class="connection-note">{{ tr('ui_file_hint') }}</p>
-        {% include 'kill_switch_help.html' %}
         <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
       </div>
+      {% include 'kill_switch_help.html' %}
     </div>
   </section>
   {% include 'connection_details.html' %}
