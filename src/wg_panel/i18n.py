@@ -306,7 +306,11 @@ UI_STRINGS = {
     "ui_scan": ("Scan with WireGuard", "Отсканируйте в WireGuard"),
     "ui_scan_hint": ("Open WireGuard → add a tunnel → scan a QR code.", "Откройте WireGuard → добавьте туннель → сканируйте QR-код."),
     "ui_qr_alt": ("WireGuard configuration QR code", "QR-код конфигурации WireGuard"),
-    "ui_qr_missing": ("QR code is unavailable. Download the configuration file below.", "QR-код недоступен. Скачайте файл конфигурации ниже."),
+    "ui_qr_title": ("QR code", "QR-код"),
+    "ui_qr_scan_hint": ("Open WireGuard and scan the code.", "Откройте WireGuard и отсканируйте код."),
+    "ui_configuration_title": ("Configuration", "Конфигурация"),
+    "ui_config_import_hint": ("Add a tunnel in the WireGuard app.", "Добавьте туннель в приложении WireGuard."),
+    "ui_qr_missing": ("QR code is unavailable. Use the configuration file.", "QR-код недоступен. Используйте файл конфигурации."),
     "ui_download": ("Download configuration", "Скачать конфигурацию"),
     "ui_file_hint": ("Import the .conf file into WireGuard on this device.", "Импортируйте файл .conf в WireGuard на этом устройстве."),
     "ui_config": ("Configuration text", "Текст конфигурации"),
@@ -359,6 +363,14 @@ UI_STRINGS = {
     "ui_total_traffic": ("Total traffic", "Всего трафика"),
     "ui_usage": ("Usage by device", "Трафик по устройствам"),
     "ui_usage_share": ("Share of this month’s traffic", "Доля трафика за месяц"),
+    "ui_traffic_sort": ("Sort by", "Сортировать по"),
+    "ui_sort_descending": ("largest first", "сначала больше"),
+    "ui_sort_ascending": ("smallest first", "сначала меньше"),
+    "ui_usage_share_help_title": ("How traffic share is calculated", "Как считается доля трафика"),
+    "ui_usage_share_help": (
+        "(Device download + upload) ÷ (download + upload of all existing devices) × 100%. Uses the current calendar month in UTC, rounded to one decimal place. If total traffic is zero, the share is 0%. Search and sorting do not change the total or shares.",
+        "(Загрузка + отдача устройства) ÷ (загрузка + отдача всех существующих устройств) × 100%. Учитывается текущий календарный месяц по UTC, результат округлён до одного знака. Если общий трафик нулевой, доля — 0%. Поиск и сортировка не меняют общую сумму и доли.",
+    ),
     "ui_history": ("Recent months", "Последние месяцы"),
     "ui_history_month": ("Month", "Месяц"),
     "ui_history_total": ("Total", "Всего"),
@@ -551,7 +563,7 @@ UI_STRINGS.update({
 })
 
 UI_STRINGS.update({
-    "kill_switch_notice_title": ("Kill switch", "Kill switch"),
+    "kill_switch_notice_title": ("About kill switch", "О kill switch"),
     "kill_switch_notice_windows": (
         "Windows: deactivate → Edit → uncheck “Block untunneled traffic (kill-switch)” → Save and reconnect. Traffic outside the VPN will be allowed.",
         "Windows: отключите туннель → «Редактировать» → снимите «Блокировать трафик… (kill-switch)» → сохраните и подключитесь. Это разрешит трафик вне VPN.",

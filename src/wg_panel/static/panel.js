@@ -64,6 +64,39 @@ document.querySelectorAll("[data-filter-scope]").forEach((scope) => {
   });
 });
 
+document.querySelectorAll("[data-traffic-scope]").forEach((scope) => {
+  const table = scope.querySelector("[data-traffic-table]");
+  const body = table.tBodies[0];
+  // Move whole rows so history popovers and device links stay with their data.
+  const rows = Array.from(body.children).filter((row) => row.hasAttribute("data-traffic-download"));
+  const originalOrder = new Map(rows.map((row, index) => [row, index]));
+  const buttons = scope.querySelectorAll("[data-traffic-sort]");
+  let selected = null;
+  let direction = "descending";
+  buttons.forEach((button) => button.addEventListener("click", () => {
+    const key = button.dataset.trafficSort;
+    direction = selected === key && direction === "descending" ? "ascending" : "descending";
+    selected = key;
+    const field = key === "download" ? "trafficDownload" : "trafficUpload";
+    const sign = direction === "descending" ? -1 : 1;
+    rows.sort((a, b) => sign * (Number(a.dataset[field]) - Number(b.dataset[field]))
+      || originalOrder.get(a) - originalOrder.get(b));
+    rows.forEach((row) => body.append(row));
+    scope.querySelectorAll("[data-traffic-heading]").forEach((heading) => {
+      heading.setAttribute("aria-sort", heading.dataset.trafficHeading === key ? direction : "none");
+    });
+    buttons.forEach((control) => {
+      const active = control.dataset.trafficSort === key;
+      control.setAttribute("aria-pressed", String(active));
+      control.querySelector(".sort-indicator").textContent = active ? (direction === "descending" ? "↓" : "↑") : "↕";
+      const next = active && direction === "descending" ? scope.dataset.sortAscending : scope.dataset.sortDescending;
+      control.setAttribute("aria-label", `${control.dataset.sortLabel}: ${next}`);
+    });
+    const current = direction === "descending" ? scope.dataset.sortDescending : scope.dataset.sortAscending;
+    scope.querySelector("[data-traffic-sort-status]").textContent = `${button.dataset.sortLabel}: ${current}`;
+  }));
+});
+
 document.querySelectorAll("[data-password-target]").forEach((button) => {
   button.addEventListener("click", () => {
     const input = document.getElementById(button.dataset.passwordTarget);

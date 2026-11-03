@@ -1,13 +1,15 @@
 import base64
 import re
 import subprocess
+from html import unescape
 from types import SimpleNamespace
 
 import pytest
 import test_routes
 from test_routes import csrf_session, user_record
 
-from wg_panel import app, connection_config, core, traffic
+from wg_panel import app, connection_config, core, traffic, wireguard
+from wg_panel.i18n import t
 
 runtime = test_routes.runtime
 
@@ -92,3 +94,72 @@ def test_device_summary_and_cards_follow_downloaded_dns_and_addresses(runtime, s
     public_summary = summary.split('<details class="config-file">')[0]
     assert "private-secret" not in public_summary and "shared-secret" not in public_summary
     assert "vpn.example.test:51820" in summary
+
+
+@pytest.mark.parametrize("lang", ["en", "ru"])
+@pytest.mark.parametrize("qr_available", [True, False])
+def test_connection_columns_preserve_device_qr_download_and_copy(
+    runtime, monkeypatch, lang, qr_available,
+):
+    _data, clients = runtime
+    core.save_users({"alice": user_record()})
+    name = "alice-laptop"
+    display_name = "office <laptop>"
+    (clients / f"{name}.conf").write_text(
+        "[Interface]\nPrivateKey = synthetic-key\nAddress = 10.8.0.9/32\n"
+        "DNS = 9.9.9.9\n[Peer]\nPublicKey = synthetic-server\n"
+        "Endpoint = vpn.example.test:51820\nAllowedIPs = 0.0.0.0/0, ::/0\n",
+        encoding="utf-8",
+    )
+    traffic.save_device_meta({name: {
+        "owner": "alice", "device": display_name, "vpn_type": "wireguard",
+        "safe_internet": False,
+    }})
+    client = app.test_client()
+    csrf_session(client, "alice")
+    attachment = client.get(f"/device/{name}/download")
+    config = attachment.get_data(as_text=True)
+    qr_inputs = []
+    qr_svg = b'<svg xmlns="http://www.w3.org/2000/svg"><title>synthetic device QR</title></svg>'
+
+    def encode(args, **kwargs):
+        assert args == ["qrencode", "-t", "SVG", "-o", "-"]
+        qr_inputs.append(kwargs["input"])
+        return SimpleNamespace(returncode=0 if qr_available else 1, stdout=qr_svg)
+
+    monkeypatch.setattr(wireguard.subprocess, "run", encode)
+    response = client.get(f"/device/{name}", headers={"Accept-Language": lang})
+    assert response.status_code == 200
+    page = response.get_data(as_text=True)
+    assert qr_inputs == [config.encode()]
+    assert re.findall(r"<h1>(.*?)</h1>", page) == ["office &lt;laptop&gt;"]
+    assert "My laptop" not in page
+    assert page.index('class="connection-qr"') < page.index('class="connection-instructions"')
+    assert page.index('class="connection-instructions"') < page.index('class="kill-switch-notice"')
+    assert t("ui_qr_title", lang) in page
+    assert t("ui_configuration_title", lang) in page
+    assert t("kill_switch_notice_title", lang) in page
+    assert 'aria-labelledby="connection-title"' in page
+    if qr_available:
+        qr_data = "data:image/svg+xml;base64," + base64.b64encode(qr_svg).decode()
+        assert f'src="{qr_data}"' in page
+        assert f'alt="{t("ui_qr_alt", lang)}"' in page
+        assert 'class="qr-unavailable"' not in page
+    else:
+        assert 'class="qr-unavailable"' in page
+        assert t("ui_qr_missing", lang) in page
+
+    actions = re.search(r'<div class="connection-actions">(.*?)</div>', page, re.DOTALL)[1]
+    assert f'href="/device/{name}/download" class="button primary"' in actions
+    assert actions.index('class="button primary"') < actions.index('class="button secondary"')
+    target, = re.findall(r'data-copy-target="([^"]+)"', actions)
+    copied_config, = re.findall(
+        rf'<pre id="{re.escape(target)}"[^>]*><code>(.*?)</code></pre>', page, re.DOTALL,
+    )
+    assert unescape(copied_config) == config
+    assert f'data-copy-success="{t("ui_copied", lang)}"' in actions
+    assert f'data-copy-error="{t("ui_copy_error", lang)}"' in actions
+    assert 'data-copy-status role="status" aria-live="polite"' in page
+    assert attachment.status_code == 200
+    assert attachment.mimetype == "application/octet-stream"
+    assert "attachment;" in attachment.headers["Content-Disposition"]

@@ -9,25 +9,24 @@
   </header>
   {{ flashes() }}
   {% if owner_paused %}{{ pause_notice(owner_pause_pending) }}{% endif %}
-  <section class="panel connection-card">
-    <div class="connection-heading"><h2>{{ tr('ui_saved_config' if owner_paused else 'ui_connect') }}</h2><p>{{ tr('ui_saved_config_hint' if owner_paused else 'ui_connection_methods') }}</p></div>
+  <div class="connection-heading"><h2 id="connection-title">{{ tr('ui_saved_config' if owner_paused else 'ui_connect') }}</h2><p>{{ tr('ui_saved_config_hint' if owner_paused else 'ui_connection_methods') }}</p></div>
+  <section class="panel connection-card" aria-labelledby="connection-title">
     <div class="connection-content">
       <div class="connection-qr">
+        <h3 class="connection-column-title">{{ icon('qr', 24) }}{{ tr('ui_qr_title') }}</h3>
         {% if qr %}<img src="{{ qr }}" alt="{{ tr('ui_qr_alt') }}" width="220" height="220">
         {% else %}<div class="qr-unavailable">{{ icon('qr', 44) }}<p>{{ tr('ui_qr_missing') }}</p></div>{% endif %}
-        <span>{{ icon('qr', 15) }}{{ tr('ui_scan') }}</span>
+        <p class="connection-qr-caption">{{ tr('ui_qr_scan_hint') }}</p>
       </div>
       <div class="connection-instructions">
-        <h3>{{ tr('ui_wireguard_app') }}</h3>
-        <p>{{ tr('ui_scan_hint') }}</p>
-        <a class="install-link" href="https://www.wireguard.com/install/" target="_blank" rel="noopener">{{ tr('ui_learn') }} ↗</a>
-        <div class="connection-separator"><span>{{ tr('ui_or_use_config') }}</span></div>
+        <h3 class="connection-column-title">{{ icon('config', 24) }}{{ tr('ui_configuration_title') }}</h3>
+        <p>{{ tr('ui_config_import_hint') }}</p>
         <div class="connection-actions">
           <a href="{{ url_for('download_device', wg_name=wg_name) }}" class="button primary">{{ icon('down', 18) }}{{ tr('ui_download') }}</a>
           <button type="button" class="button secondary" data-copy-target="conf-block" data-copy-success="{{ tr('ui_copied') }}" data-copy-error="{{ tr('ui_copy_error') }}">{{ icon('copy', 18) }}{{ tr('ui_copy') }}</button>
         </div>
-        <p class="connection-note">{{ tr('ui_file_hint') }}</p>
         <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
+        <a class="install-link" href="https://www.wireguard.com/install/" target="_blank" rel="noopener">{{ tr('ui_learn') }} ↗</a>
       </div>
       {% include 'kill_switch_help.html' %}
     </div>
