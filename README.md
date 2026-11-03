@@ -73,6 +73,22 @@ but cannot create, modify or delete devices. Their dashboard and device pages
 explain the pause; administrators remain able to manage or delete those devices.
 Payment settings and reminder scheduling do not change when access is paused.
 
+Devices are checked hourly for automatic removal after **more than 60 days of
+observed inactivity**. Deletion-protected devices, paused devices and paused
+accounts are excluded, including incomplete pause operations. Accounts and
+monthly traffic history are retained. Removal uses the existing per-peer helper
+without restarting WireGuard or changing other devices.
+
+Precise activity observations are stored privately in
+`data/device_activity.json`. Initial or unknown history starts a full 60-day
+grace period; monthly totals and file modification dates are not used to infer
+old inactivity. New traffic or a new handshake resets the period. Missing or
+invalid observations, monitoring gaps over three hours, counter resets, peer
+identity changes and WireGuard interface recreation require a fresh observation
+period. Resuming an excluded device or account also starts a new period.
+Back up the activity file with runtime data; losing it grants a new grace period.
+The dashboard describes this policy before any scheduled removals.
+
 Templates are rendered once with Jinja autoescaping. Styles, icons and JavaScript
 are served locally with the Python package; no CDN, frontend build or additional
 runtime is required. Forms retain their existing POST/CSRF and ownership checks.
@@ -361,6 +377,7 @@ journalctl -u wg-panel -n 100 --no-pager
 - `src/wg_panel/static/` - local stylesheet, progressive enhancement and favicon.
 - `src/wg_panel/auth.py` - login/admin decorators.
 - `src/wg_panel/access.py` - account-wide pause/resume and startup reconciliation.
+- `src/wg_panel/device_cleanup.py` - conservative inactivity observations and per-device cleanup.
 - `src/wg_panel/client_context.py` - registration IP, GeoIP, and browser metadata helpers.
 - `src/wg_panel/wireguard.py` - WireGuard client config helpers.
 - `src/wg_panel/dns_enforcement.py` - validated server-side Safe internet reconciliation.

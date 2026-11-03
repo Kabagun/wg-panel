@@ -595,6 +595,10 @@ UI_STRINGS.update({
         "WireGuard on iPhone and iPad has no equivalent Windows kill-switch checkbox. Keep the exported configuration as it is; the Windows steps above do not apply. Connect or disconnect the VPN in the WireGuard app.",
         "В WireGuard на iPhone и iPad нет аналогичного флажка kill switch из Windows. Используйте экспортированную конфигурацию без изменений: инструкция для Windows выше здесь не применяется. Включайте и выключайте VPN в приложении WireGuard.",
     ),
+    "device_cleanup_policy": (
+        "Automatic cleanup: devices with no observed VPN traffic for more than 60 days are removed. Deletion-protected devices and paused devices or accounts are excluded. If activity history is missing, a new 60-day observation period starts.",
+        "Автоочистка: устройства без замеченного VPN-трафика более 60 дней удаляются. Защищённые устройства, устройства и аккаунты на паузе исключены. Если истории активности нет, начинается новый 60-дневный срок наблюдения.",
+    ),
 })
 
 for _key, (_en, _ru) in UI_STRINGS.items():

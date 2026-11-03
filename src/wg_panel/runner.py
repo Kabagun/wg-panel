@@ -25,6 +25,7 @@ from .core import (
     ensure_admin,
     ensure_private_dir,
 )
+from .device_cleanup import cleanup_inactive_devices
 from .infrastructure import assert_infrastructure_ready
 from .payments import process_payment_reminders
 from .telegram import set_tg_webhook
@@ -104,6 +105,23 @@ class BoundedRedirectServer(ThreadingMixIn, HTTPServer):
             super().handle_error(request, client_address)
 
 
+def device_cleanup_loop():
+    """Observe inactivity hourly without delaying serving or restarting WireGuard."""
+    time.sleep(10)
+    while True:
+        try:
+            result = cleanup_inactive_devices()
+            if result["deleted"] or result["errors"]:
+                print(
+                    f"[DEVICE CLEANUP] deleted={result['deleted']} errors={result['errors']}",
+                    file=sys.stderr if result["errors"] else sys.stdout,
+                    flush=True,
+                )
+        except Exception:  # noqa: BLE001 - background maintenance must keep serving.
+            print("[DEVICE CLEANUP] Observation failed; devices retained", file=sys.stderr, flush=True)
+        time.sleep(3600)
+
+
 def main():
     """Reconcile persisted state and start the single-process panel service."""
     assert_infrastructure_ready()
@@ -162,6 +180,7 @@ def main():
     set_tg_webhook()
     threading.Thread(target=traffic_loop, daemon=True).start()
     threading.Thread(target=payment_loop, daemon=True).start()
+    threading.Thread(target=device_cleanup_loop, daemon=True).start()
     cert_ready = os.path.exists(SSL_CERT) and os.path.exists(SSL_KEY)
     ssl_ctx = (SSL_CERT, SSL_KEY) if ENABLE_INTERNAL_TLS and cert_ready else None
     if ENABLE_INTERNAL_TLS and not cert_ready:

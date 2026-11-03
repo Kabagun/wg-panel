@@ -25,6 +25,7 @@
   {% if devices and can_add %}<a href="{{ url_for('add_device') }}" class="add-device-card"><span class="add-circle">{{ icon('plus', 24) }}</span><strong>{{ tr('ui_connect_next') }}</strong><span>{{ tr('ui_add_hint') }}</span></a>{% endif %}
   </div>
   {{ no_results() }}
+  <p class="limit-note">{{ icon('clock', 17) }}<span>{{ tr('device_cleanup_policy') }}</span></p>
   {% if not can_add and not paused %}<p class="limit-note">{{ icon('info', 17) }}{{ tr('dash_limit').format(n=max_devices) }}</p>{% endif %}
 </section>
 {% if not paused %}{{ guide() }}{% endif %}
