@@ -81,11 +81,11 @@ servers or geographic exit locations:
 
 - `all` — **Всё через VPN**: internet traffic uses the tunnel; local-network
   access remains direct.
-- `custom` — **AI-сервисы через VPN**: only the account's explicitly configured
-  domains/IP networks use the tunnel; other destinations use the device's
-  ordinary connection. **AI services** is the user-facing name of this list,
-  not an automatically detected category. `custom` remains its stable internal
-  identifier. Do not seed, replace or extend a user's list without authorization.
+- `custom` — **Умный VPN**: services from the administrator's shared list use
+  the tunnel; other internet traffic goes directly. This is an explicit routing
+  list, not automatic traffic classification. `custom` remains the stable
+  internal mode ID. When no shared source is configured, this mode retains its
+  legacy account-specific list.
 - `by-ru-direct` — **Внутренние сайты без VPN**: Belarusian and Russian IP
   addresses go directly; other traffic goes through the VPN.
 
@@ -118,11 +118,98 @@ system's resolver. DNS resolution therefore still needs a working tunnel in
 direct-routing modes. The pilot exports only `all` for an identity with locked
 Safe internet until direct-path protection has completed client acceptance.
 
-The AI services routing list is stored separately from DNS exceptions in private
-`happ_rules.json`, keyed by account identity rather than reusable login name.
-Updates require CSRF and the current revision. Adding a proxy resource does not
-allow it through DNS filtering. Direct traffic at home continues through the
-router's existing KVAS routing. Only tunneled traffic appears in server counters.
+**Site-managed shared list.** Set `WG_PANEL_HAPP_RULES_MANAGED=1` to manage the
+active common list on **Умный VPN / Smart VPN**, at `/admin/happ-rules`. The pilot
+flag must also be enabled. Only approved administrators can add or remove one
+public domain at a time. Changes require CSRF and the exact current list
+revision; removal names the domain in its confirmation. The server's validated
+local list is the authority in this mode. Do all routine editing through the
+VPN site, rather than modifying GitHub and expecting it to overwrite that list.
+
+Each successful change is immediately available to Happ subscription fetches.
+Refresh the subscription and reconnect Happ to apply it on a device; client
+automatic refresh remains client-dependent. GitHub publication is asynchronous:
+the route queues only the fixed `wg-panel-happ-publish.service` after a changed
+revision, and the publisher retries pending revisions automatically every minute.
+An unchanged add/remove operation does not queue a redundant publication. The
+page reports the active-list timestamp and Git publication status separately.
+Git errors or an unavailable queue leave the active list intact; publication
+never rolls the list back. Do not include raw Git error output or credentials
+in the user interface.
+
+The publication copy remains in the existing private policy repository and
+uses the operator's existing publication setup. This neither changes the DNS
+service or its Git-fetch job nor writes the router's KVAS list. The router may
+be synchronized manually when the administrator wants it; there is no automatic
+back synchronization. Existing account-specific lists are retained, but they
+are not used or editable while the shared list is active.
+
+**Legacy read-only shared sources.** The following HTTPS/Git-mirror provider
+flow remains available when managed mode is off. The common source is configured with
+`WG_PANEL_HAPP_RULES_URL`. HTTPS is the default provider for public repositories.
+The policy repository used for this pilot is private: an anonymous raw-file
+request returns HTTP 404 even when the file exists. Keep that repository private;
+do not add tokens to the URL or introduce new credentials for Happ.
+
+For a private policy repository, Happ can read the server's existing,
+operator-managed Git mirror. A portable configuration example is:
+
+```dotenv
+WG_PANEL_HAPP_RULES_URL=https://raw.githubusercontent.com/EXAMPLE_OWNER/EXAMPLE_POLICY_REPO/main/routing-domains.txt
+WG_PANEL_HAPP_RULES_GIT_DIR=/var/lib/safe-internet/policy.git
+```
+
+`WG_PANEL_HAPP_RULES_URL` retains the logical file identity and supplies the
+ordinary GitHub file link shown in the panel. Opening a private source file
+requires the viewer's logged-in GitHub account to have repository access; the
+link contains no authentication data. `WG_PANEL_HAPP_RULES_GIT_DIR` selects the
+local read-only provider. Omit it to use unauthenticated HTTPS for a public source.
+
+The existing DNS Git-fetch job refreshes the mirror's `FETCH_HEAD` every five
+minutes using its existing access. Happ does not fetch, change the mirror,
+modify DNS or manage Git credentials. Its reader resolves one immutable
+`FETCH_HEAD` commit and reads the regular `routing-domains.txt` blob from that
+commit. A `FETCH_HEAD` older than 15 minutes is rejected. Monitor the existing
+Git-fetch job and its freshness; changing the Happ cache interval cannot repair
+a stalled mirror update.
+
+The starting dataset is a one-time import of the router's complete 77-entry KVAS
+domain list into `routing-domains.txt` in the private policy repository. All 77
+domains remain in that private data repository. In legacy read-only mode the
+GitHub file is the authority for Happ routing; in managed mode it is a publication
+copy of the site's active list. The router and its KVAS list
+remain unchanged. There is no automatic reverse synchronization from the router
+and no automatic write-back from Happ to the router. Do not substitute
+`proxy-domains.txt`: that existing file is a DNS blocklist, not the routing list.
+Edit the source file on GitHub only for the legacy read-only provider. With
+managed mode enabled, use the VPN site's Smart VPN page instead.
+
+In legacy read-only mode, the Happ cache updater checks its source on a
+five-minute interval. With a Git
+mirror, propagation is GitHub -> existing Git-fetch job -> Happ cache updater ->
+client subscription refresh. The two server timers can add approximately ten
+minutes before a change reaches the Happ cache when their schedules are out of
+phase; this is not a five-minute end-to-end promise. The panel shows the source
+file, revision, resource count and UTC check/update times. A failed refresh,
+including a stale `FETCH_HEAD`, keeps the last validated list and reports that
+the update is delayed.
+An unavailable or invalid local cache without a usable last-good list fails
+closed with HTTP 503; it does not silently switch to an empty or private list.
+After a source change, refresh the subscription in Happ and reconnect on the
+phone or PC. Client automatic refresh timing is separate and client-dependent.
+
+With a shared source configured, the device page presents the common list
+without an account-specific editor. In managed mode it links to the site's
+shared-list management page; the GitHub link is the publication copy. Account-specific
+rule editing is disabled. Exports use the shared
+source rather than old private rules. Existing account lists are retained in
+private `happ_rules.json`, keyed by immutable account identity rather than
+reusable login name; they are not deleted or overwritten by the shared list.
+Without a shared source, the legacy private form and CSRF/revision checks remain
+available. Routing resources are separate from DNS exceptions: adding a routed
+resource does not allow it through DNS filtering. All modes retain the same
+central DNS. Direct traffic at home continues through the router's existing KVAS
+routing. Only tunneled traffic appears in server counters.
 
 Each device has one main bundle subscription at
 `/happ/sub/<wg_name>/<token>/bundle`. It returns a JSON array of all permitted

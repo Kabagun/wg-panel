@@ -4,16 +4,20 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import re
 import secrets
 import subprocess
 import threading
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import core, wireguard
 from .dns_enforcement import SafeDnsEnforcementError
 from .happ_config import GEOIP_URL, MODES, build_happ_config, normalize_proxy_rules
+from .happ_shared_rules import load_snapshot, managed_mode, publication_status
 from .i18n import t
 from .safe_dns_settings import load_safe_dns_target
 from .traffic import mutate_device_meta
@@ -51,6 +55,34 @@ def pilot_enabled():
 
 def is_pilot_device(device):
     return bool(pilot_enabled() and device and device.get('happ_pilot') is True)
+
+
+def shared_rules_url():
+    return core.app.config.get('HAPP_RULES_URL', os.getenv('WG_PANEL_HAPP_RULES_URL', ''))
+
+
+def shared_rules_context():
+    source = shared_rules_url()
+    if not source:
+        return {'shared_rules': False}
+    snapshot = load_snapshot(core.DATA_DIR, source)
+    checked = datetime.fromisoformat(snapshot['last_checked'])
+    managed = managed_mode()
+    delayed = not managed and (bool(snapshot['error']) or (datetime.now(UTC) - checked).total_seconds() > 900)
+    parts = urlsplit(source)
+    source_link = None
+    # Show public GitHub file URLs, never arbitrary configured endpoints.
+    if (parts.hostname == 'raw.githubusercontent.com' and not parts.username
+            and not parts.password and not parts.query and not parts.fragment):
+        path = parts.path.strip('/').split('/')
+        if len(path) >= 4 and all(re.fullmatch(r'[A-Za-z0-9_.-]+', part) for part in path):
+            source_link = f'https://github.com/{path[0]}/{path[1]}/blob/' + '/'.join(path[2:])
+    return {'shared_rules': True, 'shared_rules_status': 'delayed' if delayed else 'current',
+            'shared_rules_checked': snapshot['last_checked'],
+            'shared_rules_updated': snapshot['last_success'],
+            'shared_rules_revision': snapshot['revision'][:12],
+            'shared_rules_source_link': source_link, 'shared_rules_managed': managed,
+            'shared_rules_publication': publication_status(core.DATA_DIR, snapshot['revision']) if managed else None}
 
 
 @contextmanager
@@ -96,12 +128,17 @@ def _load_rules():
 
 
 def get_rules(account_id):
+    if shared_rules_url():
+        snapshot = load_snapshot(core.DATA_DIR, shared_rules_url())
+        return snapshot['revision'], snapshot['rules']
     with _rules_lock():
         record = _load_rules()['accounts'].get(account_id, {'revision': 0, 'rules': []})
         return record['revision'], list(record['rules'])
 
 
 def save_rules(account_id, text, expected_revision):
+    if shared_rules_url():
+        raise HappStateError('shared_rules_managed')
     if not isinstance(account_id, str) or not _NONCE.fullmatch(account_id):
         raise HappStateError('invalid_state')
     rules = normalize_proxy_rules(text)

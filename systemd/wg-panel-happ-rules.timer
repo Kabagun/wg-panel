@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically refresh shared Happ routing domains
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=wg-panel-happ-rules.service
+
+[Install]
+WantedBy=timers.target

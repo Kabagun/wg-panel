@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% from 'components.html' import heading, metric, flashes with context %}
+{% block content %}
+{{ heading(tr('happ_admin_title'), tr('happ_admin_scope'), tr('ui_admin_section')) }}
+{{ flashes() }}
+{% if state %}
+<div class="metrics-grid">
+  {{ metric(tr('happ_admin_domains'), domains|length, 'globe') }}
+  <div class="metric"><div class="metric-top"><span>{{ tr('happ_admin_application') }}</span><span class="metric-icon green">{{ icon('check', 18) }}</span></div><p><strong>{{ tr('happ_admin_applied') }}</strong></p><p class="metric-detail">{{ tr('happ_admin_applied_at') }}: {{ time_label(state.last_success) }}</p></div>
+  <div class="metric"><div class="metric-top"><span>{{ tr('happ_admin_publication') }}</span><span class="metric-icon {{ 'amber' if publication.status in ['pending', 'error', 'never'] else 'blue' }}">{{ icon('clock', 18) }}</span></div><p><strong>{{ tr('happ_admin_publication_' ~ publication.status) }}</strong></p><p class="metric-detail">{{ tr('happ_admin_publication_attempt') }}: {{ time_label(publication.last_attempt_at) }}</p><p class="metric-detail">{{ tr('happ_admin_publication_success') }}: {{ time_label(publication.last_success_at) }}</p>{% if publication.commit %}<p class="metric-detail">{{ tr('happ_admin_publication_commit') }}: {{ publication.commit[:12] }}</p>{% endif %}</div>
+</div>
+{% if publication.status in ['pending', 'error', 'never'] %}<p class="notice{{ ' notice-error' if publication.status == 'error' else '' }}" role="status">{{ tr('happ_admin_publication_independent') }}</p>{% endif %}
+{% else %}<p class="notice notice-error" role="alert">{{ tr('happ_admin_error_unavailable') }}</p>{% endif %}
+<section class="panel form-panel">
+  <div class="section-heading"><div><h2>{{ tr('happ_admin_domains') }}{% if state %} <span class="count-badge">{{ domains|length }}</span>{% endif %}</h2><p>{{ tr('happ_admin_domain_hint') }}</p></div>{{ icon('globe', 25) }}</div>
+  {% if state %}
+  <form method="post" action="{{ url_for('admin_happ_rules_add') }}" class="form-stack">
+    {{ csrf() }}<input type="hidden" name="revision" value="{{ state.revision }}">
+    <label for="happ-add-domain">{{ tr('happ_admin_add_label') }}</label><input id="happ-add-domain" name="domain" maxlength="253" placeholder="example.org" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="happ-add-domain-help" required><p class="field-help" id="happ-add-domain-help">{{ tr('happ_admin_domain_format') }}</p>
+    <div class="form-actions"><button type="submit" class="button primary">{{ icon('plus', 18) }}{{ tr('happ_admin_add') }}</button></div>
+  </form>
+  <div class="form-divider"></div>
+  {% if domains %}<div class="table-scroll"><table class="responsive-table"><thead><tr><th scope="col">{{ tr('happ_admin_domain') }}</th><th scope="col">{{ tr('dash_col_act') }}</th></tr></thead><tbody>
+    {% for domain in domains %}<tr><td data-label="{{ tr('happ_admin_domain') }}"><strong>{{ domain }}</strong></td><td data-label="{{ tr('dash_col_act') }}"><div class="table-actions"><form method="post" action="{{ url_for('admin_happ_rules_remove') }}" data-confirm="{{ tr('happ_admin_remove_confirm').format(domain=domain) }}">{{ csrf() }}<input type="hidden" name="domain" value="{{ domain }}"><input type="hidden" name="revision" value="{{ state.revision }}"><button type="submit" class="button secondary small" aria-label="{{ tr('ui_remove') }}: {{ domain }}">{{ icon('trash', 17) }}{{ tr('ui_remove') }}</button></form></div></td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<div class="empty-state compact"><span class="empty-icon">{{ icon('globe', 28) }}</span><h3>{{ tr('happ_admin_empty') }}</h3><p>{{ tr('happ_admin_empty_hint') }}</p></div>{% endif %}
+  {% endif %}
+</section>
+<p class="limit-note">{{ icon('info', 17) }}{{ tr('happ_admin_client_refresh') }}</p>
+<p class="limit-note">{{ icon('shield', 17) }}{{ tr('happ_admin_dns_separate') }}</p>
+{% endblock %}

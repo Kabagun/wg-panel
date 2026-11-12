@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh shared Happ routing domains
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/wg-panel/wg-panel.env
+ExecStart=/opt/wg-panel/venv/bin/python /opt/wg-panel/src/wg_panel/happ_shared_rules.py --sync
+UMask=0077
+TimeoutStartSec=40
+NoNewPrivileges=true
+PrivateTmp=true

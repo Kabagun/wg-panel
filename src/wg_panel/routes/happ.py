@@ -87,6 +87,7 @@ def view_happ_device(wg_name):
         revision, rules = happ_pilot.get_rules(user['account_id'])
         config = happ_pilot.exported_config(device, mode, rules)
         subscription_url = _subscription_url(device, user, 'bundle')
+        shared_context = happ_pilot.shared_rules_context()
     except ValueError:
         return 'Happ configuration is unavailable.', 503
     import_url = 'happ://add/' + subscription_url
@@ -94,11 +95,12 @@ def view_happ_device(wg_name):
                        mode=mode, modes=[{'id': key, 'title_key': 'happ_mode_' + key.replace('-', '_'),
                                          'enabled': not device['safe_internet'] or key == 'all'}
                                         for key in happ_pilot.BUNDLE_MODES], proxy_rules=rules,
-                       rules_text='\n'.join(rules), rules_revision=revision,
+                       rules_text='\n'.join(rule.removeprefix('domain:') for rule in rules)
+                       if shared_context['shared_rules'] else '\n'.join(rules), rules_revision=revision,
                        config_json=json.dumps(config, ensure_ascii=False, indent=2),
                        subscription_url=subscription_url, import_url=import_url,
                        qr=happ_pilot.qr_for_link(import_url), owner_paused=False,
-                       owner_pause_pending=False)
+                       owner_pause_pending=False, **shared_context)
 
 
 def _response(device, mode, rules):
@@ -135,6 +137,8 @@ def download_happ_device(wg_name, mode):
 def update_happ_rules():
     wg_name = request.form.get('wg_name', '')
     device, user = _pilot_device(wg_name)
+    if happ_pilot.shared_rules_url():
+        abort(403)
     mode = _mode(device)
     try:
         revisions = request.form.getlist('revision')

@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import re
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +17,7 @@ from wg_panel import (
     app,
     core,
     happ_pilot,
+    happ_shared_rules,
     infrastructure,
     security,
     traffic,
@@ -253,6 +255,81 @@ def test_bundle_token_rotation_revokes_all_presets_without_replacing_peer(runtim
     assert browser(None).get(old).status_code == 404
     assert browser(None).get(subscription(mode='bundle')).status_code == 200
     assert (runtime.clients / f'{PILOT}.conf').read_bytes() == before
+
+
+SHARED_SOURCE = 'https://raw.githubusercontent.com/example/policy/main/routing-domains.txt'
+
+
+def enable_shared_rules(runtime, monkeypatch, text=b'shared.example.org\nsecond.example.org\n'):
+    happ_shared_rules.sync(runtime.data, SHARED_SOURCE,
+                           fetch=lambda *_args, **_kwargs: text, now=datetime.now(UTC))
+    monkeypatch.setitem(app.config, 'HAPP_RULES_URL', SHARED_SOURCE)
+
+
+def test_shared_list_is_exported_for_all_pilots_and_cannot_be_edited_per_account(runtime, monkeypatch):
+    identity = core.load_users()[ADMIN]['account_id']
+    happ_pilot.save_rules(identity, 'old-private.example.org', 0)
+    original = (runtime.data / 'happ_rules.json').read_bytes()
+    enable_shared_rules(runtime, monkeypatch)
+    for device in (PILOT, FOREIGN):
+        response = browser(None).get(subscription(name=device, mode='bundle'))
+        assert response.status_code == 200
+        for config in response.get_json():
+            domains = [rule.get('domain', []) for rule in config['routing']['rules']]
+            assert ['domain:second.example.org', 'domain:shared.example.org'] in domains
+            assert not any('domain:old-private.example.org' in group for group in domains)
+    assert browser().post('/account/happ-rules', data=rules_form()).status_code == 403
+    with pytest.raises(ValueError):
+        happ_pilot.save_rules(identity, 'different.example.org', 1)
+    page = browser().get(f'/device/{PILOT}/happ').get_data(as_text=True)
+    assert 'name="rules"' not in page
+    assert 'https://github.com/example/policy/blob/main/routing-domains.txt' in page
+    assert (runtime.data / 'happ_rules.json').read_bytes() == original
+    assert happ_pilot.shared_rules_context()['shared_rules_status'] == 'current'
+
+
+@pytest.mark.parametrize('state', ['missing', 'corrupt', 'wrong_source'])
+def test_unusable_shared_cache_never_falls_back_to_personal_or_empty_rules(runtime, monkeypatch, state):
+    enable_shared_rules(runtime, monkeypatch)
+    cache = runtime.data / 'happ_shared_rules.json'
+    if state == 'missing':
+        cache.unlink()
+    elif state == 'corrupt':
+        cache.write_text('{broken')
+    else:
+        monkeypatch.setitem(app.config, 'HAPP_RULES_URL', SHARED_SOURCE.replace('main/', 'other/'))
+    assert browser(None).get(subscription(mode='bundle')).status_code == 503
+    assert browser().get(f'/device/{PILOT}/happ').status_code == 503
+    assert browser('alice').get(f'/device/{CLASSIC}/download').status_code == 200
+
+
+def test_failed_refresh_retains_shared_routes_and_shows_delayed_status(runtime, monkeypatch):
+    enable_shared_rules(runtime, monkeypatch)
+    before = browser(None).get(subscription(mode='bundle')).get_json()
+    def failed(*_args, **_kwargs):
+        raise OSError('synthetic failure')
+    happ_shared_rules.sync(runtime.data, SHARED_SOURCE, fetch=failed, now=datetime.now(UTC))
+    assert browser(None).get(subscription(mode='bundle')).get_json() == before
+    assert happ_pilot.shared_rules_context()['shared_rules_status'] == 'delayed'
+
+
+def test_old_successful_shared_check_is_marked_delayed_without_losing_rules(runtime, monkeypatch):
+    happ_shared_rules.sync(runtime.data, SHARED_SOURCE,
+                           fetch=lambda *_args, **_kwargs: b'shared.example.org\n',
+                           now=datetime.now(UTC) - timedelta(minutes=16))
+    monkeypatch.setitem(app.config, 'HAPP_RULES_URL', SHARED_SOURCE)
+    assert happ_pilot.shared_rules_context()['shared_rules_status'] == 'delayed'
+    assert browser(None).get(subscription(mode='bundle')).status_code == 200
+
+
+def test_shared_gets_preserve_cached_list_account_state_and_wireguard(runtime, monkeypatch):
+    enable_shared_rules(runtime, monkeypatch)
+    files = [*runtime.clients.glob('*.conf'), *runtime.data.glob('*.json')]
+    before = {str(path): path.read_bytes() for path in files}
+    for path in (f'/device/{PILOT}/happ', f'/device/{PILOT}/happ/bundle/download',
+                 subscription(mode='bundle')):
+        assert browser().get(path).status_code == 200
+    assert {str(path): path.read_bytes() for path in files} == before
 
 
 @pytest.mark.parametrize("token", ["x" * 43, "short", "z" * 100, "é" * 43])

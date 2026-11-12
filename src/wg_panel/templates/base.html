@@ -30,6 +30,7 @@
     {{ nav_link('admin_family_dns', 'family_dns_title', 'globe', request.endpoint == 'admin_family_dns') }}
     {{ nav_link('traffic_page', 'ui_traffic', 'chart', request.endpoint == 'traffic_page') }}
     {% if happ_pilot_enabled|default(false) %}{{ nav_link('happ_pilot', 'happ_pilot_title', 'devices', request.endpoint in ['happ_pilot', 'view_happ_device']) }}{% endif %}
+    {% if happ_pilot_enabled|default(false) and happ_rules_managed|default(false) %}{{ nav_link('admin_happ_rules', 'happ_mode_custom', 'globe', request.endpoint in ['admin_happ_rules', 'admin_happ_rules_add', 'admin_happ_rules_remove']) }}{% endif %}
     {% endif %}
   </nav>
   <div class="sidebar-bottom">
