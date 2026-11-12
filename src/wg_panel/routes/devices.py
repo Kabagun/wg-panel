@@ -2,6 +2,7 @@ import secrets
 
 from flask import Response, flash, redirect, request, session, url_for
 
+from .. import happ_pilot
 from ..account_policy import account_safe_internet_locked
 from ..auth import approved_required
 from ..connection_config import connection_details
@@ -41,6 +42,7 @@ def dashboard():
             "safe_internet": bool(metadata.get("safe_internet")) or account_locked,
             "deletion_protected": bool(metadata.get("deletion_protected")),
             "connection": connection_details(get_config(wg_name)),
+            "happ_pilot": happ_pilot.is_pilot_device(metadata) and user.get('role') == 'admin',
         })
     used = len(devices)
     return render_page(
@@ -73,7 +75,15 @@ def add_device():
         ):
             flash(t("flash_add_invalid", _lang()), "error")
         else:
-            ok, wg_name, error = create_device(username, device)
+            client_app = request.form.get('client_app', 'wireguard')
+            if client_app == 'happ':
+                if not happ_pilot.pilot_enabled() or user.get('role') != 'admin':
+                    return 'Access denied', 403
+                ok, wg_name, error = happ_pilot.create_pilot_device(username, device)
+            elif client_app == 'wireguard':
+                ok, wg_name, error = create_device(username, device)
+            else:
+                return 'Invalid client', 400
             if ok:
                 send_telegram(
                     "📱 *Device added*\n\n"
@@ -82,7 +92,8 @@ def add_device():
                     f"🕐 Time: {_now()}",
                     silent=True,
                 )
-                return redirect(url_for("view_device", wg_name=wg_name))
+                return redirect(url_for('view_happ_device' if client_app == 'happ'
+                                        else 'view_device', wg_name=wg_name))
             if error == "Device limit reached":
                 flash(t("flash_add_limit", _lang()).format(n=max_devices), "error")
             else:
@@ -109,6 +120,8 @@ def view_device(wg_name):
     if not device:
         flash("Device not found or access denied.", "error")
         return redirect(url_for("dashboard"))
+    if happ_pilot.is_pilot_device(device) and _user.get('role') == 'admin':
+        return redirect(url_for('view_happ_device', wg_name=wg_name))
     config = get_config(wg_name)
     if not config:
         flash("Device not found.", "error")

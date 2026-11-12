@@ -247,7 +247,7 @@ def _safe_dns_ips(meta, excluded=None, override=None, policies=None):
     for name, item in meta.items():
         if name in infrastructure or name == excluded or item.get("revoked"):
             continue
-        enabled = effective_safe_internet(item, policies)
+        enabled = effective_safe_internet(item, policies) or item.get('happ_pilot') is True
         if override and name in override:
             enabled = bool(override[name]) or account_safe_internet_locked(item.get("owner"), policies)
         if not enabled:

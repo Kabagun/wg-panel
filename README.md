@@ -59,6 +59,68 @@ still bypass domain filtering.
 
 ## Interface
 
+### Closed Happ pilot
+
+The administrator can choose **Classic — WireGuard** (ordinary full-tunnel
+configuration) or **Modern — Happ** (client-side routing) when adding a device.
+This is an opt-in pilot, not a default migration. Ordinary members and existing
+WireGuard profiles retain their current interface and downloads.
+
+The feature is disabled unless the operator creates `happ_pilot.json` in the
+configured private data directory with `{"version":1,"enabled":true}`. Keep this
+file owner-only, like the rest of the data directory. The pilot page is
+`/admin/happ-pilot`. Only an approved, active administrator can provision a fresh
+pilot device. Existing identities, protected devices and infrastructure peers
+cannot be adopted as pilots. Each physical device needs its own identity.
+
+Happ currently uses the existing WireGuard server. Its JSON exports support:
+
+- `all`: full tunnel, with local-network access.
+- `custom`: the account's selected domains/IP networks use the tunnel; other
+  destinations use the device's ordinary connection.
+- `by-direct`, `ru-direct`, `by-ru-direct`: the selected countries' IP networks
+  use the ordinary connection; other destinations use the tunnel.
+
+Explicit proxy resources take priority over local/country bypasses. Country
+classification is by IP, not domain suffix. The subscription provides Happ with
+the full GeoIP database needed for Belarus; prefer subscription import over a
+standalone file for these presets. Rules changed in the panel take effect after
+subscription refresh and reconnect. Auto-update is requested hourly, subject to
+the client's scheduling. On desktop, use Happ's TUN mode and deactivate the
+separate WireGuard client tunnel first. TUN behavior still needs device testing;
+core/configuration tests alone do not establish app compatibility.
+
+All Happ modes use the operator's existing central DNS target. Export fails
+closed if the custom target is missing or invalid. Built-in DNS and redirected
+TCP/UDP DNS queries travel through WireGuard, including when the eventual site
+connection is direct. Pilot source addresses join the existing per-peer DNS
+redirect set, reaching the configured target port without modifying the shared
+resolver, content rules or DNS exception list. This does not permanently lock
+the administrator account. DNS outages do not fall back to the operating
+system's resolver. DNS resolution therefore still needs a working tunnel in
+direct-routing modes. The pilot exports only `all` for an identity with locked
+Safe internet until direct-path protection has completed client acceptance.
+
+Routing resources are stored separately from DNS exceptions in private
+`happ_rules.json`, keyed by account identity rather than reusable login name.
+Updates require CSRF and the current revision. Adding a proxy resource does not
+allow it through DNS filtering. Direct traffic at home continues through the
+router's existing KVAS routing. Only tunneled traffic appears in server counters.
+
+Each device has separate preset URLs authenticated by a constant-time-checked
+HMAC token bound to account identity and a rotatable device nonce. Public fetches
+are rate-limited and check approval, pause, revocation and pilot eligibility on
+every request. JSON responses are private/no-store. Renewing a subscription link
+invalidates old fetch URLs; it does not revoke credentials already imported into
+a client. Pause or delete the device through the existing peer lifecycle to
+revoke tunnel access. Direct traffic is local and is not server-controlled.
+
+Before enabling subscriptions behind a reverse proxy, disable URL logging for
+the `/happ/sub/` prefix (including proxy errors), preserving the normal upstream
+and proxy headers. The application redacts this prefix in Werkzeug access logs;
+upstream proxy logs need their own matching guard. Disabling the pilot flag hides
+the UI and rejects subscription fetches, but does not delete existing peers.
+
 The panel uses a light, responsive interface in Russian or English, selected by
 the browser language. It includes device cards, local device/user search,
 QR/config setup, account-wide Safe internet controls, and administrator pages for

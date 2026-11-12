@@ -1,0 +1,216 @@
+"""Opt-in pilot state. Reads never change peers, account policy or DNS services."""
+import base64
+import hashlib
+import hmac
+import json
+import logging
+import re
+import secrets
+import subprocess
+import threading
+from contextlib import contextmanager
+from pathlib import Path
+
+from . import core, wireguard
+from .dns_enforcement import SafeDnsEnforcementError
+from .happ_config import GEOIP_URL, MODES, build_happ_config, normalize_proxy_rules
+from .safe_dns_settings import load_safe_dns_target
+from .traffic import mutate_device_meta
+
+_lock = threading.RLock()
+_SUB_PATH = re.compile(r"/happ/sub/[^\s\"'<>]*")
+_NONCE = re.compile(r"[0-9a-f]{64}")
+
+
+class HappStateError(ValueError):
+    pass
+
+
+class SubscriptionLogFilter(logging.Filter):
+    def filter(self, record):
+        record.msg = _SUB_PATH.sub('/happ/sub/[redacted]', record.getMessage())
+        record.args = ()
+        return True
+
+
+logging.getLogger('werkzeug').addFilter(SubscriptionLogFilter())
+
+
+def pilot_enabled():
+    override = core.app.config.get('HAPP_PILOT_ENABLED')
+    if override is not None:
+        return override is True
+    try:
+        data = (Path(core.DATA_DIR) / 'happ_pilot.json').read_bytes()
+        return len(data) < 256 and json.loads(data) == {'version': 1, 'enabled': True}
+    except (OSError, ValueError):
+        return False
+
+
+def is_pilot_device(device):
+    return bool(pilot_enabled() and device and device.get('happ_pilot') is True)
+
+
+@contextmanager
+def _rules_lock():
+    with core._wireguard_lock, _lock:
+        core.ensure_private_dir(core.DATA_DIR)
+        path = Path(core.DATA_DIR) / 'happ_rules.json.lock'
+        with open(path, 'a', encoding='utf-8') as handle:
+            if core.fcntl:
+                core.fcntl.flock(handle, core.fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if core.fcntl:
+                    core.fcntl.flock(handle, core.fcntl.LOCK_UN)
+
+
+def _load_rules():
+    path = Path(core.DATA_DIR) / 'happ_rules.json'
+    if not path.exists():
+        return {'version': 1, 'accounts': {}}
+    try:
+        raw = path.read_bytes()
+        if len(raw) > 2_000_000:
+            raise ValueError
+        data = json.loads(raw)
+        if set(data) != {'version', 'accounts'} or data['version'] != 1:
+            raise ValueError
+        if not isinstance(data['accounts'], dict):
+            raise TypeError
+        for identity, record in data['accounts'].items():
+            if not isinstance(identity, str) or not _NONCE.fullmatch(identity):
+                raise ValueError
+            if set(record) != {'revision', 'rules'} or type(record['revision']) is not int:
+                raise ValueError
+            if record['revision'] < 1 or not isinstance(record['rules'], list):
+                raise ValueError
+            if normalize_proxy_rules('\n'.join(record['rules'])) != record['rules']:
+                raise ValueError
+        return data
+    except (OSError, TypeError, ValueError):
+        raise HappStateError('invalid_state') from None
+
+
+def get_rules(account_id):
+    with _rules_lock():
+        record = _load_rules()['accounts'].get(account_id, {'revision': 0, 'rules': []})
+        return record['revision'], list(record['rules'])
+
+
+def save_rules(account_id, text, expected_revision):
+    if not isinstance(account_id, str) or not _NONCE.fullmatch(account_id):
+        raise HappStateError('invalid_state')
+    rules = normalize_proxy_rules(text)
+    with _rules_lock():
+        data = _load_rules()
+        previous = data['accounts'].get(account_id, {'revision': 0, 'rules': []})
+        if type(expected_revision) is not int or expected_revision != previous['revision']:
+            raise HappStateError('stale_revision')
+        data['accounts'][account_id] = {'revision': previous['revision'] + 1, 'rules': rules}
+        core.write_json_private(str(Path(core.DATA_DIR) / 'happ_rules.json'), data)
+
+
+def create_pilot_device(owner, name):
+    """Provision a fresh peer; never adopt an existing/router identity."""
+    with core._wireguard_lock:
+        user = core.load_users().get(owner, {})
+        if (not pilot_enabled() or user.get('role') != 'admin' or not user.get('approved')
+                or user.get('paused') or user.get('revoking')):
+            return False, '', 'unavailable'
+        if name in wireguard.get_user_devices(owner):
+            return False, '', 'already_exists'
+        ok, wg_name, _error = wireguard.create_device(owner, name)
+        if not ok:
+            return False, '', 'provision_failed'
+        try:
+            def mark(meta):
+                device = meta.get(wg_name, {})
+                if (device.get('owner') != owner or device.get('deletion_protected')
+                        or device.get('revoked') or device.get('provisioning')):
+                    raise ValueError
+                device.update(happ_pilot=True, happ_subscription_nonce=secrets.token_hex(32))
+            mutate_device_meta(mark)
+            # Reuse the existing per-peer DNS redirect to the central target's
+            # configured port. This does not lock the administrator's account.
+            wireguard.reconcile_safe_dns()
+            return True, wg_name, ''
+        except (OSError, ValueError, SafeDnsEnforcementError):
+            def disable(meta):
+                device = meta.get(wg_name)
+                if device:
+                    device['happ_pilot'] = False
+                    device.pop('happ_subscription_nonce', None)
+            mutate_device_meta(disable)
+            wireguard.delete_device(wg_name)
+            return False, '', 'provision_failed'
+
+
+def subscription_token(device, user):
+    nonce = device.get('happ_subscription_nonce', '')
+    if not isinstance(nonce, str) or not _NONCE.fullmatch(nonce):
+        raise HappStateError('invalid_state')
+    key = core.app.secret_key
+    if isinstance(key, str):
+        key = key.encode()
+    if not key or len(key) < 32:
+        raise HappStateError('invalid_state')
+    message = json.dumps(['happ-pilot-v1', device['wg_name'], user['account_id'], nonce],
+                         separators=(',', ':')).encode()
+    return base64.urlsafe_b64encode(hmac.digest(key, message, 'sha256')).decode().rstrip('=')
+
+
+def rotate_subscription(wg_name):
+    def update(meta):
+        if meta.get(wg_name, {}).get('happ_pilot') is not True:
+            raise HappStateError('unavailable')
+        meta[wg_name]['happ_subscription_nonce'] = secrets.token_hex(32)
+    mutate_device_meta(update)
+
+
+def exported_config(device, mode, rules):
+    config = wireguard.get_config(device['wg_name'])
+    if not config:
+        raise HappStateError('unavailable')
+    # Only the Happ export uses the existing central resolver. No stored .conf,
+    # DNS policy, account flag or authoritative exception list is rewritten.
+    target = load_safe_dns_target(wireguard.WG_DIR)
+    if not target.custom:
+        raise HappStateError('central_dns_unavailable')
+    dns = target.client_dns_servers
+    config = wireguard._render_config_dns(config, dns)
+    return build_happ_config(config, mode, rules, safe_internet=device['safe_internet'],
+                             remarks=f"Happ pilot · {device['device']} · {mode}")
+
+
+def routing_header(device, mode, config):
+    if mode not in MODES:
+        raise HappStateError('unavailable')
+    direct_ips = []
+    for rule in config['routing']['rules']:
+        if rule.get('outboundTag') == 'direct':
+            direct_ips.extend(rule.get('ip', []))
+    dns = config['dns']['servers'][0]
+    if not isinstance(dns, str):
+        raise HappStateError('invalid_state')
+    profile = {
+        'Name': 'Pilot-' + hashlib.sha256((device['wg_name'] + mode).encode()).hexdigest()[:12],
+        'GlobalProxy': 'false' if mode == 'custom' else 'true',
+        'RemoteDNSType': 'DoU', 'RemoteDNSDomain': '', 'RemoteDNSIP': dns,
+        'DomesticDNSType': 'DoU', 'DomesticDNSDomain': '', 'DomesticDNSIP': dns,
+        'Geoipurl': GEOIP_URL, 'Geositeurl': '', 'DirectIp': direct_ips,
+        'DirectSites': [], 'ProxySites': [], 'ProxyIp': [dns],
+        'DomainStrategy': 'IPOnDemand', 'FakeDNS': 'false',
+    }
+    return 'happ://routing/onadd/' + base64.b64encode(
+        json.dumps(profile, ensure_ascii=False, separators=(',', ':')).encode()).decode()
+
+
+def qr_for_link(link):
+    try:
+        result = subprocess.run(['qrencode', '-t', 'SVG', '-o', '-'], input=link.encode(),
+                                capture_output=True, timeout=5, check=True)
+        return 'data:image/svg+xml;base64,' + base64.b64encode(result.stdout).decode()
+    except (OSError, subprocess.SubprocessError):
+        return None

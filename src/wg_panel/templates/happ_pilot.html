@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% from 'components.html' import heading, flashes with context %}
+{% block content %}
+{{ heading(tr('happ_pilot_title'), tr('happ_pilot_intro'), tr('happ_pilot_badge')) }}
+{{ flashes() }}
+<div class="happ-pilot-layout">
+  <section class="panel happ-pilot-create" aria-labelledby="happ-create-title">
+    <h2 id="happ-create-title">{{ tr('happ_create_title') }}</h2>
+    <p class="happ-panel-intro">{{ tr('happ_dedicated_device') }}</p>
+    {% if can_add|default(true) %}
+    <form method="post" action="{{ url_for('happ_pilot') }}" class="form-stack happ-create-form">
+      {{ csrf() }}
+      <label for="happ-device-name">{{ tr('ui_device_name') }}</label>
+      <input id="happ-device-name" name="device" value="{{ request.form.get('device', 'happ-pilot') }}" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]|[a-z0-9]" minlength="1" maxlength="64" autocomplete="off" aria-describedby="happ-device-name-help" required>
+      <p class="field-help" id="happ-device-name-help">{{ tr('ui_name_hint') }}</p>
+      <button type="submit" class="button primary">{{ icon('plus', 18) }}{{ tr('happ_create_action') }}</button>
+    </form>
+    {% else %}<p class="notice notice-error">{{ tr('happ_create_unavailable') }}</p>{% endif %}
+    {% if max_devices is defined and max_devices != -1 %}<p class="field-help happ-limit-hint">{{ tr('happ_device_limit').format(n=max_devices) }}</p>{% endif %}
+  </section>
+  <section class="panel happ-pilot-devices" aria-labelledby="happ-devices-title">
+    <h2 id="happ-devices-title">{{ tr('happ_devices_title') }} <span class="count-badge">{{ devices|length }}</span></h2>
+    <p class="happ-panel-intro">{{ tr('happ_devices_hint') }}</p>
+    {% if devices %}
+    <ul class="happ-device-list">
+      {% for device in devices %}
+      <li><a class="happ-device-link" href="{{ url_for('view_happ_device', wg_name=device.wg_name) }}"><span class="device-icon">{{ icon(device_icon(device.device), 24) }}</span><span class="happ-device-label"><strong>{{ device.device }}</strong><span>{{ tr('happ_pilot_badge') }}{% if device.safe_internet %} · {{ tr('safe_title') }}{% endif %}</span></span>{{ icon('arrow', 18) }}</a></li>
+      {% endfor %}
+    </ul>
+    {% else %}<div class="empty-state compact"><span class="empty-icon">{{ icon('devices', 30) }}</span><h3>{{ tr('happ_empty_title') }}</h3><p>{{ tr('happ_empty_hint') }}</p></div>{% endif %}
+  </section>
+</div>
+<p class="happ-dns-note">{{ icon('info', 18) }}<span>{{ tr('happ_routing_dns_note') }} <a href="{{ url_for('admin_family_dns') }}">{{ tr('family_dns_title') }}{{ icon('arrow', 14) }}</a></span></p>
+{% endblock %}

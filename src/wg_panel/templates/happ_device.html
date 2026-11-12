@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% from 'components.html' import flashes, pause_notice, deletion_badge with context %}
+{% block content %}
+<div class="device-workspace happ-workspace">
+  <a class="back-link" href="{{ url_for('happ_pilot') }}">{{ icon('back', 17) }}{{ tr('happ_back_pilot') }}</a>
+  <header class="device-heading">
+    <span class="device-heading-icon">{{ icon(device_icon(device.device), 29) }}</span>
+    <div><p class="eyebrow">HAPP · {{ tr('happ_pilot_badge') }}</p><h1>{{ device.device }}</h1>{% if device.deletion_protected %}{{ deletion_badge() }}{% endif %}</div>
+  </header>
+  {{ flashes() }}
+  {% if owner_paused|default(false) %}{{ pause_notice(owner_pause_pending|default(false)) }}{% endif %}
+
+  <section class="panel happ-mode-panel" aria-labelledby="happ-mode-title">
+    <div class="happ-mode-heading"><h2 id="happ-mode-title">{{ tr('happ_mode_title') }}</h2><span class="tag {{ 'tag-ok' if device.safe_internet else 'tag-pend' }}">{{ tr('safe_title' if device.safe_internet else 'happ_pilot_badge') }}</span></div>
+    <form method="get" action="{{ url_for('view_happ_device', wg_name=wg_name) }}" class="happ-mode-form">
+      <label for="happ-mode">{{ tr('happ_mode_label') }}</label>
+      <div class="happ-mode-controls"><select id="happ-mode" name="mode" aria-describedby="happ-mode-help">{% for option in modes %}<option value="{{ option.id }}"{% if mode == option.id %} selected{% endif %}{% if not option.enabled %} disabled{% endif %}>{{ tr(option.title_key) }}</option>{% endfor %}</select><button type="submit" class="button secondary">{{ tr('happ_mode_apply') }}</button></div>
+      <p class="field-help" id="happ-mode-help">{{ tr('happ_mode_' ~ (mode|replace('-', '_')) ~ '_help') }}</p>
+    </form>
+    {% if device.safe_internet %}<p class="happ-protected-note">{{ icon('shield', 18) }}<span>{{ tr('happ_protected_modes_note' if modes|selectattr('enabled')|list|length == 1 else 'happ_protected_dns_note') }}</span></p>{% endif %}
+  </section>
+
+  <section class="panel happ-import-panel" aria-labelledby="happ-import-title">
+    <h2 id="happ-import-title">{{ tr('happ_import_title') }}</h2>
+    <p class="happ-panel-intro">{{ tr('happ_import_hint') }}</p>
+    <div class="happ-import-layout">
+      <div class="happ-import-qr">
+        {% if qr %}<img src="{{ qr }}" alt="{{ tr('happ_qr_alt') }}" width="240" height="240">{% else %}<div class="qr-unavailable">{{ icon('qr', 40) }}<p>{{ tr('happ_qr_unavailable') }}</p></div>{% endif %}
+        <p>{{ tr('happ_qr_hint') }}</p>
+      </div>
+      <div class="happ-import-instructions">
+        <ol class="happ-setup-steps"><li>{{ tr('happ_setup_import') }}</li><li>{{ tr('happ_setup_pc') }}</li><li>{{ tr('happ_setup_tunnel') }}</li></ol>
+        <div class="happ-import-actions">
+          <a class="button primary" href="{{ import_url }}">{{ icon('plus', 18) }}{{ tr('happ_open_app') }}</a>
+          <button type="button" class="button secondary" data-copy-target="happ-subscription-url" data-copy-success="{{ tr('happ_subscription_copied') }}" data-copy-error="{{ tr('happ_copy_error') }}">{{ icon('copy', 18) }}{{ tr('happ_copy_subscription') }}</button>
+          <a class="button secondary" href="{{ url_for('download_happ_device', wg_name=wg_name, mode=mode) }}">{{ icon('down', 18) }}{{ tr('happ_download_json') }}</a>
+        </div>
+        <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
+      </div>
+    </div>
+    <p class="field-help happ-private-note">{{ icon('lock', 15) }}{{ tr('happ_private_subscription') }}</p>
+    <details class="happ-private-details"><summary>{{ tr('happ_show_subscription') }}</summary><pre id="happ-subscription-url"><code>{{ subscription_url }}</code></pre></details>
+  </section>
+
+  <section class="panel happ-rules-panel" aria-labelledby="happ-rules-title">
+    <div class="happ-mode-heading"><h2 id="happ-rules-title">{{ tr('happ_rules_title') }}</h2><span class="count-badge" aria-label="{{ tr('happ_rules_count') }}">{{ proxy_rules|length }}</span></div>
+    <p class="happ-panel-intro">{{ tr('happ_rules_scope') }}</p>
+    <form method="post" action="{{ url_for('update_happ_rules') }}" class="happ-rules-form">
+      {{ csrf() }}<input type="hidden" name="revision" value="{{ rules_revision }}"><input type="hidden" name="wg_name" value="{{ wg_name }}"><input type="hidden" name="mode" value="{{ mode }}">
+      <label for="happ-rules">{{ tr('happ_rules_label') }}</label>
+      <textarea class="happ-rules-textarea" id="happ-rules" name="rules" rows="7" spellcheck="false" autocomplete="off" aria-describedby="happ-rules-help" placeholder="example.org&#10;192.0.2.0/24">{{ rules_text }}</textarea>
+      <p class="field-help" id="happ-rules-help">{{ tr('happ_rules_format') }}</p>
+      <button type="submit" class="button primary">{{ icon('check', 18) }}{{ tr('happ_save_rules') }}</button>
+    </form>
+    <p class="happ-dns-note">{{ icon('info', 18) }}<span>{{ tr('happ_routing_dns_note') }} <a href="{{ url_for('admin_family_dns') }}">{{ tr('family_dns_title') }}{{ icon('arrow', 14) }}</a></span></p>
+  </section>
+
+  <section class="panel happ-config-panel" aria-labelledby="happ-config-title">
+    <h2 id="happ-config-title">{{ tr('happ_config_title') }}</h2>
+    <p class="happ-panel-intro">{{ tr('happ_config_hint') }}</p>
+    <button type="button" class="button secondary" data-copy-target="happ-config-block" data-copy-success="{{ tr('happ_config_copied') }}" data-copy-error="{{ tr('happ_copy_error') }}">{{ icon('copy', 18) }}{{ tr('happ_copy_json') }}</button>
+    <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
+    <details class="happ-private-details"><summary>{{ tr('happ_show_json') }}</summary><pre id="happ-config-block" tabindex="0" aria-label="{{ tr('happ_config_title') }}"><code>{{ config_json }}</code></pre></details>
+  </section>
+
+  <section class="panel happ-subscription-panel" aria-labelledby="happ-subscription-title">
+    <h2 id="happ-subscription-title">{{ tr('happ_subscription_title') }}</h2>
+    <p class="happ-panel-intro">{{ tr('happ_rotate_hint') }}</p>
+    <form method="post" action="{{ url_for('rotate_happ_subscription', wg_name=wg_name) }}" class="happ-rotate-form">{{ csrf() }}<input type="hidden" name="mode" value="{{ mode }}"><button type="submit" class="button secondary">{{ icon('key', 18) }}{{ tr('happ_rotate_subscription') }}</button></form>
+  </section>
+  {% if not current_paused %}<div class="device-footer"><p>{{ tr('ui_danger_hint') }}</p><a class="button danger-outline small" href="{{ url_for('confirm_device_deletion', wg_name=wg_name) }}" data-delete-open>{{ icon('trash', 16) }}{{ tr('ui_danger') }}</a></div>{% endif %}
+</div>
+{% endblock %}

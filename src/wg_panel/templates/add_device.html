@@ -5,5 +5,12 @@
 {{ heading(tr('ui_add'), tr('add_sub')) }}{{ flashes() }}
 <div class="form-layout"><section class="panel form-panel"><span class="form-icon">{{ icon('devices', 29) }}</span><h2>{{ tr('ui_connect_next') }}</h2><p class="muted">{{ tr('ui_add_hint') }}</p><form method="post" class="form-stack">{{ csrf() }}
 <label for="device">{{ tr('ui_device_name') }}</label><input id="device" name="device" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]|[a-z0-9]" maxlength="64" placeholder="my-phone" value="{{ request.form.get('device', '') }}" aria-describedby="name-help" required autofocus><p class="field-help" id="name-help">{{ tr('ui_name_hint') }}</p>
+{% if happ_pilot_enabled|default(false) and is_admin %}
+{% set selected_client = request.form.get('client_app', request.args.get('client_app', 'wireguard')) %}
+<fieldset class="happ-client-choice"><legend>{{ tr('happ_client_choice') }}</legend>
+  <label class="happ-client-option" for="client-wireguard"><input id="client-wireguard" type="radio" name="client_app" value="wireguard"{% if selected_client != 'happ' %} checked{% endif %}><span><strong>{{ tr('happ_client_wireguard') }}</strong><small>{{ tr('happ_client_wireguard_hint') }}</small></span></label>
+  <label class="happ-client-option" for="client-happ"><input id="client-happ" type="radio" name="client_app" value="happ"{% if selected_client == 'happ' %} checked{% endif %}><span><strong>{{ tr('happ_client_modern') }}</strong><small>{{ tr('happ_client_modern_hint') }}</small></span></label>
+</fieldset>
+{% endif %}
 <div class="form-actions"><button class="button primary" type="submit">{{ icon('plus', 18) }}{{ tr('ui_create') }}</button><a class="button secondary" href="{{ url_for('dashboard') }}">{{ tr('ui_cancel') }}</a></div></form></section><aside class="form-aside"><span class="eyebrow">WIREGUARD</span><h2>{{ tr('ui_guide') }}</h2>{% for n in [1,2,3] %}<div class="guide-step"><span class="step-number">0{{ n }}</span><div><h3>{{ tr('ui_step' ~ n) }}</h3><p>{{ tr('ui_step' ~ n ~ '_sub') }}</p></div></div>{% endfor %}</aside></div>
 {% endblock %}

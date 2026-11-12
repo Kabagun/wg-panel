@@ -428,6 +428,66 @@ meter::-moz-meter-bar{background:#8b9eeb;border-radius:5px}
 @media(max-width:760px){.device-heading{margin-bottom:24px}.protection-settings{padding:22px}.device-footer{padding:0;gap:12px}.device-footer p{max-width:170px}.history-popover .history-table,.history-popover .history-table thead,.history-popover .history-table tbody{display:table;width:100%}.history-popover .history-table{display:table;table-layout:fixed}.history-popover .history-table thead{display:table-header-group}.history-popover .history-table tbody{display:table-row-group}.history-popover .history-table tr{display:table-row;padding:0;border:0}.history-popover .history-table th,.history-popover .history-table td{display:table-cell;padding:11px 5px;font-size:10px;min-height:0}.history-popover .history-table th{font-size:9px}.history-popover .history-table td:before{display:none}.history-popover .history-table th:first-child,.history-popover .history-table td:first-child{padding-left:0}.history-popover .history-table th:last-child,.history-popover .history-table td:last-child{padding-right:0}.history-popover{padding:17px}}
 @media(max-width:440px){.device-heading h1{font-size:26px}.protection-description p{font-size:11px}.protection-details{margin-left:0}.protection-settings .protection-switch{margin-left:54px}.device-footer{align-items:center}.device-footer .button{font-size:10px;padding:8px 10px}.device-footer p{font-size:10px}}
 
+/* Closed Happ pilot. These rules do not change ordinary device screens. */
+.happ-pilot-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:24px;align-items:start}
+.happ-panel-intro{margin:10px 0 20px;color:var(--muted);font-size:16px;line-height:1.7}
+.happ-pilot-create h2,.happ-pilot-devices h2{display:flex;align-items:center;gap:10px}
+.happ-create-form .button{margin-top:16px}
+.happ-client-choice{border:0;margin:0 0 23px;padding:0;min-width:0}
+.happ-client-choice>legend{font-size:15px;font-weight:600;margin-bottom:10px;padding:0}
+.happ-client-option{display:flex;align-items:flex-start;gap:12px;padding:14px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.happ-client-option+.happ-client-option{margin-top:10px}
+.happ-client-option:has(input:checked){border-color:#9eaff1;background:var(--blue-soft)}
+.form-stack .happ-client-choice input[type=radio]{width:18px;height:18px;min-height:0;padding:0;margin:3px 0 0;flex-shrink:0;accent-color:var(--blue);box-shadow:none}
+.form-stack .happ-client-choice input[type=radio]:focus-visible{outline:3px solid #9aacff;outline-offset:3px}
+.happ-client-option>span{min-width:0;overflow-wrap:anywhere}
+.happ-client-option strong{display:block;font-size:16px}
+.happ-client-option small{display:block;font-size:14px;line-height:1.7;color:var(--muted);margin-top:4px}
+.happ-limit-hint{margin-top:18px}
+.happ-device-list{list-style:none;margin:0;padding:0}
+.happ-device-list>li+li{border-top:1px solid var(--line)}
+.happ-device-link{display:flex;align-items:center;gap:14px;padding:18px 0;min-width:0;color:var(--ink)}
+.happ-device-link:hover{color:var(--blue)}
+.happ-device-link>svg{margin-left:auto}
+.happ-device-label{min-width:0;flex:1;overflow-wrap:anywhere}
+.happ-device-label strong{display:block;font-size:16px}
+.happ-device-label>span{display:block;color:var(--muted);font-size:13px;margin-top:4px}
+.happ-workspace>.panel+.panel{margin-top:20px}
+.happ-mode-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.happ-mode-form{margin-top:18px}
+.happ-mode-form>label,.happ-rules-form>label{display:block;font-size:15px;font-weight:600;margin-bottom:8px}
+.happ-mode-controls{display:flex;align-items:stretch;gap:12px}
+.happ-mode-controls select{flex:1;min-width:0;width:100%;border:1px solid #dfe3eb;border-radius:8px;background:white;color:var(--ink);min-height:48px;padding:10px 14px;font-size:16px}
+.happ-mode-form .field-help{margin-top:10px}
+.happ-protected-note{display:flex;align-items:flex-start;gap:9px;margin-top:18px;font-size:15px;line-height:1.7;color:var(--green)}
+.happ-protected-note>svg{margin-top:3px}
+.happ-import-layout{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.4fr);gap:32px;align-items:start}
+.happ-import-qr{min-width:0;text-align:center}
+.happ-import-qr img{display:block;width:min(100%,240px);height:auto;margin:0 auto}
+.happ-import-qr>p{font-size:15px;color:var(--muted);line-height:1.7;margin-top:16px}
+.happ-import-instructions{min-width:0}
+.happ-setup-steps{margin:0 0 24px;padding-left:23px;font-size:16px;line-height:1.8}
+.happ-setup-steps>li+li{margin-top:10px}
+.happ-import-actions{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+.app-body .happ-workspace .button,.app-body .happ-create-form .button{min-height:48px;font-size:16px;overflow-wrap:anywhere}
+.happ-import-actions .button{width:100%}
+.happ-workspace .copy-toast{font-size:14px}
+.happ-private-note{display:flex;align-items:flex-start;gap:7px;margin-top:24px}
+.happ-private-note>svg{margin-top:3px}
+.happ-private-details{margin-top:20px;min-width:0}
+.happ-private-details>summary{cursor:pointer;font-size:15px;font-weight:600;color:var(--blue);overflow-wrap:anywhere}
+.happ-private-details pre{margin:14px 0 0;border:1px solid var(--line);border-radius:10px;background:#f6f8fc;padding:18px;max-width:100%;font:14px/1.7 Consolas,monospace;white-space:pre;overflow:auto}
+.happ-private-details #happ-subscription-url{white-space:pre-wrap;overflow-wrap:anywhere}
+.happ-rules-textarea{display:block;width:100%;min-width:0;resize:vertical;border:1px solid #dfe3eb;border-radius:8px;background:white;color:var(--ink);padding:14px;font:15px/1.7 Consolas,monospace}
+.happ-rules-textarea:focus{border-color:#8c9ff5;outline:3px solid #9aacff;outline-offset:2px}
+.happ-rules-form>.field-help{margin-top:10px}
+.happ-rules-form>.button{margin-top:18px}
+.happ-dns-note{display:flex;align-items:flex-start;gap:9px;font-size:14px;line-height:1.8;color:var(--muted);margin-top:24px}
+.happ-dns-note>svg{margin-top:4px}
+.happ-dns-note a{display:inline-flex;align-items:center;gap:4px}
+@media(max-width:940px){.happ-pilot-layout{grid-template-columns:minmax(0,1fr)}.happ-import-layout{gap:24px}}
+@media(max-width:600px){.happ-import-layout{grid-template-columns:minmax(0,1fr)}.happ-mode-controls{flex-direction:column}.happ-private-details pre{padding:14px;font-size:13px}.happ-mode-heading{align-items:flex-start}.happ-device-link{gap:10px}}
+
 /* Desktop reading scale; compact tablet and phone sizing stays above. */
 @media(min-width:1280px){
   .app-body{font-size:16px}

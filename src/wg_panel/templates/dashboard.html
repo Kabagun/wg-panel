@@ -11,10 +11,11 @@
   <div class="section-heading"><div><h2>{{ tr('ui_your_devices') }} <span class="count-badge">{{ devices|length }}</span></h2><p>{{ tr('ui_manage_hint') }}</p></div>{% if devices %}{{ search(tr('ui_search')) }}{% endif %}</div>
   <div class="device-grid">
   {% for device in devices %}
+    {% set is_happ_device = happ_pilot_enabled|default(false) and device.happ_pilot|default(false) %}
     <article class="device-card" data-search-item="{{ device.device }}">
-      <a class="device-card-main" href="{{ url_for('view_device', wg_name=device.wg_name) }}" aria-labelledby="device-name-{{ loop.index }} device-action-{{ loop.index }}">
+      <a class="device-card-main" href="{{ url_for('view_happ_device' if is_happ_device else 'view_device', wg_name=device.wg_name) }}" aria-labelledby="device-name-{{ loop.index }} device-action-{{ loop.index }}">
         <div class="device-card-body">
-          <div class="device-card-top"><span class="device-icon">{{ icon(device_icon(device.device), 27) }}</span>{% if paused %}{{ access_badge('attention' if pause_pending else 'paused') }}{% else %}<span class="device-protocol">WireGuard</span>{% endif %}</div>
+          <div class="device-card-top"><span class="device-icon">{{ icon(device_icon(device.device), 27) }}</span>{% if paused %}{{ access_badge('attention' if pause_pending else 'paused') }}{% else %}<span class="device-protocol">{{ 'Happ' if is_happ_device else 'WireGuard' }}</span>{% endif %}</div>
           <h3 id="device-name-{{ loop.index }}">{{ device.device }}</h3>
           {% if device.deletion_protected %}{{ deletion_badge() }}{% endif %}
           <div class="device-protection {{ 'is-protected' if device.safe_internet }}">{{ icon('shield', 16) }}{{ tr('safe_title' if device.safe_internet else 'ui_standard_dns') }}</div>
@@ -22,7 +23,7 @@
         </div>
         <span class="device-action" id="device-action-{{ loop.index }}">{{ icon('qr', 17) }}{{ tr('ui_view_config' if paused else 'ui_manage') }}{{ icon('arrow', 16) }}</span>
       </a>
-      <a class="icon-button" href="{{ url_for('download_device', wg_name=device.wg_name) }}" aria-label="{{ tr('ui_download') }}: {{ device.device }}" title="{{ tr('ui_download') }}">{{ icon('down', 18) }}</a>
+      <a class="icon-button" href="{{ url_for('download_happ_device', wg_name=device.wg_name, mode='all' if device.safe_internet else 'custom') if is_happ_device else url_for('download_device', wg_name=device.wg_name) }}" aria-label="{{ tr('happ_download_json' if is_happ_device else 'ui_download') }}: {{ device.device }}" title="{{ tr('happ_download_json' if is_happ_device else 'ui_download') }}">{{ icon('down', 18) }}</a>
     </article>
   {% else %}
     <div class="empty-state full-span"><span class="empty-icon">{{ icon('devices', 32) }}</span><h2>{{ tr('ui_empty_title') }}</h2><p>{{ tr('ui_empty_hint') }}</p>{% if can_add %}<a href="{{ url_for('add_device') }}" class="button primary">{{ icon('plus', 18) }}{{ tr('ui_add') }}</a>{% endif %}</div>
