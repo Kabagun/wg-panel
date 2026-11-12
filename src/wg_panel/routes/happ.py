@@ -46,6 +46,10 @@ def _subscription_url(device, user, mode):
                                       token=happ_pilot.subscription_token(device, user), mode=mode)
 
 
+def _valid_export_mode(device, mode):
+    return mode == 'bundle' or (mode in MODES and (not device['safe_internet'] or mode == 'all'))
+
+
 @core.app.route('/admin/happ-pilot', methods=['GET', 'POST'], endpoint='happ_pilot')
 @approved_required
 @admin_required
@@ -82,14 +86,14 @@ def view_happ_device(wg_name):
     try:
         revision, rules = happ_pilot.get_rules(user['account_id'])
         config = happ_pilot.exported_config(device, mode, rules)
-        subscription_url = _subscription_url(device, user, mode)
+        subscription_url = _subscription_url(device, user, 'bundle')
     except ValueError:
         return 'Happ configuration is unavailable.', 503
     import_url = 'happ://add/' + subscription_url
     return render_page('happ_device.html', 'happ_title', device=device, wg_name=wg_name,
                        mode=mode, modes=[{'id': key, 'title_key': 'happ_mode_' + key.replace('-', '_'),
                                          'enabled': not device['safe_internet'] or key == 'all'}
-                                        for key in MODES], proxy_rules=rules,
+                                        for key in happ_pilot.BUNDLE_MODES], proxy_rules=rules,
                        rules_text='\n'.join(rules), rules_revision=revision,
                        config_json=json.dumps(config, ensure_ascii=False, indent=2),
                        subscription_url=subscription_url, import_url=import_url,
@@ -98,13 +102,14 @@ def view_happ_device(wg_name):
 
 
 def _response(device, mode, rules):
-    config = happ_pilot.exported_config(device, mode, rules)
+    config = (happ_pilot.exported_bundle(device, rules) if mode == 'bundle'
+              else happ_pilot.exported_config(device, mode, rules))
     response = Response(json.dumps(config, ensure_ascii=False, indent=2),
                         content_type='application/json; charset=utf-8')
     response.headers.set('Content-Disposition', 'attachment',
                          filename=f"{device['device']}-{mode}.json")
     response.headers['routing'] = happ_pilot.routing_header(device, mode, config)
-    response.headers['profile-title'] = f'Happ pilot - {mode}'
+    response.headers['profile-title'] = 'VPN modes' if mode == 'bundle' else f'Happ pilot - {mode}'
     response.headers['profile-update-interval'] = '1'
     response.headers['tun-enable'] = '1'
     return response
@@ -115,7 +120,7 @@ def _response(device, mode, rules):
 @admin_required
 def download_happ_device(wg_name, mode):
     device, user = _pilot_device(wg_name)
-    if mode not in MODES or (device['safe_internet'] and mode != 'all'):
+    if not _valid_export_mode(device, mode):
         abort(404)
     try:
         _revision, rules = happ_pilot.get_rules(user['account_id'])
@@ -162,8 +167,8 @@ def happ_subscription(wg_name, token, mode):
         return rate_limited_response(retry)
     with core._wireguard_lock:
         device, user = _pilot_device(wg_name, public=True)
-        if (mode not in MODES or not re.fullmatch(r'[A-Za-z0-9_-]{43}', token)
-                or (device['safe_internet'] and mode != 'all')):
+        if (not _valid_export_mode(device, mode)
+                or not re.fullmatch(r'[A-Za-z0-9_-]{43}', token)):
             abort(404)
         try:
             if not hmac.compare_digest(token, happ_pilot.subscription_token(device, user)):

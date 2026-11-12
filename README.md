@@ -73,18 +73,35 @@ file owner-only, like the rest of the data directory. The pilot page is
 pilot device. Existing identities, protected devices and infrastructure peers
 cannot be adopted as pilots. Each physical device needs its own identity.
 
-Happ currently uses the existing WireGuard server. Its JSON exports support:
+Happ uses the existing WireGuard server. A device's main subscription, import
+link, QR code and **VPN modes / Режимы VPN** JSON download expose one JSON array
+containing the permitted entries below. Import the subscription once and select
+an entry inside Happ. These are routing choices on the same server, not separate
+servers or geographic exit locations:
 
-- `all`: full tunnel, with local-network access.
-- `custom`: the account's selected domains/IP networks use the tunnel; other
-  destinations use the device's ordinary connection.
-- `by-direct`, `ru-direct`, `by-ru-direct`: the selected countries' IP networks
-  use the ordinary connection; other destinations use the tunnel.
+- `all` — **Всё через VPN**: internet traffic uses the tunnel; local-network
+  access remains direct.
+- `custom` — **AI-сервисы через VPN**: only the account's explicitly configured
+  domains/IP networks use the tunnel; other destinations use the device's
+  ordinary connection. **AI services** is the user-facing name of this list,
+  not an automatically detected category. `custom` remains its stable internal
+  identifier. Do not seed, replace or extend a user's list without authorization.
+- `by-ru-direct` — **Внутренние сайты без VPN**: Belarusian and Russian IP
+  addresses go directly; other traffic goes through the VPN.
+
+The new bundle and its preview selector contain these three entries only.
+Legacy individual `by-direct` and `ru-direct` URLs remain available for
+compatibility and do not appear in the new subscription or selector.
+The selector on the device page previews one configuration and its individual
+JSON download; changing that preview does not change the main subscription,
+import link, QR code or bundle download. The bundle download uses
+`/device/<wg_name>/happ/bundle/download`; individual downloads still use the
+selected mode ID in place of `bundle`.
 
 Explicit proxy resources take priority over local/country bypasses. Country
-classification is by IP, not domain suffix. The subscription provides Happ with
-the full GeoIP database needed for Belarus; prefer subscription import over a
-standalone file for these presets. Rules changed in the panel take effect after
+classification is by IP, not domain suffix or server location. Country modes
+need a full GeoIP database including Belarus; prefer the subscription import
+over a standalone configuration. Rules changed in the panel take effect after
 subscription refresh and reconnect. Auto-update is requested hourly, subject to
 the client's scheduling. On desktop, use Happ's TUN mode and deactivate the
 separate WireGuard client tunnel first. TUN behavior still needs device testing;
@@ -101,15 +118,20 @@ system's resolver. DNS resolution therefore still needs a working tunnel in
 direct-routing modes. The pilot exports only `all` for an identity with locked
 Safe internet until direct-path protection has completed client acceptance.
 
-Routing resources are stored separately from DNS exceptions in private
+The AI services routing list is stored separately from DNS exceptions in private
 `happ_rules.json`, keyed by account identity rather than reusable login name.
 Updates require CSRF and the current revision. Adding a proxy resource does not
 allow it through DNS filtering. Direct traffic at home continues through the
 router's existing KVAS routing. Only tunneled traffic appears in server counters.
 
-Each device has separate preset URLs authenticated by a constant-time-checked
-HMAC token bound to account identity and a rotatable device nonce. Public fetches
-are rate-limited and check approval, pause, revocation and pilot eligibility on
+Each device has one main bundle subscription at
+`/happ/sub/<wg_name>/<token>/bundle`. It returns a JSON array of all permitted
+modes; the Safe internet gate still limits protected identities to `all` until
+direct-path protection completes client acceptance. Individual preset URLs
+remain compatibility exports, not additional required subscriptions. The URLs
+use a constant-time-checked HMAC token bound to account identity and a rotatable
+device nonce. Public fetches are rate-limited and check approval, pause,
+revocation and pilot eligibility on
 every request. JSON responses are private/no-store. Renewing a subscription link
 invalidates old fetch URLs; it does not revoke credentials already imported into
 a client. Pause or delete the device through the existing peer lifecycle to

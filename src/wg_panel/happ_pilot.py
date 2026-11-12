@@ -14,12 +14,14 @@ from pathlib import Path
 from . import core, wireguard
 from .dns_enforcement import SafeDnsEnforcementError
 from .happ_config import GEOIP_URL, MODES, build_happ_config, normalize_proxy_rules
+from .i18n import t
 from .safe_dns_settings import load_safe_dns_target
 from .traffic import mutate_device_meta
 
 _lock = threading.RLock()
 _SUB_PATH = re.compile(r"/happ/sub/[^\s\"'<>]*")
 _NONCE = re.compile(r"[0-9a-f]{64}")
+BUNDLE_MODES = ('all', 'custom', 'by-ru-direct')
 
 
 class HappStateError(ValueError):
@@ -169,7 +171,11 @@ def rotate_subscription(wg_name):
     mutate_device_meta(update)
 
 
-def exported_config(device, mode, rules):
+def subscription_modes(device):
+    return ('all',) if device['safe_internet'] else BUNDLE_MODES
+
+
+def _central_config(device):
     config = wireguard.get_config(device['wg_name'])
     if not config:
         raise HappStateError('unavailable')
@@ -179,21 +185,45 @@ def exported_config(device, mode, rules):
     if not target.custom:
         raise HappStateError('central_dns_unavailable')
     dns = target.client_dns_servers
-    config = wireguard._render_config_dns(config, dns)
-    return build_happ_config(config, mode, rules, safe_internet=device['safe_internet'],
-                             remarks=f"Happ pilot · {device['device']} · {mode}")
+    return wireguard._render_config_dns(config, dns)
+
+
+def _export_config(device, mode, rules, config):
+    key = 'happ_mode_' + mode.replace('-', '_')
+    exported = build_happ_config(config, mode, rules, safe_internet=device['safe_internet'],
+                                 remarks=t(key, 'ru'))
+    exported['meta'] = {'serverDescription': t(key + '_help', 'ru')}
+    return exported
+
+
+def exported_config(device, mode, rules):
+    return _export_config(device, mode, rules, _central_config(device))
+
+
+def exported_bundle(device, rules):
+    # All entries share one transport/DNS snapshot and one WireGuard identity.
+    config = _central_config(device)
+    return [_export_config(device, mode, rules, config) for mode in subscription_modes(device)]
 
 
 def routing_header(device, mode, config):
-    if mode not in MODES:
+    if mode not in (*MODES, 'bundle'):
         raise HappStateError('unavailable')
-    direct_ips = []
-    for rule in config['routing']['rules']:
-        if rule.get('outboundTag') == 'direct':
-            direct_ips.extend(rule.get('ip', []))
-    dns = config['dns']['servers'][0]
-    if not isinstance(dns, str):
+    configs = config if mode == 'bundle' else [config]
+    if not configs:
         raise HappStateError('invalid_state')
+    direct_ips = []
+    for item in configs:
+        for rule in item['routing']['rules']:
+            if rule.get('outboundTag') == 'direct':
+                direct_ips.extend(rule.get('ip', []))
+    dns = configs[0]['dns']['servers'][0]
+    if (not isinstance(dns, str)
+            or any(item['dns']['servers'] != configs[0]['dns']['servers'] for item in configs)):
+        raise HappStateError('invalid_state')
+    # JSON subscriptions allow only one routing profile. Include every entry's
+    # GeoIP tags so Happ's trimmed database can run either BY or RU preset.
+    direct_ips = list(dict.fromkeys(direct_ips))
     profile = {
         'Name': 'Pilot-' + hashlib.sha256((device['wg_name'] + mode).encode()).hexdigest()[:12],
         'GlobalProxy': 'false' if mode == 'custom' else 'true',

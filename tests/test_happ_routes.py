@@ -186,6 +186,75 @@ def test_public_subscription_without_session_exports_central_dns_and_import_head
     assert routing["RemoteDNSType"] == routing["DomesticDNSType"] == "DoU"
 
 
+def test_bundle_contains_three_independent_presets_with_one_identity_and_dns(runtime):
+    identity = core.load_users()[ADMIN]['account_id']
+    happ_pilot.save_rules(identity, 'ai.example.org\n192.0.2.0/24', 0)
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200
+    assert response.headers['Cache-Control'].startswith('no-store')
+    assert response.headers['profile-title'] == 'VPN modes'
+    assert response.headers['tun-enable'] == '1'
+    assert 'Set-Cookie' not in response.headers
+    bundle = response.get_json()
+    assert isinstance(bundle, list) and len(bundle) == 3
+    assert len({item['remarks'] for item in bundle}) == 3
+    assert happ_pilot.BUNDLE_MODES == ('all', 'custom', 'by-ru-direct')
+    for mode, item in zip(happ_pilot.BUNDLE_MODES, bundle, strict=True):
+        assert item == browser(None).get(subscription(mode=mode)).get_json()
+        assert item['dns']['servers'] == ['10.8.0.1']
+        assert item['meta']['serverDescription']
+    settings = [next(o for o in item['outbounds'] if o['tag'] == 'vpn')['settings']
+                for item in bundle]
+    assert settings[0] == settings[1] == settings[2]
+    assert bundle[0]['routing']['rules'][-1]['outboundTag'] == 'vpn'
+    assert bundle[1]['routing']['rules'][-1]['outboundTag'] == 'direct'
+    assert bundle[2]['routing']['rules'][-1]['outboundTag'] == 'vpn'
+    assert any(rule.get('domain') == ['domain:ai.example.org']
+               and rule['outboundTag'] == 'vpn' for rule in bundle[1]['routing']['rules'])
+    assert any(rule.get('ip') == ['geoip:by', 'geoip:ru']
+               and rule['outboundTag'] == 'direct' for rule in bundle[2]['routing']['rules'])
+    routing = json.loads(base64.b64decode(
+        response.headers['routing'].removeprefix('happ://routing/onadd/')))
+    assert {'geoip:by', 'geoip:ru'} <= set(routing['DirectIp'])
+    assert len(routing['DirectIp']) == len(set(routing['DirectIp']))
+    assert routing['RemoteDNSIP'] == routing['DomesticDNSIP'] == '10.8.0.1'
+    assert routing['ProxyIp'] == ['10.8.0.1']
+    assert routing['Geoipurl'].endswith('/geoip.dat')
+    assert browser().get(f'/device/{PILOT}/happ/bundle/download').get_json() == bundle
+
+
+def test_protected_bundle_exports_only_full_tunnel_without_geo_bypass(runtime):
+    account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200
+    assert response.get_json() == [browser(None).get(subscription(mode='all')).get_json()]
+    routing = json.loads(base64.b64decode(
+        response.headers['routing'].removeprefix('happ://routing/onadd/')))
+    assert not any(ip.startswith('geoip:') for ip in routing['DirectIp'])
+    assert routing['GlobalProxy'] == 'true'
+
+
+def test_preview_mode_does_not_change_bundle_import_or_advertise_retired_modes(runtime):
+    admin = browser()
+    url = 'https://vpn.example.test' + subscription(mode='bundle')
+    for mode in happ_pilot.BUNDLE_MODES:
+        page = admin.get(f'/device/{PILOT}/happ?mode={mode}').get_data(as_text=True)
+        assert url in page and f'happ://add/{url}' in page
+        assert f'/device/{PILOT}/happ/bundle/download' in page
+        assert 'value="by-direct"' not in page and 'value="ru-direct"' not in page
+
+
+def test_bundle_token_rotation_revokes_all_presets_without_replacing_peer(runtime):
+    old = subscription(mode='bundle')
+    before = (runtime.clients / f'{PILOT}.conf').read_bytes()
+    assert browser(None).get(old).status_code == 200
+    assert browser().post(f'/device/{PILOT}/happ/rotate',
+                          data={'csrf_token': CSRF, 'mode': 'custom'}).status_code == 303
+    assert browser(None).get(old).status_code == 404
+    assert browser(None).get(subscription(mode='bundle')).status_code == 200
+    assert (runtime.clients / f'{PILOT}.conf').read_bytes() == before
+
+
 @pytest.mark.parametrize("token", ["x" * 43, "short", "z" * 100, "é" * 43])
 def test_wrong_or_malformed_subscription_credentials_fail_closed(runtime, token):
     assert browser(None).get(subscription(token=token)).status_code == 404
@@ -217,11 +286,12 @@ def test_subscription_rotation_requires_csrf_and_revokes_old_link_only(runtime):
     assert (runtime.clients / f"{PILOT}.conf").read_bytes() == original_config
 
 
+@pytest.mark.parametrize("mode", ["custom", "bundle"])
 @pytest.mark.parametrize("change", ["paused", "pause_pending", "unapproved", "revoking",
                                    "demoted", "account_deleted", "account_recreated",
                                    "device_revoked", "device_deleted", "config_deleted"])
-def test_public_subscription_obeys_live_account_and_device_lifecycle(runtime, change):
-    path = subscription()
+def test_public_subscription_obeys_live_account_and_device_lifecycle(runtime, change, mode):
+    path = subscription(mode=mode)
     assert browser(None).get(path).status_code == 200
     if change in {"paused", "pause_pending", "revoking"}:
         core.mutate_users(lambda users: users[ADMIN].update({change: True}))
@@ -248,7 +318,8 @@ def test_gets_preserve_raw_wireguard_files_metadata_users_and_permanent_policy(r
              runtime.data / "users.json", runtime.data / "account_policy.json", runtime.target]
     before = {path: path.read_bytes() for path in paths}
     for path in ("/admin/happ-pilot", f"/device/{PILOT}/happ", "/dashboard", "/add",
-                 f"/device/{PILOT}/happ/custom/download", subscription()):
+                 f"/device/{PILOT}/happ/custom/download", subscription(),
+                 f"/device/{PILOT}/happ/bundle/download", subscription(mode="bundle")):
         assert admin.get(path).status_code == 200
     classic = browser("alice").get(f"/device/{CLASSIC}/download")
     assert classic.status_code == 200

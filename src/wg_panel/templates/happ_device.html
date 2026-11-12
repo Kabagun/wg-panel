@@ -10,19 +10,10 @@
   {{ flashes() }}
   {% if owner_paused|default(false) %}{{ pause_notice(owner_pause_pending|default(false)) }}{% endif %}
 
-  <section class="panel happ-mode-panel" aria-labelledby="happ-mode-title">
-    <div class="happ-mode-heading"><h2 id="happ-mode-title">{{ tr('happ_mode_title') }}</h2><span class="tag {{ 'tag-ok' if device.safe_internet else 'tag-pend' }}">{{ tr('safe_title' if device.safe_internet else 'happ_pilot_badge') }}</span></div>
-    <form method="get" action="{{ url_for('view_happ_device', wg_name=wg_name) }}" class="happ-mode-form">
-      <label for="happ-mode">{{ tr('happ_mode_label') }}</label>
-      <div class="happ-mode-controls"><select id="happ-mode" name="mode" aria-describedby="happ-mode-help">{% for option in modes %}<option value="{{ option.id }}"{% if mode == option.id %} selected{% endif %}{% if not option.enabled %} disabled{% endif %}>{{ tr(option.title_key) }}</option>{% endfor %}</select><button type="submit" class="button secondary">{{ tr('happ_mode_apply') }}</button></div>
-      <p class="field-help" id="happ-mode-help">{{ tr('happ_mode_' ~ (mode|replace('-', '_')) ~ '_help') }}</p>
-    </form>
-    {% if device.safe_internet %}<p class="happ-protected-note">{{ icon('shield', 18) }}<span>{{ tr('happ_protected_modes_note' if modes|selectattr('enabled')|list|length == 1 else 'happ_protected_dns_note') }}</span></p>{% endif %}
-  </section>
-
   <section class="panel happ-import-panel" aria-labelledby="happ-import-title">
     <h2 id="happ-import-title">{{ tr('happ_import_title') }}</h2>
     <p class="happ-panel-intro">{{ tr('happ_import_hint') }}</p>
+    <p class="happ-panel-intro">{{ tr('happ_bundle_server_note') }}</p>
     <div class="happ-import-layout">
       <div class="happ-import-qr">
         {% if qr %}<img src="{{ qr }}" alt="{{ tr('happ_qr_alt') }}" width="240" height="240">{% else %}<div class="qr-unavailable">{{ icon('qr', 40) }}<p>{{ tr('happ_qr_unavailable') }}</p></div>{% endif %}
@@ -33,7 +24,7 @@
         <div class="happ-import-actions">
           <a class="button primary" href="{{ import_url }}">{{ icon('plus', 18) }}{{ tr('happ_open_app') }}</a>
           <button type="button" class="button secondary" data-copy-target="happ-subscription-url" data-copy-success="{{ tr('happ_subscription_copied') }}" data-copy-error="{{ tr('happ_copy_error') }}">{{ icon('copy', 18) }}{{ tr('happ_copy_subscription') }}</button>
-          <a class="button secondary" href="{{ url_for('download_happ_device', wg_name=wg_name, mode=mode) }}">{{ icon('down', 18) }}{{ tr('happ_download_json') }}</a>
+          <a class="button secondary" href="{{ url_for('download_happ_device', wg_name=wg_name, mode='bundle') }}">{{ icon('down', 18) }}{{ tr('happ_download_bundle') }}</a>
         </div>
         <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
       </div>
@@ -58,7 +49,14 @@
   <section class="panel happ-config-panel" aria-labelledby="happ-config-title">
     <h2 id="happ-config-title">{{ tr('happ_config_title') }}</h2>
     <p class="happ-panel-intro">{{ tr('happ_config_hint') }}</p>
+    <form method="get" action="{{ url_for('view_happ_device', wg_name=wg_name) }}" class="happ-mode-form">
+      <label for="happ-mode">{{ tr('happ_mode_label') }}</label>
+      <div class="happ-mode-controls"><select id="happ-mode" name="mode" aria-describedby="happ-mode-help">{% for option in modes %}<option value="{{ option.id }}"{% if mode == option.id %} selected{% endif %}{% if not option.enabled %} disabled{% endif %}>{{ tr(option.title_key) }}</option>{% endfor %}</select><button type="submit" class="button secondary">{{ tr('happ_mode_apply') }}</button></div>
+      <p class="field-help" id="happ-mode-help">{{ tr('happ_mode_' ~ (mode|replace('-', '_')) ~ '_help') }}</p>
+    </form>
+    {% if device.safe_internet %}<p class="happ-protected-note">{{ icon('shield', 18) }}<span>{{ tr('happ_protected_modes_note' if modes|selectattr('enabled')|list|length == 1 else 'happ_protected_dns_note') }}</span></p>{% endif %}
     <button type="button" class="button secondary" data-copy-target="happ-config-block" data-copy-success="{{ tr('happ_config_copied') }}" data-copy-error="{{ tr('happ_copy_error') }}">{{ icon('copy', 18) }}{{ tr('happ_copy_json') }}</button>
+    <a class="button secondary" href="{{ url_for('download_happ_device', wg_name=wg_name, mode=mode) }}">{{ icon('down', 18) }}{{ tr('happ_download_preview') }}</a>
     <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>
     <details class="happ-private-details"><summary>{{ tr('happ_show_json') }}</summary><pre id="happ-config-block" tabindex="0" aria-label="{{ tr('happ_config_title') }}"><code>{{ config_json }}</code></pre></details>
   </section>
