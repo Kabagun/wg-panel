@@ -25,6 +25,12 @@ to loopback18012. Open only the two transport ports in the host firewall.
 Keep the existing web server on443. Verify the TLS certificate, REALITY target,
 ports, resources and automatic service startup before exposing profiles.
 
+If a cloud firewall also protects the server, permit the same TCP and UDP
+transport ports there. Opening UFW alone is insufficient. Preserve existing
+SSH, web and WireGuard rules, and limit changes to the pilot's server. Verify
+both protocols from a different machine or network before declaring them ready:
+requests originating on the server do not test the cloud firewall's ingress.
+
 `data/happ_runtime.json` contains `version:1`, `enabled:true`, an absolute
 `binary` path, public `host`, certificate `tls_name`, `reality_public_key`, and
 `server` options documented in `happ_transports.create_server_config`.
