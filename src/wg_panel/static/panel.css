@@ -459,6 +459,12 @@ meter::-moz-meter-bar{background:#8b9eeb;border-radius:5px}
 .happ-mode-controls{display:flex;align-items:stretch;gap:12px}
 .happ-mode-controls select{flex:1;min-width:0;width:100%;border:1px solid #dfe3eb;border-radius:8px;background:white;color:var(--ink);min-height:48px;padding:10px 14px;font-size:16px}
 .happ-mode-form .field-help{margin-top:10px}
+.happ-transport-list{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0 0 22px;padding:0}
+.happ-transport-list li{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:#f7f9fc;font-size:13px;line-height:1.6}
+.happ-transport-list .is-unavailable{color:var(--muted)}
+.happ-transport-list li>span{font-size:12px;color:var(--muted)}
+.happ-mode-form .happ-preview-transport{font-size:16px;min-height:48px;margin-bottom:0}
+.happ-mode-form #happ-transport-help{margin-bottom:18px}
 .happ-protected-note{display:flex;align-items:flex-start;gap:9px;margin-top:18px;font-size:15px;line-height:1.7;color:var(--green)}
 .happ-protected-note>svg{margin-top:3px}
 .happ-import-layout{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.4fr);gap:32px;align-items:start}
@@ -489,6 +495,7 @@ meter::-moz-meter-bar{background:#8b9eeb;border-radius:5px}
 .vpn-create-workspace{max-width:1240px;margin:0 auto}
 .vpn-create-step{font-size:11px;font-weight:650;letter-spacing:1.6px;color:var(--muted);margin-bottom:14px}
 .vpn-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.vpn-choice-grid.is-single,.vpn-download-grid.is-single{grid-template-columns:minmax(0,1fr);max-width:670px}
 .vpn-choice-card{display:flex;flex-direction:column;position:relative;min-width:0;min-height:455px;padding:32px;border:1px solid #425477;border-radius:22px;background:linear-gradient(145deg,#203451,#111c30);color:#f6f9ff;box-shadow:0 16px 36px #192b4114;transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
 .vpn-choice-happ{background:linear-gradient(145deg,#19413f,#102b31);border-color:#39706c}
 .vpn-choice-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:30px}

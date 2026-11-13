@@ -76,7 +76,19 @@ def available_for_user(user):
     return bool(pilot_enabled() and isinstance(user, dict) and user.get('approved') is True
                 and user.get('role') in ('admin', 'user') and user.get('account_id')
                 and not any(user.get(flag) for flag in ('paused', 'pause_pending', 'revoking'))
-                and (user.get('role') == 'admin' or public_enabled()))
+                and (user.get('role') == 'admin' or _allowed_account(user) or public_enabled()))
+
+
+def _allowed_account(user):
+    """An optional private allowlist adds ordinary test accounts, never credentials in Git."""
+    try:
+        raw = (Path(core.DATA_DIR) / 'happ_pilot_access.json').read_bytes()
+        data = json.loads(raw)
+        return (len(raw) < 20000 and data.get('version') == 1
+                and isinstance(data.get('account_ids'), list)
+                and user['account_id'] in data['account_ids'])
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
 
 
 def shared_rules_url():
@@ -197,6 +209,8 @@ def create_pilot_device(owner, name):
             wireguard.reconcile_safe_dns()
             from .happ_peers import ensure_mode_peers
             ensure_mode_peers(wg_name)
+            from .happ_runtime import provision
+            provision(wg_name)
             return True, wg_name, ''
         except (OSError, ValueError, SafeDnsEnforcementError):
             # Keep the Happ binding while cascading fresh children. Removing
@@ -238,32 +252,40 @@ def _central_config(device, transport_name=None, *, dns=None):
     # Only the Happ export uses the existing central resolver. No stored .conf,
     # DNS policy, account flag or authoritative exception list is rewritten.
     if dns is None:
-        target = load_safe_dns_target(wireguard.WG_DIR)
-        if not target.custom:
-            raise HappStateError('central_dns_unavailable')
-        dns = target.client_dns_servers
+        if device['safe_internet']:
+            target = load_safe_dns_target(wireguard.WG_DIR)
+            if not target.custom:
+                raise HappStateError('central_dns_unavailable')
+            dns = target.client_dns_servers
+        else:
+            dns = '1.1.1.1, 8.8.8.8'
     return wireguard._render_config_dns(config, dns)
 
 
-def _export_config(device, mode, rules, config):
+def _export_config(device, mode, rules, config, transport='wireguard'):
     key = 'happ_mode_' + mode.replace('-', '_')
     exported = build_happ_config(config, mode, rules, safe_internet=device['safe_internet'],
                                  remarks=t(key, 'ru'))
     exported['meta'] = {'serverDescription': t(key + '_help', 'ru')}
+    from .happ_runtime import client_settings
+    from .happ_transports import overlay_transport
+    exported = overlay_transport(exported, transport, client_settings(device, transport))
+    if transport != 'wireguard':
+        exported['remarks'] += ' · ' + {'vless-reality': 'VLESS / REALITY', 'hysteria2': 'Hysteria2'}[transport]
     return exported
 
 
-def exported_config(device, mode, rules):
+def exported_config(device, mode, rules, transport='wireguard'):
     from . import happ_peers
     if happ_peers.is_internal(device) or device.get('happ_transport_deleting'):
         raise HappStateError('unavailable')
-    transport = device['wg_name']
+    peer_name = device['wg_name']
     if mode != 'all':
         if device['safe_internet']:
             raise HappStateError('unavailable')
         mapping = happ_peers.mode_mapping(device['wg_name'])
-        transport = mapping['custom' if mode == 'custom' else 'by-ru-direct']
-    return _export_config(device, mode, rules, _central_config(device, transport))
+        peer_name = mapping['custom' if mode == 'custom' else 'by-ru-direct']
+    return _export_config(device, mode, rules, _central_config(device, peer_name), transport)
 
 
 def exported_bundle(device, rules):
@@ -274,11 +296,9 @@ def exported_bundle(device, rules):
         modes = subscription_modes(device)
         mapping = ({'all': device['wg_name']} if device['safe_internet']
                    else happ_peers.mode_mapping(device['wg_name']))
-        target = load_safe_dns_target(wireguard.WG_DIR)
-        if not target.custom:
-            raise HappStateError('central_dns_unavailable')
-        return [_export_config(device, mode, rules, _central_config(
-            device, mapping[mode], dns=target.client_dns_servers)) for mode in modes]
+        from .happ_runtime import transport_options
+        return [_export_config(device, mode, rules, _central_config(device, mapping[mode]), option['id'])
+                for option in transport_options(device) if option['available'] for mode in modes]
 
 
 def routing_header(device, mode, config):

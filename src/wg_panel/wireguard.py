@@ -251,7 +251,7 @@ def _safe_dns_ips(meta, excluded=None, override=None, policies=None):
     for name, item in meta.items():
         if name in infrastructure or name == excluded or item.get("revoked"):
             continue
-        enabled = effective_safe_internet(item, policies) or item.get('happ_pilot') is True
+        enabled = effective_safe_internet(item, policies)
         if override and name in override:
             enabled = bool(override[name]) or account_safe_internet_locked(item.get("owner"), policies)
         if not enabled:
@@ -337,7 +337,12 @@ def set_account_safe_internet(owner, *, confirmed=False):
             logger.error("Account Safe internet enforcement failed: %s", exc)
             return False
         if already_locked:
-            return True
+            from .happ_runtime import sync
+            try:
+                sync()
+                return True
+            except (OSError, ValueError):
+                return False
         try:
             save_account_policies(desired)
         except (OSError, ValueError, AccountPolicyError) as exc:
@@ -354,6 +359,11 @@ def set_account_safe_internet(owner, *, confirmed=False):
                 _sync_safe_dns(previous_ips, allow_unavailable=bool(app.config.get("TESTING")))
             except SafeDnsEnforcementError as rollback_exc:
                 logger.critical("Account Safe internet rollback failed: %s", rollback_exc)
+            return False
+        from .happ_runtime import sync
+        try:
+            sync()
+        except (OSError, ValueError):
             return False
         return True
 
@@ -421,6 +431,11 @@ def set_device_safe_internet(wg_name, enabled, *, confirmed=False, allow_locked_
             changed = False
             logger.error("Safe internet metadata update failed for %s: %s", wg_name, exc)
         if changed:
+            from .happ_runtime import sync
+            try:
+                sync()
+            except (OSError, ValueError):
+                return False
             return True
 
         try:
@@ -731,6 +746,8 @@ def _delete_device(wg_name):
             return False, "Device not found"
         if record.get("happ_pilot"):
             try:
+                from .happ_runtime import revoke
+                revoke(wg_name)
                 ok, error = happ_peers.delete_mode_peers(wg_name)
             except (OSError, ValueError):
                 return False, "Happ transports require recovery before deletion"

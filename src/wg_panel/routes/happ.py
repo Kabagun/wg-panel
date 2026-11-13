@@ -27,7 +27,9 @@ def _pilot_device(wg_name, *, public=False):
     user = core.load_users().get(device['owner'], {})
     if not happ_pilot.available_for_user(user):
         abort(404)
-    if not public and device['owner'] != session.get('user'):
+    actor = core.load_users().get(session.get('user'), {})
+    if (not public and device['owner'] != session.get('user')
+            and actor.get('role') != 'admin'):
         abort(404)
     return device, user
 
@@ -37,6 +39,17 @@ def _mode(device):
     if mode not in MODES or (device['safe_internet'] and mode != 'all'):
         abort(404)
     return mode
+
+
+def _transport(device):
+    from ..happ_runtime import transport_options
+    values = request.args.getlist('transport')
+    if len(values) > 1:
+        abort(404)
+    selected = values[0] if values else 'wireguard'
+    if selected not in [option['id'] for option in transport_options(device) if option['available']]:
+        abort(404)
+    return selected
 
 
 def _subscription_url(device, user, mode):
@@ -81,15 +94,18 @@ def happ_pilot_page():
 def view_happ_device(wg_name):
     device, user = _pilot_device(wg_name)
     mode = _mode(device)
+    transport = _transport(device)
     try:
         revision, rules = happ_pilot.get_rules(user['account_id'])
-        config = happ_pilot.exported_config(device, mode, rules)
+        config = happ_pilot.exported_config(device, mode, rules, transport)
         subscription_url = _subscription_url(device, user, 'bundle')
         shared_context = happ_pilot.shared_rules_context()
     except ValueError:
         return 'Happ configuration is unavailable.', 503
     import_url = 'happ://add/' + subscription_url
+    from ..happ_runtime import transport_options
     return render_page('happ_device.html', 'happ_title', device=device, wg_name=wg_name,
+                       transport=transport, transport_options=transport_options(device),
                        mode=mode, modes=[{'id': key, 'title_key': 'happ_mode_' + key.replace('-', '_'),
                                          'enabled': not device['safe_internet'] or key == 'all'}
                                         for key in happ_pilot.BUNDLE_MODES], proxy_rules=rules,
@@ -103,7 +119,7 @@ def view_happ_device(wg_name):
 
 def _response(device, mode, rules):
     config = (happ_pilot.exported_bundle(device, rules) if mode == 'bundle'
-              else happ_pilot.exported_config(device, mode, rules))
+              else happ_pilot.exported_config(device, mode, rules, _transport(device)))
     response = Response(json.dumps(config, ensure_ascii=False, indent=2),
                         content_type='application/json; charset=utf-8')
     response.headers.set('Content-Disposition', 'attachment',
@@ -133,6 +149,8 @@ def download_happ_device(wg_name, mode):
 def update_happ_rules():
     wg_name = request.form.get('wg_name', '')
     device, user = _pilot_device(wg_name)
+    if device['owner'] != session.get('user'):
+        abort(404)
     if happ_pilot.shared_rules_url():
         abort(403)
     mode = _mode(device)

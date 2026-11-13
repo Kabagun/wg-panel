@@ -239,12 +239,16 @@ def admin_delete_user(username):
 @admin_required
 def admin_devices():
     with _wireguard_lock:
-        devices = get_all_devices()
+        all_devices = get_all_devices()
+        metadata = {name: get_device(name) or {} for _owner, _device, name in all_devices}
+        devices = [row for row in all_devices if not metadata[row[2]].get('happ_transport_internal')]
         return render_page(
             "all_devices.html", "ui_all_devices", devices=devices,
             owner_status={name: access_status(user) for name, user in load_users().items()},
             deletion_protected={
-                name: bool((get_device(name) or {}).get("deletion_protected"))
+                name: bool(metadata[name].get("deletion_protected"))
                 for _owner, _device, name in devices
             },
+            device_types={name: 'happ' if metadata[name].get('happ_pilot') is True else 'wireguard'
+                          for _owner, _device, name in devices},
         )

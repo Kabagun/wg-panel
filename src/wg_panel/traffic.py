@@ -197,6 +197,12 @@ def get_client_ip(wg_name):
 
 def collect_traffic():
     with _wireguard_lock:
+        from .happ_runtime import collect_traffic as modern_traffic
+        try:
+            modern_traffic()
+        except (OSError, ValueError):
+            # An optional pilot must never prevent classic traffic accounting.
+            pass
         return _collect_traffic()
 
 

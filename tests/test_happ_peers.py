@@ -81,8 +81,9 @@ def runtime(tmp_path, monkeypatch):
             prepared.add(name)
         elif script == "set-client-state.sh":
             if arguments == ("resume",):
-                assert wireguard._client_ipv4(name) in dns_addresses
-                assert traffic.load_device_meta()[name].get("happ_pilot") is True
+                record = traffic.load_device_meta()[name]
+                assert (wireguard._client_ipv4(name) in dns_addresses) is account_policy.effective_safe_internet(record)
+                assert record.get("happ_pilot") is True
                 active.add(name)
                 prepared.discard(name)
             else:
@@ -109,6 +110,7 @@ def test_prepare_dns_activation_order_idempotence_and_parent_unchanged(runtime):
     mapping = happ_peers.ensure_mode_peers(PARENT)
     assert set(mapping) == {"all", "custom", "by-ru-direct"} and mapping["all"] == PARENT
     assert path.read_bytes() == original
+    assert wireguard._safe_dns_ips(traffic.load_device_meta()) == []
     identities = [happ_peers._identity(name) for name in mapping.values()]
     assert len({identity["public_key"] for identity in identities}) == 3
     assert len({identity["address"] for identity in identities}) == 3
@@ -148,7 +150,8 @@ def test_exports_use_distinct_transports_preserve_legacy_routing_and_never_provi
     transports = [item["outbounds"][0]["settings"] for item in bundle]
     assert len({item["secretKey"] for item in transports}) == 3
     assert len({tuple(item["address"]) for item in transports}) == 3
-    assert all(item["remoteDNS"] == ["10.0.0.1"] for item in transports)
+    assert all(item["remoteDNS"] == ["1.1.1.1", "8.8.8.8"] for item in transports)
+    assert all(item["dns"]["servers"] == ["1.1.1.1", "8.8.8.8"] for item in bundle)
     for mode, country in (("by-direct", "geoip:by"), ("ru-direct", "geoip:ru")):
         exported = happ_pilot.exported_config(wireguard.get_device(PARENT), mode, [])
         assert exported["outbounds"][0]["settings"]["secretKey"] == transports[2]["secretKey"]
@@ -252,7 +255,11 @@ def test_family_parent_needs_no_children_and_no_split_export(runtime):
     traffic.mutate_device_meta(lambda meta: meta[PARENT].update(safe_internet=True))
     assert happ_peers.ensure_mode_peers(PARENT) == {"all": PARENT}
     assert not runtime.events
-    assert len(happ_pilot.exported_bundle(wireguard.get_device(PARENT), [])) == 1
+    bundle = happ_pilot.exported_bundle(wireguard.get_device(PARENT), [])
+    assert len(bundle) == 1
+    assert bundle[0]["dns"]["servers"] == ["10.0.0.1"]
+    assert bundle[0]["outbounds"][0]["settings"]["remoteDNS"] == ["10.0.0.1"]
+    assert wireguard._safe_dns_ips(traffic.load_device_meta()) == ["10.0.0.2"]
     with pytest.raises(ValueError):
         happ_pilot.exported_config(wireguard.get_device(PARENT), "custom", [])
 

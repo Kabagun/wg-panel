@@ -44,8 +44,7 @@ def dashboard():
             "safe_internet": bool(metadata.get("safe_internet")) or account_locked,
             "deletion_protected": bool(metadata.get("deletion_protected")),
             "connection": connection_details(get_config(wg_name)),
-            "happ_pilot": (metadata.get('happ_pilot') is True
-                           and happ_pilot.available_for_user(user)),
+            "happ_pilot": metadata.get('happ_pilot') is True,
         })
     used = len(devices)
     return render_page(
@@ -131,8 +130,7 @@ def view_device(wg_name):
     if not device:
         flash("Device not found or access denied.", "error")
         return redirect(url_for("dashboard"))
-    if (device.get('happ_pilot') is True and device['owner'] == session['user']
-            and happ_pilot.available_for_user(_user)):
+    if device.get('happ_pilot') is True:
         return redirect(url_for('view_happ_device', wg_name=wg_name))
     config = get_config(wg_name)
     if not config:

@@ -173,6 +173,11 @@ def main():
     paused_users = reconcile_paused_users()
     print(f"[VPN PAUSE] users={paused_users}", flush=True)
     safe_dns = reconcile_safe_dns()
+    from .happ_runtime import sync as sync_happ_runtime
+    try:
+        sync_happ_runtime()
+    except (OSError, ValueError):
+        print('[HAPP] Experimental transports require recovery; classic VPN is unchanged', flush=True)
     print(
         f"[SAFE DNS] devices={safe_dns['safe_devices']} ips={len(safe_dns['ips'])}",
         flush=True,

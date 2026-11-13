@@ -166,12 +166,16 @@ def test_disabled_pilot_hides_entry_choice_and_all_exports(runtime, monkeypatch)
 
 
 @pytest.mark.parametrize("username", [None, "alice", OTHER])
-def test_private_pilot_device_requires_approved_owning_admin(runtime, username):
+def test_private_pilot_device_allows_approved_owner_or_managing_admin(runtime, username):
     client = browser(username)
     for url in (f"/device/{PILOT}/happ", f"/device/{PILOT}/happ/custom/download"):
         response = client.get(url)
-        assert response.status_code in {302, 404}
-        assert response.mimetype != "application/json"
+        if username == OTHER:
+            assert response.status_code == 200
+            assert response.mimetype == ("application/json" if url.endswith("/download") else "text/html")
+        else:
+            assert response.status_code in {302, 404}
+            assert response.mimetype != "application/json"
     if username != OTHER:
         assert client.get("/admin/happ-pilot").status_code == 302
     else:
@@ -181,7 +185,7 @@ def test_private_pilot_device_requires_approved_owning_admin(runtime, username):
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_public_subscription_without_session_exports_central_dns_and_import_headers(runtime, mode):
+def test_ordinary_public_subscription_exports_public_dns_and_hourly_import_headers(runtime, mode):
     response = browser(None).get(subscription(mode=mode))
     assert response.status_code == 200
     assert response.mimetype == "application/json"
@@ -192,7 +196,7 @@ def test_public_subscription_without_session_exports_central_dns_and_import_head
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert "Set-Cookie" not in response.headers
     exported = response.get_json()
-    assert exported["dns"]["servers"] == ["10.8.0.1"]
+    assert exported["dns"]["servers"] == ["1.1.1.1", "8.8.8.8"]
     vpn, = [item for item in exported["outbounds"] if item["tag"] == "vpn"]
     assert vpn["protocol"] == "wireguard"
     expected_mode = mode if mode in happ_pilot.BUNDLE_MODES else 'by-ru-direct'
@@ -202,14 +206,14 @@ def test_public_subscription_without_session_exports_central_dns_and_import_head
     expected_psk = re.search(r'PresharedKey = (\S+)',
                             (runtime.clients / f'{mapped}.conf').read_text()).group(1)
     assert vpn["settings"]["secretKey"] == expected_key
-    assert vpn["settings"]["remoteDNS"] == ["10.8.0.1"]
+    assert vpn["settings"]["remoteDNS"] == ["1.1.1.1", "8.8.8.8"]
     peer, = vpn["settings"]["peers"]
     assert peer["endpoint"] == "vpn.example.test:51820"
     assert peer["publicKey"] == PUBLIC and peer["preSharedKey"] == expected_psk
     prefix = "happ://routing/onadd/"
     assert response.headers["routing"].startswith(prefix)
     routing = json.loads(base64.b64decode(response.headers["routing"].removeprefix(prefix)))
-    assert routing["RemoteDNSIP"] == routing["DomesticDNSIP"] == "10.8.0.1"
+    assert routing["RemoteDNSIP"] == routing["DomesticDNSIP"] == "1.1.1.1"
     assert routing["RemoteDNSType"] == routing["DomesticDNSType"] == "DoU"
 
 
@@ -228,7 +232,7 @@ def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runt
     assert happ_pilot.BUNDLE_MODES == ('all', 'custom', 'by-ru-direct')
     for mode, item in zip(happ_pilot.BUNDLE_MODES, bundle, strict=True):
         assert item == browser(None).get(subscription(mode=mode)).get_json()
-        assert item['dns']['servers'] == ['10.8.0.1']
+        assert item['dns']['servers'] == ['1.1.1.1', '8.8.8.8']
         assert item['meta']['serverDescription']
     settings = [next(o for o in item['outbounds'] if o['tag'] == 'vpn')['settings']
                 for item in bundle]
@@ -248,8 +252,8 @@ def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runt
         response.headers['routing'].removeprefix('happ://routing/onadd/')))
     assert {'geoip:by', 'geoip:ru'} <= set(routing['DirectIp'])
     assert len(routing['DirectIp']) == len(set(routing['DirectIp']))
-    assert routing['RemoteDNSIP'] == routing['DomesticDNSIP'] == '10.8.0.1'
-    assert routing['ProxyIp'] == ['10.8.0.1']
+    assert routing['RemoteDNSIP'] == routing['DomesticDNSIP'] == '1.1.1.1'
+    assert routing['ProxyIp'] == ['1.1.1.1']
     assert routing['Geoipurl'].endswith('/geoip.dat')
     assert browser().get(f'/device/{PILOT}/happ/bundle/download').get_json() == bundle
 
@@ -259,10 +263,16 @@ def test_protected_bundle_exports_only_full_tunnel_without_geo_bypass(runtime):
     response = browser(None).get(subscription(mode='bundle'))
     assert response.status_code == 200
     assert response.get_json() == [browser(None).get(subscription(mode='all')).get_json()]
+    config = response.get_json()[0]
+    assert config['dns']['servers'] == ['10.8.0.1']
+    vpn, = [item for item in config['outbounds'] if item['tag'] == 'vpn']
+    assert vpn['settings']['remoteDNS'] == ['10.8.0.1']
+    assert response.headers['profile-update-interval'] == '1'
     routing = json.loads(base64.b64decode(
         response.headers['routing'].removeprefix('happ://routing/onadd/')))
     assert not any(ip.startswith('geoip:') for ip in routing['DirectIp'])
     assert routing['GlobalProxy'] == 'true'
+    assert routing['RemoteDNSIP'] == routing['DomesticDNSIP'] == '10.8.0.1'
 
 
 def test_preview_mode_does_not_change_bundle_import_or_advertise_retired_modes(runtime):
@@ -504,13 +514,14 @@ def test_device_label_is_escaped_in_happ_page_and_json_stays_collapsed(runtime):
 def test_missing_or_invalid_central_dns_fails_closed_without_affecting_classic_download(
     runtime, target_state,
 ):
-    path = subscription()
+    account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
+    path = subscription(mode='all')
     before = {file.name: file.read_bytes() for file in runtime.clients.glob("*.conf")}
     if target_state == "missing":
         runtime.target.unlink()
     else:
         runtime.target.write_text("invalid-target\n", encoding="ascii")
-    for url in (f"/device/{PILOT}/happ", f"/device/{PILOT}/happ/custom/download", path):
+    for url in (f"/device/{PILOT}/happ", f"/device/{PILOT}/happ/all/download", path):
         response = browser().get(url)
         assert response.status_code == 503
         assert response.mimetype != "application/json"
@@ -518,6 +529,16 @@ def test_missing_or_invalid_central_dns_fails_closed_without_affecting_classic_d
         assert PRIVATE not in response.get_data(as_text=True)
     assert browser("alice").get(f"/device/{CLASSIC}/download").status_code == 200
     assert {name: (runtime.clients / name).read_bytes() for name in before} == before
+
+
+def test_ordinary_happ_export_does_not_depend_on_family_resolver(runtime):
+    runtime.target.unlink()
+    before = {file.name:file.read_bytes() for file in runtime.clients.glob('*.conf')}
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200
+    assert all(item['dns']['servers'] == ['1.1.1.1','8.8.8.8'] for item in response.get_json())
+    assert wireguard._safe_dns_ips(traffic.load_device_meta()) == []
+    assert {name:(runtime.clients/name).read_bytes() for name in before} == before
 
 
 def test_corrupted_rule_storage_fails_closed_on_private_and_public_exports(runtime):
@@ -586,7 +607,7 @@ def test_creating_fresh_pilot_marks_only_new_device_and_preserves_existing_profi
     item = traffic.load_device_meta()[name]
     assert item["happ_pilot"] is True
     assert re.fullmatch(r"[0-9a-f]{64}", item["happ_subscription_nonce"])
-    assert len(reconciled) == 1 and "10.0.0.20" in reconciled[0]
+    assert reconciled == [()]
     assert {name: (runtime.clients / name).read_bytes() for name in before} == before
 
 
@@ -649,14 +670,18 @@ def test_public_subscription_is_rate_limited_and_recovers_after_window(runtime):
     assert client.get(subscription()).status_code == 200
 
 
-def test_pilot_source_dns_redirect_does_not_lock_account_or_select_classic_devices(runtime):
+def test_happ_marker_alone_does_not_enable_family_dns_redirect_or_lock_account(runtime):
     selected = set(wireguard._safe_dns_ips(traffic.load_device_meta()))
-    assert selected == {"10.0.0.2", "10.0.0.3", "10.0.0.4",
-                        *(f'10.0.0.{value}' for value in range(100, 106))}
-    assert "10.0.0.5" not in selected
+    assert selected == set()
     assert account_policy.load_account_policies() == {}
     assert wireguard.get_device(PILOT)["safe_internet"] is False
     assert wireguard.get_device(CLASSIC)["safe_internet"] is False
+    traffic.mutate_device_meta(lambda meta: meta[PILOT].update(safe_internet=True))
+    assert set(wireguard._safe_dns_ips(traffic.load_device_meta())) == {'10.0.0.2'}
+    account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
+    assert set(wireguard._safe_dns_ips(traffic.load_device_meta())) == {
+        '10.0.0.2', '10.0.0.3', '10.0.0.6', *(f'10.0.0.{value}' for value in range(100,104)),
+    }
 
 
 def test_failed_pilot_dns_reconciliation_cannot_leave_exportable_new_peer(runtime, monkeypatch):

@@ -77,26 +77,25 @@ def enable_member(runtime):
 
 @pytest.mark.parametrize("available", [False, True])
 @pytest.mark.parametrize("lang", ["en", "ru"])
-def test_first_step_has_two_accessible_choices_and_creates_nothing(runtime, available, lang):
+def test_first_step_shows_only_available_accessible_choices_and_creates_nothing(runtime, available, lang):
     if available:
         enable_member(runtime)
     response = browser().get("/add", headers={"Accept-Language": lang})
     assert response.status_code == 200
     page = DashboardHTML(response.get_data(as_text=True))
     cards = page.with_class("vpn-choice-card")
-    assert len(cards) == 2
+    assert len(cards) == (2 if available else 1)
     classic, = page.with_class("vpn-choice-wireguard")
-    modern, = page.with_class("vpn-choice-happ")
     assert classic["tag"] == "a" and classic["attrs"]["href"] == "/add?client_app=wireguard"
     assert t("vpn_classic_title", lang) in classic["text"]
-    assert t("vpn_happ_title", lang) in modern["text"]
-    assert modern["tag"] == ("a" if available else "article")
     if available:
+        modern, = page.with_class("vpn-choice-happ")
+        assert t("vpn_happ_title", lang) in modern["text"]
+        assert modern["tag"] == "a"
         assert modern["attrs"]["href"] == "/add?client_app=happ"
     else:
-        assert modern["attrs"]["aria-disabled"] == "true"
-        assert "href" not in modern["attrs"] and "tabindex" not in modern["attrs"]
-        assert t("vpn_happ_unavailable", lang) in modern["text"]
+        assert not page.with_class("vpn-choice-happ")
+        assert t("vpn_happ_title", lang) not in response.get_data(as_text=True)
     for card in cards:
         assert "onclick" not in card["attrs"]
         assert not [node for node in page.within(card) if node["tag"] in {"a", "button", "input"}]
@@ -182,17 +181,22 @@ def test_locked_account_is_not_promised_selective_happ_modes(runtime):
     assert 'name="safe_internet"' not in browser().get("/add?client_app=happ").get_data(as_text=True)
 
 
-def test_official_platform_links_separate_current_and_legacy_windows(runtime):
+@pytest.mark.parametrize("available", [False,True])
+def test_official_platform_links_follow_availability_and_separate_legacy_windows(runtime, available):
+    if available:
+        enable_member(runtime)
     page = DashboardHTML(browser().get("/add").get_data(as_text=True))
     links = {node["attrs"]["href"]: node for node in page.nodes if node["tag"] == "a"}
     assert "https://www.wireguard.com/install/" in links
     for architecture in ("amd64", "x86"):
         link = links[f"https://download.wireguard.com/windows-client/wireguard-{architecture}-0.5.3.msi"]
         assert "Windows 7" in link["text"] and "0.5.3" in link["text"]
-    assert "https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe" in links
-    assert "https://apps.apple.com/us/app/happ-proxy-utility/id6504287215" in links
-    assert "https://play.google.com/store/apps/details?id=com.happproxy" in links
-    assert "https://happ.info/" in links
+    for url in (
+        "https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe",
+        "https://apps.apple.com/us/app/happ-proxy-utility/id6504287215",
+        "https://play.google.com/store/apps/details?id=com.happproxy", "https://happ.info/",
+    ):
+        assert (url in links) is available
     for url, link in links.items():
         if url.startswith("https://"):
             assert link["attrs"]["target"] == "_blank"
@@ -213,7 +217,21 @@ def test_owner_happ_dashboard_link_redirect_and_internal_children_are_private(ru
         assert internal.get("/device/alice-transport/download").status_code == 403
         assert internal.get("/device/alice-transport").status_code == 302
     foreign_admin = browser("operator").get("/device/alice-happ")
-    assert foreign_admin.status_code == 200
+    assert foreign_admin.status_code == 302
+    assert foreign_admin.location.endswith('/device/alice-happ/happ')
+
+
+def test_closed_account_keeps_existing_happ_device_type_and_hides_only_creation_choice(runtime):
+    client = browser()
+    dashboard = DashboardHTML(client.get('/dashboard').get_data(as_text=True))
+    protocols = [node['text'] for node in dashboard.with_class('device-protocol')]
+    assert protocols.count('Happ') == 1 and protocols.count('WireGuard') == 1
+    links = {node['attrs'].get('href') for node in dashboard.nodes if node['tag']=='a'}
+    assert '/device/alice-happ/happ' in links
+    assert '/device/alice-happ/happ/bundle/download' in links
+    assert '/device/alice-happ/download' not in links
+    assert '/device/alice-transport' not in links
+    assert not DashboardHTML(client.get('/add').get_data(as_text=True)).with_class('vpn-choice-happ')
 
 
 @pytest.mark.parametrize("username", [None, "pending"])
@@ -231,7 +249,7 @@ def test_real_rollout_api_controls_member_choice(runtime, monkeypatch):
     monkeypatch.setitem(app.config, "HAPP_ROLLOUT_ENABLED", False)
     client = browser()
     before = DashboardHTML(client.get("/add").get_data(as_text=True))
-    assert before.with_class("vpn-choice-happ")[0]["tag"] == "article"
+    assert not before.with_class("vpn-choice-happ")
     assert client.get("/add?client_app=happ").status_code == 403
     monkeypatch.setitem(app.config, "HAPP_ROLLOUT_ENABLED", True)
     after = DashboardHTML(client.get("/add").get_data(as_text=True))
@@ -258,7 +276,7 @@ def test_member_happ_detail_has_owner_actions_without_admin_or_private_source_li
             shared_rules_publication={"status": "error"},
         )
     assert 'class="back-link" href="/dashboard"' in page
-    assert "HAPP · Бета" in page
+    assert 'HAPP · ' + t('happ_pilot_badge','ru') in page
     assert 'href="/admin/' not in page and 'action="/account/happ-rules"' not in page
     assert "private-repo" not in page
     assert 'action="/device/alice-happ/happ/rotate"' in page

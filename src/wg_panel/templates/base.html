@@ -29,7 +29,6 @@
     {{ nav_link('admin_devices', 'ui_all_devices', 'devices', request.endpoint == 'admin_devices') }}
     {{ nav_link('admin_family_dns', 'family_dns_title', 'globe', request.endpoint == 'admin_family_dns') }}
     {{ nav_link('traffic_page', 'ui_traffic', 'chart', request.endpoint == 'traffic_page') }}
-    {% if happ_pilot_enabled|default(false) or happ_public_enabled|default(false) %}{{ nav_link('happ_pilot', 'happ_pilot_title', 'devices', request.endpoint == 'happ_pilot') }}{% endif %}
     {% if (happ_pilot_enabled|default(false) or happ_public_enabled|default(false)) and happ_rules_managed|default(false) %}{{ nav_link('admin_happ_rules', 'happ_mode_custom', 'globe', request.endpoint in ['admin_happ_rules', 'admin_happ_rules_add', 'admin_happ_rules_remove']) }}{% endif %}
     {% endif %}
   </nav>
@@ -39,7 +38,7 @@
   </div>
 </aside>
 <div class="app-shell">
-  <header class="topbar"><div class="breadcrumb"><button class="icon-button menu-toggle" type="button" aria-controls="navigation" aria-expanded="false" aria-label="{{ tr('ui_menu') }}">{{ icon('menu') }}</button><span>WG Panel</span>{{ icon('chevron', 14) }}<strong>{{ title }}</strong></div><span class="protocol-pill">{{ icon('shield', 15) }}WireGuard VPN</span></header>
+  <header class="topbar"><div class="breadcrumb"><button class="icon-button menu-toggle" type="button" aria-controls="navigation" aria-expanded="false" aria-label="{{ tr('ui_menu') }}">{{ icon('menu') }}</button><span>WG Panel</span>{{ icon('chevron', 14) }}<strong>{{ title }}</strong></div><span class="protocol-pill">{{ icon('shield', 15) }}{{ 'Happ' if request.endpoint == 'view_happ_device' else 'WireGuard VPN' if request.endpoint == 'view_device' else tr('ui_vpn_service') }}</span></header>
   <main class="main-content{{ ' main-content-device' if request.endpoint == 'view_device' or (happ_available|default(false) and request.endpoint == 'view_happ_device') else '' }}" id="main" tabindex="-1">
 {% else %}
   <main class="auth-layout" id="main" tabindex="-1">

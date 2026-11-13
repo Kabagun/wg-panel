@@ -38,24 +38,24 @@
 <div class="vpn-create-workspace">
   <a class="back-link" href="{{ url_for('add_device') if selected_client else url_for('dashboard') }}">{{ icon('back', 17) }}{{ tr('vpn_back_choices' if selected_client else 'ui_back_devices') }}</a>
   <p class="vpn-create-step">{{ tr('vpn_step_two' if selected_client else 'vpn_step_one') }}</p>
-  {{ heading(tr('vpn_name_title' if selected_client else 'vpn_choose_title'), tr('vpn_name_intro' if selected_client else 'vpn_choose_intro')) }}
+  {{ heading(tr('vpn_name_title' if selected_client else 'vpn_choose_title'), tr('vpn_name_intro' if selected_client else 'vpn_choose_intro' if happ_available|default(false) else 'vpn_classic_only_intro')) }}
   {{ flashes() }}
   {% if not selected_client %}
-  <div class="vpn-choice-grid">
+  <div class="vpn-choice-grid{{ ' is-single' if not happ_available|default(false) else '' }}">
     {% for client in ['wireguard', 'happ'] %}
-    {% set enabled = client == 'wireguard' or happ_available|default(false) %}
-    {% if enabled %}<a class="vpn-choice-card vpn-choice-{{ client }}" href="{{ url_for('add_device', client_app=client) }}" aria-labelledby="vpn-choice-title-{{ client }}" aria-describedby="vpn-choice-desc-{{ client }}">
-    {% else %}<article class="vpn-choice-card vpn-choice-{{ client }} is-disabled" aria-disabled="true" aria-labelledby="vpn-choice-title-{{ client }}" aria-describedby="vpn-choice-desc-{{ client }}">{% endif %}
+    {% if client == 'wireguard' or happ_available|default(false) %}
+    <a class="vpn-choice-card vpn-choice-{{ client }}" href="{{ url_for('add_device', client_app=client) }}" aria-labelledby="vpn-choice-title-{{ client }}" aria-describedby="vpn-choice-desc-{{ client }}">
       <div class="vpn-choice-top"><span class="vpn-choice-emblem">{{ icon('shield' if client == 'wireguard' else 'globe', 36) }}</span><span class="vpn-choice-number">{{ '01 / CLASSIC' if client == 'wireguard' else '02 / MODERN' }}</span></div>
       <h2 id="vpn-choice-title-{{ client }}">{{ tr('vpn_classic_title' if client == 'wireguard' else 'vpn_happ_title') }}</h2>
       <p class="vpn-choice-desc" id="vpn-choice-desc-{{ client }}">{{ tr('vpn_classic_desc' if client == 'wireguard' else 'vpn_happ_desc') }}</p>
       {{ features(client) }}
-      <div class="vpn-choice-action"><span>{{ tr('vpn_choose_action' if enabled else 'vpn_happ_unavailable') }}</span>{% if enabled %}{{ icon('arrow', 22) }}{% else %}{{ icon('lock', 20) }}{% endif %}</div>
-    {% if enabled %}</a>{% else %}</article>{% endif %}
+      <div class="vpn-choice-action"><span>{{ tr('vpn_choose_action') }}</span>{{ icon('arrow', 22) }}</div>
+    </a>
+    {% endif %}
     {% endfor %}
   </div>
-  <p class="vpn-choice-footnote">{{ tr('vpn_transport_note') }}</p>
-  <div class="vpn-download-grid">{{ downloads('wireguard') }}{{ downloads('happ') }}</div>
+  <p class="vpn-choice-footnote">{{ tr('vpn_transport_note' if happ_available|default(false) else 'vpn_classic_only_note') }}</p>
+  <div class="vpn-download-grid{{ ' is-single' if not happ_available|default(false) else '' }}">{{ downloads('wireguard') }}{% if happ_available|default(false) %}{{ downloads('happ') }}{% endif %}</div>
   {% else %}
   <div class="vpn-name-layout">
     <section class="panel form-panel vpn-name-panel" aria-labelledby="vpn-selected-title">

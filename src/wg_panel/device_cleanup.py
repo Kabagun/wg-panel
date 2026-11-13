@@ -115,6 +115,10 @@ def _save_state(devices):
 def _eligible(meta, user):
     if not isinstance(meta, dict) or not isinstance(user, dict):
         return False
+    # Pilot protocols have independent activity counters. Do not infer their
+    # inactivity from an idle WG baseline during this temporary trial.
+    if meta.get('happ_protocols'):
+        return False
     if not isinstance(user.get("account_id"), str) or not user["account_id"]:
         return False
     if user.get("approved") is not True or meta.get("vpn_type", "wireguard") != "wireguard":

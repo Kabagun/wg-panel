@@ -94,6 +94,11 @@ def set_user_paused(username, paused):
         except (OSError, ValueError):
             logger.exception("Could not collect final VPN counters for %s", username)
         if paused:
+            try:
+                from .happ_runtime import sync
+                sync()
+            except (OSError, ValueError):
+                return False, 'Modern transports could not be paused'
             failures = _pause_peers(names)
             if failures:
                 return False, "Some devices could not be paused"
@@ -113,11 +118,15 @@ def set_user_paused(username, paused):
                     logger.error("VPN resume failed for %s: %s", name, error)
                     raise RuntimeError("A device could not be resumed")
             _checkpoint(username, paused=False, pending=False)
+            from .happ_runtime import sync
+            sync()
         except (OSError, ValueError, RuntimeError):
             logger.exception("VPN resume failed for %s; restoring pause", username)
             failures = _pause_peers(names)
             try:
                 _checkpoint(username, paused=True, pending=bool(failures))
+                from .happ_runtime import sync
+                sync()
             except (OSError, ValueError):
                 logger.exception("Could not persist VPN resume rollback for %s", username)
             return False, "Resume failed; pause restored" if not failures else "Resume and rollback incomplete"

@@ -1,0 +1,39 @@
+[Unit]
+Description=Opt-in Happ modern VPN transports
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=30
+StartLimitBurst=30
+
+[Service]
+Type=simple
+Environment=GOMAXPROCS=2
+Environment=PYTHONPATH=/opt/wg-panel/src
+Environment=WG_PANEL_DATA_DIR=/opt/wg-panel/data
+Environment=WG_PANEL_WG_DIR=/etc/wireguard
+# The panel import preserves private state permissions. Run only this trusted
+# preflight outside the daemon's read-only filesystem namespace.
+ExecStartPre=+/opt/wg-panel/venv/bin/python -m wg_panel.happ_runtime --check-config
+ExecStartPre=/root/Programs/wg-panel-happ/xray run -test -config /opt/wg-panel/data/happ-xray.json
+ExecStart=/root/Programs/wg-panel-happ/xray run -config /opt/wg-panel/data/happ-xray.json
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=8
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=384M
+CPUQuota=100%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
