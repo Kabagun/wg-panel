@@ -61,7 +61,7 @@ def test_provision_is_idempotent_bound_and_only_restarts_pilot(runtime):
     happ_runtime.provision('test-phone')
     assert (path / 'happ_protocol_devices.json').read_bytes() == before
     assert [item['id'] for item in happ_runtime.transport_options(device)] == [
-        'wireguard', 'vless-reality', 'hysteria2']
+        'hysteria2']
     assert [call for call in calls if 'restart' in call] == [
         ['systemctl', 'restart', 'wg-panel-happ.service']]
     user['account_id'] = 'd' * 64
@@ -89,7 +89,8 @@ def test_pause_and_revoke_remove_public_authentication(runtime):
     assert all(item['listen'] == '127.0.0.1' for item in config['inbounds'])
     happ_runtime.revoke('test-phone')
     assert json.loads((path / 'happ_protocol_devices.json').read_text())['devices'] == {}
-    assert len(happ_runtime.transport_options(device)) == 1
+    with pytest.raises(ValueError, match='unavailable'):
+        happ_runtime.transport_options(device)
     assert all('wg-quick' not in ' '.join(call) for call in calls)
 
 
@@ -141,3 +142,36 @@ def test_boot_guard_rejects_stale_roster_after_pause_before_config_repair(runtim
         happ_runtime.validate_persisted_config()
     happ_runtime.sync()
     happ_runtime.validate_persisted_config()
+
+
+def test_changing_export_transport_preserves_listener_and_identity(runtime):
+    path, _user, device, calls = runtime
+    happ_runtime.provision('test-phone')
+    listener = (path/'happ-xray.json').read_bytes()
+    identity = (path/'happ_protocol_devices.json').read_bytes()
+    calls.clear()
+    config = json.loads((path/'happ_runtime.json').read_bytes())
+    config['client_transport'] = 'vless-reality'
+    core.write_json_private(str(path/'happ_runtime.json'), config)
+    assert happ_runtime.selected_transport(device) == 'vless-reality'
+    assert [item['id'] for item in happ_runtime.transport_options(device)] == ['vless-reality']
+    happ_runtime.sync()
+    happ_runtime.validate_persisted_config()
+    assert (path/'happ-xray.json').read_bytes() == listener
+    assert (path/'happ_protocol_devices.json').read_bytes() == identity
+    assert not any('restart' in call or 'stop' in call for call in calls)
+
+
+@pytest.mark.parametrize('value', ['wireguard', 'unknown', None, [], True])
+def test_bad_export_preference_fails_without_stopping_existing_clients(runtime, value):
+    path, _user, device, calls = runtime
+    happ_runtime.provision('test-phone')
+    config = json.loads((path/'happ_runtime.json').read_bytes())
+    config['client_transport'] = value
+    core.write_json_private(str(path/'happ_runtime.json'), config)
+    calls.clear()
+    with pytest.raises(ValueError, match='^Happ transport unavailable$'):
+        happ_runtime.transport_options(device)
+    happ_runtime.validate_persisted_config()
+    happ_runtime.sync()
+    assert not any('restart' in call or 'stop' in call for call in calls)

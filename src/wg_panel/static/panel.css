@@ -459,12 +459,6 @@ meter::-moz-meter-bar{background:#8b9eeb;border-radius:5px}
 .happ-mode-controls{display:flex;align-items:stretch;gap:12px}
 .happ-mode-controls select{flex:1;min-width:0;width:100%;border:1px solid #dfe3eb;border-radius:8px;background:white;color:var(--ink);min-height:48px;padding:10px 14px;font-size:16px}
 .happ-mode-form .field-help{margin-top:10px}
-.happ-transport-list{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0 0 22px;padding:0}
-.happ-transport-list li{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:#f7f9fc;font-size:13px;line-height:1.6}
-.happ-transport-list .is-unavailable{color:var(--muted)}
-.happ-transport-list li>span{font-size:12px;color:var(--muted)}
-.happ-mode-form .happ-preview-transport{font-size:16px;min-height:48px;margin-bottom:0}
-.happ-mode-form #happ-transport-help{margin-bottom:18px}
 .happ-modes-guide{margin:0 0 24px}
 .happ-workspace>.happ-modes-guide{margin-top:20px;margin-bottom:20px}
 .happ-modes-heading{display:flex;align-items:flex-start;gap:12px;margin-bottom:22px}

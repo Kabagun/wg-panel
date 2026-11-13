@@ -270,15 +270,16 @@ def _export_config(device, mode, rules, config, transport='wireguard'):
     from .happ_runtime import client_settings
     from .happ_transports import overlay_transport
     exported = overlay_transport(exported, transport, client_settings(device, transport))
-    if transport != 'wireguard':
-        exported['remarks'] += ' · ' + {'vless-reality': 'VLESS / REALITY', 'hysteria2': 'Hysteria2'}[transport]
     return exported
 
 
-def exported_config(device, mode, rules, transport='wireguard'):
+def exported_config(device, mode, rules, transport=None):
     from . import happ_peers
     if happ_peers.is_internal(device) or device.get('happ_transport_deleting'):
         raise HappStateError('unavailable')
+    if transport is None:
+        from .happ_runtime import selected_transport
+        transport = selected_transport(device)
     peer_name = device['wg_name']
     if mode != 'all':
         mapping = happ_peers.mode_mapping(device['wg_name'])

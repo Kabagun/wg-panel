@@ -150,26 +150,27 @@ def render_detail(username="pilot-member", *, options=None, locked=False, lang="
 
 @pytest.mark.parametrize("lang", ["en", "ru"])
 @pytest.mark.parametrize("locked", [False, True])
-def test_transport_mode_preview_uses_backend_inventory_and_keeps_bundle_unfiltered(runtime, lang, locked):
+def test_preview_only_selects_mode_and_keeps_server_selected_transport_in_details(runtime, lang, locked):
     inventory = [
-        {"id": "wireguard", "title": "WireGuard baseline", "available": True},
         {"id": "vless-reality", "title": "VLESS Reality", "available": True},
-        {"id": "hysteria2", "title": "Hysteria2", "available": False},
     ]
     body = render_detail(options=inventory, locked=locked, lang=lang)
     page = DashboardHTML(body)
-    transport, = [node for node in page.nodes if node["tag"] == "select"
-                   and node["attrs"].get("name") == "transport"]
-    options = page.within(transport)
-    by_id = {node["attrs"]["value"]: node for node in options if node["tag"] == "option"}
-    assert "selected" in by_id["vless-reality"]["attrs"]
-    assert "disabled" in by_id["hysteria2"]["attrs"]
-    assert set(by_id) == {item["id"] for item in inventory}
+    assert not [node for node in page.nodes if node["attrs"].get("name") == "transport"]
+    assert not page.with_class("happ-transport-list")
+    details, = page.with_class("happ-technical-details")
+    assert details["tag"] == "details" and "open" not in details["attrs"]
+    assert t("happ_selected_transport", lang) in details["text"]
+    assert "VLESS Reality" in details["text"]
+    assert not [node for node in page.within(details) if node["tag"] in {"input", "select", "button", "a"}]
     links = [node["attrs"]["href"] for node in page.nodes if node["tag"] == "a"]
     mode = "custom"
-    assert f"/device/pilot-happ/happ/{mode}/download?transport=vless-reality" in links
+    assert f"/device/pilot-happ/happ/{mode}/download" in links
     assert "/device/pilot-happ/happ/bundle/download" in links
-    assert not any("bundle/download?transport=" in link for link in links)
+    assert not any("transport=" in link for link in links)
+    assert t("happ_import_hint", lang) in unescape(body)
+    assert "WireGuard baseline" not in body and "Hysteria2" not in body
+    assert "×" not in body and "= 9" not in body
     assert 'class="back-link" href="/dashboard"' in body
     assert "HAPP · " + t("happ_pilot_badge", lang) in body
     assert 'href="/admin/' not in body
@@ -186,6 +187,7 @@ def test_transport_mode_preview_uses_backend_inventory_and_keeps_bundle_unfilter
 def test_legacy_detail_does_not_advertise_unconfigured_transports(runtime):
     body = render_detail()
     assert 'name="transport"' not in body
+    assert not DashboardHTML(body).with_class("happ-technical-details")
     assert "VLESS" not in body and "Hysteria2" not in body
     assert 'href="/device/pilot-happ/happ/custom/download"' in body
     assert 'href="/device/pilot-happ/happ/bundle/download"' in body
@@ -196,3 +198,16 @@ def test_backend_transport_titles_are_autoescaped(runtime):
                                    "available": True}])
     assert "<script>synthetic()</script>" not in body
     assert "&lt;script&gt;synthetic()&lt;/script&gt;" in body
+
+
+def test_only_selected_transport_is_shown_even_if_backend_supplies_extra_options(runtime):
+    body = render_detail(options=[
+        {"id": "wireguard", "title": "WireGuard baseline", "available": True},
+        {"id": "vless-reality", "title": "VLESS Reality", "available": True},
+        {"id": "hysteria2", "title": "Hysteria2", "available": True},
+    ])
+    page = DashboardHTML(body)
+    details, = page.with_class("happ-technical-details")
+    assert "VLESS Reality" in details["text"]
+    assert "WireGuard baseline" not in body and "Hysteria2" not in body
+    assert not [node for node in page.nodes if node["attrs"].get("name") == "transport"]

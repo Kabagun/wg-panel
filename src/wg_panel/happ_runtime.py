@@ -13,6 +13,8 @@ from .happ_transports import create_server_config
 
 logger = logging.getLogger(__name__)
 UNIT = 'wg-panel-happ.service'
+_CLIENT_TRANSPORTS = {'vless-reality': 'VLESS / REALITY', 'hysteria2': 'Hysteria2 / QUIC'}
+_DEFAULT_CLIENT_TRANSPORT = 'hysteria2'
 
 
 def _path(name):
@@ -70,14 +72,24 @@ def _active(name, record):
 
 
 def transport_options(device):
-    options = [{'id': 'wireguard', 'title': 'WireGuard', 'available': True}]
+    """Expose one server-selected transport, never a protocol/mode matrix."""
     cfg = settings()
-    if cfg and device['wg_name'] in _registry()['devices']:
-        record = _registry()['devices'][device['wg_name']]
-        if _active(device['wg_name'], record):
-            options.extend([{'id': 'vless-reality', 'title': 'VLESS / REALITY', 'available': True},
-                            {'id': 'hysteria2', 'title': 'Hysteria2 / QUIC', 'available': True}])
-    return options
+    if not cfg:
+        # Preserve installations using the original WG-only Happ exporter.
+        return [{'id': 'wireguard', 'title': 'WireGuard', 'available': True}]
+    record = _registry()['devices'].get(device['wg_name'])
+    if not record or not _active(device['wg_name'], record):
+        raise ValueError('Happ transport unavailable')
+    transport = cfg.get('client_transport', _DEFAULT_CLIENT_TRANSPORT)
+    if not isinstance(transport, str) or transport not in _CLIENT_TRANSPORTS:
+        # An export preference must not invalidate the independent listener's
+        # boot guard or revocation sync for already connected clients.
+        raise ValueError('Happ transport unavailable')
+    return [{'id': transport, 'title': _CLIENT_TRANSPORTS[transport], 'available': True}]
+
+
+def selected_transport(device):
+    return transport_options(device)[0]['id']
 
 
 def client_settings(device, transport):

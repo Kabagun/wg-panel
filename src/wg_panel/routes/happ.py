@@ -42,12 +42,12 @@ def _mode(device):
 
 
 def _transport(device):
-    from ..happ_runtime import transport_options
+    from ..happ_runtime import selected_transport
     values = request.args.getlist('transport')
     if len(values) > 1:
         abort(404)
-    selected = values[0] if values else 'wireguard'
-    if selected not in [option['id'] for option in transport_options(device) if option['available']]:
+    selected = selected_transport(device)
+    if values and values[0] != selected:
         abort(404)
     return selected
 
@@ -94,8 +94,8 @@ def happ_pilot_page():
 def view_happ_device(wg_name):
     device, user = _pilot_device(wg_name)
     mode = _mode(device)
-    transport = _transport(device)
     try:
+        transport = _transport(device)
         revision, rules = happ_pilot.get_rules(user['account_id'])
         config = happ_pilot.exported_config(device, mode, rules, transport)
         subscription_url = _subscription_url(device, user, 'bundle')

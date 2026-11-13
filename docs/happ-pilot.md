@@ -21,6 +21,16 @@ authentication across modes. Shared Smart VPN
 rules keep their existing publication/update path. Subscription refresh remains
 one hour. Changing account protection never silently unlocks its permanent policy.
 
+Subscriptions contain exactly three routing profiles using one server-selected
+transport, not every combination of protocol and route. The modern runtime
+defaults to Hysteria2; `client_transport` in private `happ_runtime.json` can select
+`hysteria2` or `vless-reality`. WG-only installations without a modern runtime
+retain their original exporter. The classic WireGuard connection is separate.
+Changing this export preference does not rotate identities or alter/restart the
+listener; already imported connections remain valid during subscription refresh.
+No transport is universally fastest: compare real alternating HTTPS transfers
+over the intended network, with the same endpoints and routing/DNS policy.
+
 Desktop subscriptions select Happ TUN, which passes traffic through the
 configuration's SOCKS inbound with domain sniffing. Verify an actual listed
 domain reaching the VPN server; a successful HTTP response alone is not proof

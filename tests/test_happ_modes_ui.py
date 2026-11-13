@@ -77,7 +77,8 @@ def test_selected_happ_explains_all_profiles_before_name_form_without_mode_submi
     assert "autofocus" not in fields["device"]
     assert t("happ_modes_creation_intro", lang) in guide["text"]
     assert t("happ_modes_family_dns" if family else "happ_modes_account_dns", lang) in guide["text"]
-    assert t("happ_modes_transport_count", lang) in guide["text"]
+    assert t("happ_modes_server_selection", lang) in guide["text"]
+    assert "×" not in guide["text"] and "= 9" not in guide["text"]
 
 
 def test_initial_happ_card_is_summary_only_and_classic_form_has_no_happ_diagram(runtime):
@@ -110,9 +111,7 @@ def test_device_reuses_same_three_profiles_with_dns_independent_of_enabled_routi
             modes=[{"id": mode, "title_key": "happ_mode_" + mode.replace("-", "_"), "enabled": True}
                    for mode in ("all", "custom", "by-ru-direct")],
             transport="wireguard", transport_options=[
-                {"id": "wireguard", "title": "WireGuard", "available": True},
-                {"id": "vless", "title": "VLESS Reality", "available": True},
-                {"id": "hy2", "title": "Hysteria2", "available": True}],
+                {"id": "wireguard", "title": "WireGuard", "available": True}],
             proxy_rules=["domain:example.org"], rules_text="domain:example.org", rules_revision=0,
             config_json='{"remarks":"synthetic-private-config"}', qr=None,
             subscription_url="https://vpn.example.org/sub/synthetic/bundle",
@@ -121,7 +120,12 @@ def test_device_reuses_same_three_profiles_with_dns_independent_of_enabled_routi
     page = DashboardHTML(body)
     guide = assert_three_readonly_routes(page, lang)
     assert t("happ_modes_device_intro", lang) in guide["text"]
+    assert t("happ_import_hint", lang) in unescape(body)
+    assert t("happ_bundle_server_note", lang) in unescape(body)
+    assert t("happ_modes_server_selection", lang) in guide["text"]
     assert t("happ_modes_family_dns" if family else "happ_modes_account_dns", lang) in guide["text"]
+    assert not any(node["attrs"].get("name") == "transport" for node in page.nodes)
+    assert not page.with_class("happ-transport-list")
     select, = [node for node in page.nodes if node["tag"] == "select"
                and node["attrs"].get("name") == "mode"]
     options = [node for node in page.within(select) if node["tag"] == "option"]

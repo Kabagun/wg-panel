@@ -282,6 +282,38 @@ def test_protected_bundle_exports_all_three_modes_with_same_family_dns(runtime):
     assert routing['RemoteDNSIP'] == routing['DomesticDNSIP'] == '10.8.0.1'
 
 
+@pytest.mark.parametrize('family', [False, True])
+@pytest.mark.parametrize('transport,protocol', [('hysteria2','hysteria'),('vless-reality','vless')])
+def test_modern_subscription_delivers_only_selected_transport_for_all_modes(
+        runtime, monkeypatch, family, transport, protocol):
+    from test_happ_transports import HYS, VLESS
+
+    from wg_panel import happ_runtime
+    if family:
+        account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
+    monkeypatch.setattr(happ_runtime, 'transport_options', lambda _device: [
+        {'id': transport, 'title': 'Selected transport', 'available': True}])
+    monkeypatch.setattr(happ_runtime, 'client_settings',
+                        lambda _device, selected: HYS if selected=='hysteria2' else VLESS)
+    before = (runtime.clients/f'{PILOT}.conf').read_bytes()
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200
+    bundle = response.get_json()
+    assert len(bundle) == 3 and len({config['remarks'] for config in bundle}) == 3
+    for mode, config in zip(happ_pilot.BUNDLE_MODES, bundle, strict=True):
+        assert config['outbounds'][0]['protocol'] == protocol
+        assert config['dns']['servers'] == (['10.8.0.1'] if family else ['1.1.1.1','8.8.8.8'])
+        assert not any(label in config['remarks'] for label in ('Hysteria','VLESS','WireGuard'))
+        assert browser(None).get(subscription(mode=mode)).get_json() == config
+        assert browser().get(f'/device/{PILOT}/happ/{mode}/download').get_json() == config
+    assert (runtime.clients/f'{PILOT}.conf').read_bytes() == before
+    assert browser().get(f'/device/{PILOT}/happ').status_code == 200
+    assert browser().get(f'/device/{PILOT}/happ?transport=wireguard').status_code == 404
+    other = 'vless-reality' if transport=='hysteria2' else 'hysteria2'
+    assert browser(None).get(subscription()+'?transport='+other).status_code == 404
+    assert browser(None).get(subscription()+'?transport='+transport+'&transport='+transport).status_code == 404
+
+
 def test_preview_mode_does_not_change_bundle_import_or_advertise_retired_modes(runtime):
     admin = browser()
     url = 'https://vpn.example.test' + subscription(mode='bundle')
