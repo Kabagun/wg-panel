@@ -120,7 +120,8 @@ def _eligible(meta, user):
     if user.get("approved") is not True or meta.get("vpn_type", "wireguard") != "wireguard":
         return False
     for record in (meta, user):
-        for flag in ("paused", "pause_pending", "revoking", "provisioning", "revoked"):
+        for flag in ("paused", "pause_pending", "revoking", "provisioning", "revoked",
+                     "happ_transport_provisioning", "happ_transport_deleting"):
             if record.get(flag, False) is not False:
                 return False
         for field in ("state", "status"):
@@ -184,7 +185,8 @@ def _observe(name, owner, device, meta, users, peers, generation, details):
 
 
 def _valid_previous(previous, current, timestamp):
-    if not isinstance(previous, dict) or set(previous) != _FIELDS:
+    fields = _FIELDS | ({"transports"} if "transports" in current else set())
+    if not isinstance(previous, dict) or set(previous) != fields:
         return False
     if any(previous[field] != current[field] for field in ("identity", "generation")):
         return False
@@ -198,6 +200,15 @@ def _valid_previous(previous, current, timestamp):
         return False
     if timestamp - observed > MAX_OBSERVATION_GAP.total_seconds():
         return False
+    if "transports" in current:
+        before, after = previous["transports"], current["transports"]
+        if not isinstance(before, dict) or set(before) != set(after):
+            return False
+        for name, counters in after.items():
+            old = before[name]
+            if (not isinstance(old, list) or len(old) != 3 or not all(_integer(value) for value in old)
+                    or any(value < old[index] for index, value in enumerate(counters))):
+                return False
     return all(current[field] >= previous[field] for field in ("rx", "tx", "handshake"))
 
 
@@ -212,8 +223,50 @@ def _advance(previous, current, timestamp):
         "idle_since": previous["idle_since"] if valid and not active else timestamp,
         "last_activity_at": timestamp if active else previous["last_activity_at"] if valid else None,
     }
+    if "transports" in current:
+        result["transports"] = current["transports"]
     due = valid and timestamp - result["idle_since"] > INACTIVITY_PERIOD.total_seconds()
     return result, due, active, not valid
+
+
+def _raw_devices(devices, meta):
+    from .happ_peers import is_internal
+    return list(devices) + [
+        (record.get("owner"), record.get("device"), name)
+        for name, record in meta.items() if is_internal(record)
+    ]
+
+
+def _observe_logical(name, owner, device, meta, users, peers, generation, details):
+    observation = _observe(name, owner, device, meta, users, peers, generation, details.get(name))
+    record = meta.get(name, {})
+    if observation is None or not record.get("happ_pilot"):
+        return observation
+    from . import happ_peers
+    try:
+        children = happ_peers.children_for_parent(name)
+        actual = wireguard.get_device(name)
+        if not children and not (actual and actual["safe_internet"]):
+            return None
+        members = [observation]
+        for child in children:
+            child_record = meta[child]
+            observed = _observe(child, owner, child_record["device"], meta, users, peers,
+                                generation, details.get(child))
+            if observed is None:
+                return None
+            members.append(observed)
+        components = {member["_peer"]: [member["rx"], member["tx"], member["handshake"]] for member in members}
+        if len(components) != len(members):
+            return None
+        return {**observation,
+                "identity": hashlib.sha256("\0".join(sorted(member["identity"] for member in members)).encode()).hexdigest(),
+                "rx": sum(member["rx"] for member in members),
+                "tx": sum(member["tx"] for member in members),
+                "handshake": sum(member["handshake"] for member in members),
+                "transports": components}
+    except (OSError, ValueError, KeyError):
+        return None
 
 
 def cleanup_inactive_devices(*, now=None, dry_run=False):
@@ -242,7 +295,7 @@ def cleanup_inactive_devices(*, now=None, dry_run=False):
             peers, generation = _peer_stats(), _generation()
             if not isinstance(users, dict) or not isinstance(meta, dict):
                 raise TypeError("Invalid lifecycle state")
-            profile_details, peer_names, identities_complete = _profile_identities(devices)
+            profile_details, peer_names, identities_complete = _profile_identities(_raw_devices(devices, meta))
         except Exception:  # noqa: BLE001 - failures must not expose config or allow deletion.
             summary["errors"] += 1
             if not dry_run:
@@ -261,9 +314,7 @@ def cleanup_inactive_devices(*, now=None, dry_run=False):
                 if name in ambiguous:
                     summary["skipped"] += 1
                     continue
-                observation = _observe(
-                    name, owner, device, meta, users, peers, generation, profile_details.get(name),
-                )
+                observation = _observe_logical(name, owner, device, meta, users, peers, generation, profile_details)
                 if observation is None:
                     summary["skipped"] += 1
                     continue
@@ -293,17 +344,16 @@ def cleanup_inactive_devices(*, now=None, dry_run=False):
             try:
                 fresh_peers, fresh_generation = _peer_stats(), _generation()
                 fresh_devices = wireguard.get_all_devices()
-                fresh_details, fresh_names, fresh_complete = _profile_identities(fresh_devices)
+                fresh_meta = load_device_meta()
+                fresh_details, fresh_names, fresh_complete = _profile_identities(_raw_devices(fresh_devices, fresh_meta))
                 if (
                     not fresh_complete or (owner, device, name) not in fresh_devices
                     or fresh_names.get(observation["_peer"]) != {name}
                 ):
                     fresh = None
                 else:
-                    fresh = _observe(
-                        name, owner, device, load_device_meta(), core.load_users(),
-                        fresh_peers, fresh_generation, fresh_details.get(name),
-                    )
+                    fresh = _observe_logical(name, owner, device, fresh_meta, core.load_users(),
+                                             fresh_peers, fresh_generation, fresh_details)
             except Exception:  # noqa: BLE001 - isolate a failed final device observation.
                 fresh = None
                 summary["errors"] += 1

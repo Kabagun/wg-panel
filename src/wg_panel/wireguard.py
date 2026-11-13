@@ -157,18 +157,21 @@ def _migrate_device_metadata(dry_run):
     return report
 
 
-def get_all_devices():
+def get_all_devices(*, include_internal=False):
     """List committed ownership without running migrations or writing state."""
     with _wireguard_lock:
-        return _get_all_devices()
+        return _get_all_devices(include_internal=include_internal)
 
 
-def _get_all_devices():
+def _get_all_devices(*, include_internal=False):
+    from .happ_peers import is_internal
     infrastructure = assert_infrastructure_ready(wg_dir=WG_DIR)
     meta = load_device_meta()
     result = []
     for wg_name, item in meta.items():
         if wg_name in infrastructure:
+            continue
+        if not include_internal and is_internal(item):
             continue
         path = _config_path(wg_name)
         if (
@@ -214,8 +217,9 @@ def get_device(wg_name):
 
 
 def user_owns_device(username, wg_name):
+    from .happ_peers import is_internal
     device = get_device(wg_name)
-    return bool(device and device["owner"] == username)
+    return bool(device and not is_internal(device) and device["owner"] == username)
 
 
 def _client_ipv4(wg_name):
@@ -568,7 +572,7 @@ def _rollback_provision(wg_name, previous_meta):
     return True, ""
 
 
-def create_device(username, device):
+def create_device(username, device, *, happ=False):
     """Provision a device under one process-wide quota/IP transaction."""
     if not SAFE_NAME_RE.fullmatch(username) or not SAFE_NAME_RE.fullmatch(device):
         return False, "", "Invalid user or device name"
@@ -609,7 +613,8 @@ def create_device(username, device):
         )
         if (existing and not replacing_tombstone) or (path and os.path.exists(path)):
             return False, "", "Client name collision"
-        if account_locked and not _supports_prepared_clients():
+        prepared = account_locked or happ
+        if prepared and not _supports_prepared_clients():
             return False, "", "Protected provisioning requires the current add-client.sh helper"
 
         # A failed cleanup after an earlier peer revoke can leave its address in
@@ -625,19 +630,21 @@ def create_device(username, device):
             return False, "", f"Safe internet firewall reconciliation failed: {exc}"
 
         previous_meta = load_device_meta()
-        arguments = ("--prepare",) if account_locked else ()
+        arguments = ("--prepare",) if prepared else ()
         ok, error = _run_script("add-client.sh", wg_name, 45, *arguments)
         if not ok:
             return False, "", error
         if not path or not os.path.exists(path):
             return False, "", "Provisioning completed without a client configuration"
         os.chmod(path, 0o600)
-        if account_locked and not _is_prepared_client(wg_name):
+        if prepared and not _is_prepared_client(wg_name):
             _rollback_provision(wg_name, previous_meta)
             return False, "", "Protected provisioning did not produce a recognized inactive peer"
         try:
-            set_device_meta(wg_name, username, device, provisioning=account_locked)
-            if account_locked:
+            set_device_meta(wg_name, username, device, provisioning=prepared)
+            if happ:
+                mutate_device_meta(lambda meta: meta[wg_name].update(happ_pilot=True))
+            if prepared:
                 reconcile_safe_dns(allow_unavailable=bool(app.config.get("TESTING")))
                 ok, error = _run_script("set-client-state.sh", wg_name, 30, "resume")
                 if not ok:
@@ -666,8 +673,9 @@ def set_device_deletion_protected(wg_name, enabled=True):
 
 
 def _deletion_identity(wg_name):
+    from .happ_peers import is_internal
     device = get_device(wg_name)
-    if not device:
+    if not device or is_internal(device):
         return None
     try:
         with open(_config_path(wg_name), "rb") as handle:
@@ -707,12 +715,31 @@ def delete_device_confirmed(wg_name, actor, nonce, *, confirmed=False, typed_nam
 def delete_device(wg_name):
     """Reject protected profiles unless the complete confirmation flow passed."""
     with _wireguard_lock:
+        from .happ_peers import is_internal
+        if is_internal(load_device_meta().get(wg_name)):
+            return False, "Device not found"
         if load_device_meta().get(wg_name, {}).get("deletion_protected"):
             return False, "Device is protected from deletion; confirm it separately"
         return _delete_device(wg_name)
 
 
 def _delete_device(wg_name):
+    from . import happ_peers
+    with _wireguard_lock:
+        record = load_device_meta().get(wg_name, {})
+        if happ_peers.is_internal(record):
+            return False, "Device not found"
+        if record.get("happ_pilot"):
+            try:
+                ok, error = happ_peers.delete_mode_peers(wg_name)
+            except (OSError, ValueError):
+                return False, "Happ transports require recovery before deletion"
+            if not ok:
+                return False, error
+        return _delete_single_device(wg_name)
+
+
+def _delete_single_device(wg_name):
     """Revoke a device and remove metadata only after verified helper success."""
     with _wireguard_lock:
         if wg_name in assert_infrastructure_ready(wg_dir=WG_DIR):
@@ -725,7 +752,7 @@ def _delete_device(wg_name):
             return False, "Device not found"
         if revoked and os.path.exists(path):
             return False, "Revoked device has an unexpected client configuration"
-        was_safe = effective_safe_internet(device_meta)
+        was_safe = effective_safe_internet(device_meta) or device_meta.get("happ_pilot") is True
         previous_ips = []
         desired_ips = []
         if was_safe:
@@ -813,8 +840,14 @@ def delete_user(username):
                 return False, "Unowned client configurations require ownership recovery"
         # Include stale metadata as well as visible configs. Unresolved peer
         # state must block successful deletion, never silently disappear.
-        for wg_name, item in meta.items():
+        from .happ_peers import is_internal
+        for wg_name, item in sorted(meta.items(), key=lambda pair: bool(is_internal(pair[1]))):
             if wg_name in infrastructure or item.get("owner") != username:
+                continue
+            if wg_name not in load_device_meta():
+                continue
+            if is_internal(item):
+                failures.append("An internal Happ transport requires recovery")
                 continue
             ok, error = delete_device(wg_name)
             if not ok:

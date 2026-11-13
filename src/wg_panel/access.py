@@ -23,6 +23,7 @@ def access_status(user):
 
 
 def _owned_devices(username):
+    from . import happ_peers
     meta = traffic.load_device_meta()
     if os.path.isdir(wireguard.CLIENTS_DIR):
         for filename in os.listdir(wireguard.CLIENTS_DIR):
@@ -34,6 +35,8 @@ def _owned_devices(username):
             continue
         if not wireguard.get_device(name):
             raise ValueError("An owned device configuration is missing; restore ownership/state")
+        if happ_peers.is_internal(item):
+            happ_peers.validate_internal(name)
         names.append(name)
     return names
 
@@ -47,12 +50,8 @@ def _pause_peers(names):
             failures.append(name)
             continue
         # Removing/re-adding peers resets kernel counters, never monthly history.
-        def reset_counters(records, key=name):
-            if key in records:
-                records[key]["last_rx"] = 0
-                records[key]["last_tx"] = 0
         try:
-            traffic.mutate_traffic(reset_counters)
+            traffic.reset_peer_counters(name)
         except (OSError, ValueError):
             logger.exception("Failed to checkpoint VPN counters for %s", name)
     return failures

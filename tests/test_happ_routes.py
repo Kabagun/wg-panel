@@ -16,6 +16,7 @@ from wg_panel import (
     account_policy,
     app,
     core,
+    happ_peers,
     happ_pilot,
     happ_shared_rules,
     infrastructure,
@@ -41,11 +42,11 @@ PSK = base64.b64encode(bytes([2]) * 32).decode()
 CSRF = "synthetic-csrf"
 
 
-def config(address="10.0.0.2"):
+def config(address="10.0.0.2", private=PRIVATE, psk=PSK):
     return (
-        f"[Interface]\nPrivateKey = {PRIVATE}\nAddress = {address}/32\n"
+        f"[Interface]\nPrivateKey = {private}\nAddress = {address}/32\n"
         "DNS = 1.1.1.1, 8.8.8.8\n\n[Peer]\n"
-        f"PublicKey = {PUBLIC}\nPresharedKey = {PSK}\n"
+        f"PublicKey = {PUBLIC}\nPresharedKey = {psk}\n"
         "Endpoint = vpn.example.test:51820\nAllowedIPs = 0.0.0.0/0, ::/0\n"
         "PersistentKeepalive = 25\n"
     )
@@ -92,6 +93,7 @@ def runtime(monkeypatch, tmp_path):
         monkeypatch.setattr(module, attribute, str(value))
     monkeypatch.setitem(app.config, "TESTING", True)
     monkeypatch.setitem(app.config, "HAPP_PILOT_ENABLED", True)
+    monkeypatch.setitem(app.config, "HAPP_ROLLOUT_ENABLED", False)
     monkeypatch.setitem(app.config, "HAPP_PUBLIC_BASE_URL", "https://vpn.example.test")
     monkeypatch.setattr(app, "secret_key", b"synthetic-happ-test-signing-key-32-bytes")
     monkeypatch.setattr(happ_pilot, "qr_for_link", lambda _link: None)
@@ -122,11 +124,28 @@ def runtime(monkeypatch, tmp_path):
         if pilot:
             metadata[name]["happ_subscription_nonce"] = str(index) * 64
     metadata[ROUTER]["deletion_protected"] = True
+    # Route tests exercise delivery and authorization. The transport module's
+    # own tests cover durable provisioning, binding and rollback separately.
+    mappings = {}
+    for parent_index, parent in enumerate((PILOT, SECOND, FOREIGN)):
+        mappings[parent] = {'all': parent}
+        for mode_index, mode in enumerate(('custom', 'by-ru-direct')):
+            child = f'{parent}-transport-{mode_index}'
+            mappings[parent][mode] = child
+            private = base64.b64encode(bytes([4 + parent_index * 2 + mode_index]) * 32).decode()
+            psk = base64.b64encode(bytes([20 + parent_index * 2 + mode_index]) * 32).decode()
+            (clients / f'{child}.conf').write_text(
+                config(f'10.0.0.{100 + parent_index * 2 + mode_index}', private, psk), encoding='utf-8')
+            metadata[child] = {'owner': metadata[parent]['owner'], 'device': mode,
+                'vpn_type': 'wireguard', 'happ_pilot': True, 'happ_transport_internal': True,
+                'happ_parent': parent, 'happ_mode': mode, 'safe_internet': False}
+    monkeypatch.setattr(happ_peers, 'mode_mapping', lambda parent: dict(mappings[parent]))
     traffic.save_device_meta(metadata)
     account_policy.save_account_policies({})
     target = wg / "safe-dns-target"
     target.write_text("10.8.0.1:18004\n", encoding="ascii")
-    return SimpleNamespace(data=data, wg=wg, clients=clients, target=target, clock=clock)
+    return SimpleNamespace(data=data, wg=wg, clients=clients, target=target, clock=clock,
+                           mappings=mappings)
 
 
 def test_disabled_pilot_hides_entry_choice_and_all_exports(runtime, monkeypatch):
@@ -176,11 +195,17 @@ def test_public_subscription_without_session_exports_central_dns_and_import_head
     assert exported["dns"]["servers"] == ["10.8.0.1"]
     vpn, = [item for item in exported["outbounds"] if item["tag"] == "vpn"]
     assert vpn["protocol"] == "wireguard"
-    assert vpn["settings"]["secretKey"] == PRIVATE
+    expected_mode = mode if mode in happ_pilot.BUNDLE_MODES else 'by-ru-direct'
+    mapped = happ_peers.mode_mapping(PILOT)[expected_mode]
+    expected_key = re.search(r'PrivateKey = (\S+)',
+                            (runtime.clients / f'{mapped}.conf').read_text()).group(1)
+    expected_psk = re.search(r'PresharedKey = (\S+)',
+                            (runtime.clients / f'{mapped}.conf').read_text()).group(1)
+    assert vpn["settings"]["secretKey"] == expected_key
     assert vpn["settings"]["remoteDNS"] == ["10.8.0.1"]
     peer, = vpn["settings"]["peers"]
     assert peer["endpoint"] == "vpn.example.test:51820"
-    assert peer["publicKey"] == PUBLIC and peer["preSharedKey"] == PSK
+    assert peer["publicKey"] == PUBLIC and peer["preSharedKey"] == expected_psk
     prefix = "happ://routing/onadd/"
     assert response.headers["routing"].startswith(prefix)
     routing = json.loads(base64.b64decode(response.headers["routing"].removeprefix(prefix)))
@@ -188,7 +213,7 @@ def test_public_subscription_without_session_exports_central_dns_and_import_head
     assert routing["RemoteDNSType"] == routing["DomesticDNSType"] == "DoU"
 
 
-def test_bundle_contains_three_independent_presets_with_one_identity_and_dns(runtime):
+def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runtime):
     identity = core.load_users()[ADMIN]['account_id']
     happ_pilot.save_rules(identity, 'ai.example.org\n192.0.2.0/24', 0)
     response = browser(None).get(subscription(mode='bundle'))
@@ -207,7 +232,11 @@ def test_bundle_contains_three_independent_presets_with_one_identity_and_dns(run
         assert item['meta']['serverDescription']
     settings = [next(o for o in item['outbounds'] if o['tag'] == 'vpn')['settings']
                 for item in bundle]
-    assert settings[0] == settings[1] == settings[2]
+    assert len({item['secretKey'] for item in settings}) == 3
+    assert len({tuple(item['address']) for item in settings}) == 3
+    assert len({item['peers'][0]['preSharedKey'] for item in settings}) == 3
+    assert len({(item['peers'][0]['publicKey'], item['peers'][0]['endpoint'])
+                for item in settings}) == 1
     assert bundle[0]['routing']['rules'][-1]['outboundTag'] == 'vpn'
     assert bundle[1]['routing']['rules'][-1]['outboundTag'] == 'direct'
     assert bundle[2]['routing']['rules'][-1]['outboundTag'] == 'vpn'
@@ -531,7 +560,8 @@ def test_creating_fresh_pilot_marks_only_new_device_and_preserves_existing_profi
     calls = []
     reconciled = []
 
-    def create(owner, name):
+    def create(owner, name, *, happ=False):
+        assert happ is True
         calls.append((owner, name))
         wg_name = f"u{len(owner)}-{owner}-{name}"
         (runtime.clients / f"{wg_name}.conf").write_text(config("10.0.0.20"), encoding="utf-8")
@@ -539,6 +569,7 @@ def test_creating_fresh_pilot_marks_only_new_device_and_preserves_existing_profi
         return True, wg_name, ""
 
     monkeypatch.setattr(wireguard, "create_device", create)
+    monkeypatch.setattr(happ_peers, 'ensure_mode_peers', lambda name: {'all': name})
     monkeypatch.setattr(wireguard, "_sync_safe_dns",
                         lambda ips, **_kwargs: reconciled.append(tuple(ips)) or tuple(ips))
     monkeypatch.setattr(device_routes, "create_device",
@@ -620,7 +651,8 @@ def test_public_subscription_is_rate_limited_and_recovers_after_window(runtime):
 
 def test_pilot_source_dns_redirect_does_not_lock_account_or_select_classic_devices(runtime):
     selected = set(wireguard._safe_dns_ips(traffic.load_device_meta()))
-    assert selected == {"10.0.0.2", "10.0.0.3", "10.0.0.4"}
+    assert selected == {"10.0.0.2", "10.0.0.3", "10.0.0.4",
+                        *(f'10.0.0.{value}' for value in range(100, 106))}
     assert "10.0.0.5" not in selected
     assert account_policy.load_account_policies() == {}
     assert wireguard.get_device(PILOT)["safe_internet"] is False
@@ -630,7 +662,8 @@ def test_pilot_source_dns_redirect_does_not_lock_account_or_select_classic_devic
 def test_failed_pilot_dns_reconciliation_cannot_leave_exportable_new_peer(runtime, monkeypatch):
     name = "u10-pilotadmin-fresh"
 
-    def create(owner, label):
+    def create(owner, label, *, happ=False):
+        assert happ is True
         (runtime.clients / f"{name}.conf").write_text(config("10.0.0.20"), encoding="utf-8")
         traffic.set_device_meta(name, owner, label)
         return True, name, ""
@@ -660,3 +693,52 @@ def test_access_log_redacts_subscription_device_and_credential(runtime, caplog):
         logging.getLogger("werkzeug").info('"GET %s HTTP/1.1" 200', path)
     assert "/happ/sub/[redacted]" in caplog.text
     assert token not in caplog.text and PILOT not in caplog.text
+
+
+def test_rollout_allows_approved_owner_and_preserves_classic_export(runtime, monkeypatch):
+    def transfer(meta):
+        for name in runtime.mappings[PILOT].values():
+            meta[name]['owner'] = 'alice'
+    traffic.mutate_device_meta(transfer)
+    classic = (runtime.clients / f'{CLASSIC}.conf').read_bytes()
+    owner = browser('alice')
+    assert owner.get(f'/device/{PILOT}/happ').status_code == 404
+    monkeypatch.setitem(app.config, 'HAPP_ROLLOUT_ENABLED', True)
+    assert owner.get(f'/device/{PILOT}/happ').status_code == 200
+    assert owner.get(f'/device/{PILOT}').location.endswith(f'/device/{PILOT}/happ')
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200 and len(response.get_json()) == 3
+    assert owner.get(f'/device/{CLASSIC}/download').data == classic
+    core.mutate_users(lambda users: users['alice'].update(paused=True))
+    assert browser(None).get(subscription(mode='bundle')).status_code == 404
+
+
+def test_family_owner_rollout_still_exports_only_full_tunnel(runtime, monkeypatch):
+    monkeypatch.setitem(app.config, 'HAPP_ROLLOUT_ENABLED', True)
+    account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
+    bundle = browser(None).get(subscription(mode='bundle'))
+    assert bundle.status_code == 200 and len(bundle.get_json()) == 1
+    assert browser(None).get(subscription(mode='custom')).status_code == 404
+
+
+def test_internal_transports_cannot_be_opened_downloaded_or_deleted_in_panel(runtime):
+    for child in list(runtime.mappings[PILOT].values())[1:]:
+        for path in (f'/device/{child}', f'/device/{child}/download',
+                     f'/device/{child}/happ', f'/device/{child}/delete/confirm'):
+            response = browser().get(path)
+            assert response.status_code in {302, 403, 404}
+            assert PRIVATE not in response.get_data(as_text=True)
+        assert browser().post(f'/device/{child}/delete', data={'csrf_token': CSRF}).status_code == 302
+
+
+def test_unprepared_bundle_get_fails_without_provisioning_and_full_tunnel_stays_available(
+    runtime, monkeypatch,
+):
+    def unavailable(_parent):
+        raise ValueError('unavailable')
+    monkeypatch.setattr(happ_peers, 'mode_mapping', unavailable)
+    paths = [*runtime.clients.glob('*.conf'), runtime.data / 'device_meta.json']
+    before = {path: path.read_bytes() for path in paths}
+    assert browser(None).get(subscription(mode='bundle')).status_code == 503
+    assert browser(None).get(subscription(mode='all')).status_code == 200
+    assert {path: path.read_bytes() for path in paths} == before

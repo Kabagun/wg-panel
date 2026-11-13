@@ -2,10 +2,10 @@
 {% from 'components.html' import flashes, pause_notice, deletion_badge with context %}
 {% block content %}
 <div class="device-workspace happ-workspace">
-  <a class="back-link" href="{{ url_for('happ_pilot') }}">{{ icon('back', 17) }}{{ tr('happ_back_pilot') }}</a>
+  <a class="back-link" href="{{ url_for('happ_pilot' if is_admin else 'dashboard') }}">{{ icon('back', 17) }}{{ tr('happ_back_pilot' if is_admin else 'ui_back_devices') }}</a>
   <header class="device-heading">
     <span class="device-heading-icon">{{ icon(device_icon(device.device), 29) }}</span>
-    <div><p class="eyebrow">HAPP · {{ tr('happ_pilot_badge') }}</p><h1>{{ device.device }}</h1>{% if device.deletion_protected %}{{ deletion_badge() }}{% endif %}</div>
+    <div><p class="eyebrow">HAPP · {{ tr('happ_rollout_badge' if happ_public_enabled|default(false) else 'happ_pilot_badge') }}</p><h1>{{ device.device }}</h1>{% if device.deletion_protected %}{{ deletion_badge() }}{% endif %}</div>
   </header>
   {{ flashes() }}
   {% if owner_paused|default(false) %}{{ pause_notice(owner_pause_pending|default(false)) }}{% endif %}
@@ -41,10 +41,11 @@
     <p class="notice {{ 'notice-success' if shared_rules_status == 'current' else 'notice-error' }}" role="status">{{ tr('happ_shared_current' if shared_rules_status == 'current' else 'happ_shared_delayed') }}</p>
     <div class="config-summary-grid">
       <dl class="config-values">{% if not shared_managed %}<div><dt>{{ tr('happ_shared_checked') }}</dt><dd>{{ shared_rules_checked }}</dd></div>{% endif %}<div><dt>{{ tr('happ_shared_modified' if shared_managed else 'happ_shared_updated') }}</dt><dd>{{ shared_rules_updated }}</dd></div></dl>
-      <dl class="config-values"><div><dt>{{ tr('happ_shared_revision') }}</dt><dd>{{ shared_rules_revision }}</dd></div><div><dt>{{ tr('happ_admin_publication' if shared_managed else 'happ_shared_source') }}</dt><dd>{% if shared_rules_source_link %}<a href="{{ shared_rules_source_link }}" target="_blank" rel="noopener noreferrer">{{ tr('happ_shared_github') }} ↗</a>{% else %}{{ tr('happ_shared_source_managed') }}{% endif %}</dd></div></dl>
+      {% if is_admin %}<dl class="config-values"><div><dt>{{ tr('happ_shared_revision') }}</dt><dd>{{ shared_rules_revision }}</dd></div><div><dt>{{ tr('happ_admin_publication' if shared_managed else 'happ_shared_source') }}</dt><dd>{% if shared_rules_source_link %}<a href="{{ shared_rules_source_link }}" target="_blank" rel="noopener noreferrer">{{ tr('happ_shared_github') }} ↗</a>{% else %}{{ tr('happ_shared_source_managed') }}{% endif %}</dd></div></dl>{% endif %}
     </div>
     <p class="happ-panel-intro">{{ tr('happ_admin_client_refresh' if shared_managed else 'happ_shared_refresh') }}</p>
-    {% if shared_managed %}
+    {% if not is_admin %}<p class="field-help">{{ tr('happ_member_rules_note') }}</p>
+    {% elif shared_managed %}
     <p class="field-help">{{ tr('happ_admin_site_edit') }}</p>
     {% if shared_rules_publication|default(false) %}<p class="field-help">{{ tr('happ_admin_publication') }}: {{ tr('happ_admin_publication_' ~ shared_rules_publication.status) }}</p>{% endif %}
     <p class="form-actions"><a class="button secondary" href="{{ url_for('admin_happ_rules') }}">{{ icon('globe', 18) }}{{ tr('happ_admin_manage') }}</a></p>
@@ -53,15 +54,15 @@
     {% else %}
     <div class="happ-mode-heading"><h2 id="happ-rules-title">{{ tr('happ_rules_title') }}</h2><span class="count-badge" aria-label="{{ tr('happ_rules_count') }}">{{ proxy_rules|length }}</span></div>
     <p class="happ-panel-intro">{{ tr('happ_rules_scope') }}</p>
-    <form method="post" action="{{ url_for('update_happ_rules') }}" class="happ-rules-form">
+    {% if is_admin %}<form method="post" action="{{ url_for('update_happ_rules') }}" class="happ-rules-form">
       {{ csrf() }}<input type="hidden" name="revision" value="{{ rules_revision }}"><input type="hidden" name="wg_name" value="{{ wg_name }}"><input type="hidden" name="mode" value="{{ mode }}">
       <label for="happ-rules">{{ tr('happ_rules_label') }}</label>
       <textarea class="happ-rules-textarea" id="happ-rules" name="rules" rows="7" spellcheck="false" autocomplete="off" aria-describedby="happ-rules-help" placeholder="example.org&#10;192.0.2.0/24">{{ rules_text }}</textarea>
       <p class="field-help" id="happ-rules-help">{{ tr('happ_rules_format') }}</p>
       <button type="submit" class="button primary">{{ icon('check', 18) }}{{ tr('happ_save_rules') }}</button>
-    </form>
+    </form>{% else %}<p class="field-help">{{ tr('happ_member_rules_note') }}</p><details class="happ-private-details"><summary>{{ tr('happ_shared_show') }}</summary><pre><code>{{ rules_text }}</code></pre></details>{% endif %}
     {% endif %}
-    <p class="happ-dns-note">{{ icon('info', 18) }}<span>{{ tr('happ_routing_dns_note') }} <a href="{{ url_for('admin_family_dns') }}">{{ tr('family_dns_title') }}{{ icon('arrow', 14) }}</a></span></p>
+    <p class="happ-dns-note">{{ icon('info', 18) }}<span>{{ tr('happ_routing_dns_note') }}{% if is_admin %} <a href="{{ url_for('admin_family_dns') }}">{{ tr('family_dns_title') }}{{ icon('arrow', 14) }}</a>{% endif %}</span></p>
   </section>
 
   <section class="panel happ-config-panel" aria-labelledby="happ-config-title">

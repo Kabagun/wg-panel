@@ -11,7 +11,7 @@
   <div class="section-heading"><div><h2>{{ tr('ui_your_devices') }} <span class="count-badge">{{ devices|length }}</span></h2><p>{{ tr('ui_manage_hint') }}</p></div>{% if devices %}{{ search(tr('ui_search')) }}{% endif %}</div>
   <div class="device-grid">
   {% for device in devices %}
-    {% set is_happ_device = happ_pilot_enabled|default(false) and device.happ_pilot|default(false) %}
+    {% set is_happ_device = happ_available|default(happ_pilot_enabled|default(false)) and device.happ_pilot|default(false) %}
     <article class="device-card" data-search-item="{{ device.device }}">
       <a class="device-card-main" href="{{ url_for('view_happ_device' if is_happ_device else 'view_device', wg_name=device.wg_name) }}" aria-labelledby="device-name-{{ loop.index }} device-action-{{ loop.index }}">
         <div class="device-card-body">

@@ -1,4 +1,4 @@
-"""Closed administrator pilot with revocable read-only subscriptions."""
+"""Owner-scoped Happ configuration and revocable read-only subscriptions."""
 import hmac
 import json
 import re
@@ -25,8 +25,7 @@ def _pilot_device(wg_name, *, public=False):
             or device.get('vpn_type', 'wireguard') != 'wireguard'):
         abort(404)
     user = core.load_users().get(device['owner'], {})
-    if (user.get('role') != 'admin' or not user.get('approved') or user.get('paused')
-            or user.get('revoking') or user.get('pause_pending') or not user.get('account_id')):
+    if not happ_pilot.available_for_user(user):
         abort(404)
     if not public and device['owner'] != session.get('user'):
         abort(404)
@@ -79,7 +78,6 @@ def happ_pilot_page():
 
 @core.app.route('/device/<wg_name>/happ')
 @approved_required
-@admin_required
 def view_happ_device(wg_name):
     device, user = _pilot_device(wg_name)
     mode = _mode(device)
@@ -119,7 +117,6 @@ def _response(device, mode, rules):
 
 @core.app.route('/device/<wg_name>/happ/<mode>/download')
 @approved_required
-@admin_required
 def download_happ_device(wg_name, mode):
     device, user = _pilot_device(wg_name)
     if not _valid_export_mode(device, mode):
@@ -133,7 +130,6 @@ def download_happ_device(wg_name, mode):
 
 @core.app.route('/account/happ-rules', methods=['POST'])
 @approved_required
-@admin_required
 def update_happ_rules():
     wg_name = request.form.get('wg_name', '')
     device, user = _pilot_device(wg_name)
@@ -154,7 +150,6 @@ def update_happ_rules():
 
 @core.app.route('/device/<wg_name>/happ/rotate', methods=['POST'])
 @approved_required
-@admin_required
 def rotate_happ_subscription(wg_name):
     device, _user = _pilot_device(wg_name)
     mode = _mode(device)

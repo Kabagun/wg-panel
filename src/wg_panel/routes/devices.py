@@ -36,13 +36,16 @@ def dashboard():
     for name in device_names:
         wg_name = client_name(username, name)
         metadata = get_device(wg_name) or {}
+        if metadata.get('happ_transport_internal'):
+            continue
         devices.append({
             "device": name,
             "wg_name": wg_name,
             "safe_internet": bool(metadata.get("safe_internet")) or account_locked,
             "deletion_protected": bool(metadata.get("deletion_protected")),
             "connection": connection_details(get_config(wg_name)),
-            "happ_pilot": happ_pilot.is_pilot_device(metadata) and user.get('role') == 'admin',
+            "happ_pilot": (metadata.get('happ_pilot') is True
+                           and happ_pilot.available_for_user(user)),
         })
     used = len(devices)
     return render_page(
@@ -63,6 +66,15 @@ def add_device():
     username = session["user"]
     user = load_users().get(username, {})
     max_devices = user.get("max_devices", 3)
+    values = (request.form.getlist('client_app') if request.method == 'POST'
+              else request.args.getlist('client_app'))
+    if len(values) > 1:
+        return 'Invalid client', 400
+    selected_client = values[0] if values else ('wireguard' if request.method == 'POST' else None)
+    if selected_client not in {None, 'wireguard', 'happ'}:
+        return 'Invalid client', 400
+    if selected_client == 'happ' and not happ_pilot.available_for_user(user):
+        return 'Access denied', 403
 
     if request.method == "POST":
         device = request.form.get("device", "").strip().lower()
@@ -75,10 +87,8 @@ def add_device():
         ):
             flash(t("flash_add_invalid", _lang()), "error")
         else:
-            client_app = request.form.get('client_app', 'wireguard')
+            client_app = selected_client
             if client_app == 'happ':
-                if not happ_pilot.pilot_enabled() or user.get('role') != 'admin':
-                    return 'Access denied', 403
                 ok, wg_name, error = happ_pilot.create_pilot_device(username, device)
             elif client_app == 'wireguard':
                 ok, wg_name, error = create_device(username, device)
@@ -99,14 +109,15 @@ def add_device():
             else:
                 flash(f"Failed to create device: {error}", "error")
 
-    return render_page("add_device.html", "ui_add")
+    return render_page("add_device.html", "ui_add", selected_client=selected_client,
+                       account_locked=account_safe_internet_locked(username))
 
 
 def _authorized_device(wg_name):
     username = session["user"]
     user = load_users().get(username, {})
     device = get_device(wg_name)
-    if not device:
+    if not device or device.get('happ_transport_internal'):
         return None, user
     if user.get("role") != "admin" and device["owner"] != username:
         return None, user
@@ -120,7 +131,8 @@ def view_device(wg_name):
     if not device:
         flash("Device not found or access denied.", "error")
         return redirect(url_for("dashboard"))
-    if happ_pilot.is_pilot_device(device) and _user.get('role') == 'admin':
+    if (device.get('happ_pilot') is True and device['owner'] == session['user']
+            and happ_pilot.available_for_user(_user)):
         return redirect(url_for('view_happ_device', wg_name=wg_name))
     config = get_config(wg_name)
     if not config:

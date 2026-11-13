@@ -54,7 +54,29 @@ def pilot_enabled():
 
 
 def is_pilot_device(device):
-    return bool(pilot_enabled() and device and device.get('happ_pilot') is True)
+    from .happ_peers import is_internal
+    return bool(pilot_enabled() and device and device.get('happ_pilot') is True
+                and not is_internal(device) and not device.get('happ_transport_deleting'))
+
+
+def public_enabled():
+    override = core.app.config.get('HAPP_ROLLOUT_ENABLED')
+    if override is not None:
+        return override is True
+    try:
+        raw = (Path(core.DATA_DIR) / 'happ_rollout.json').read_bytes()
+        value = json.loads(raw)
+        return (len(raw) < 256 and isinstance(value, dict) and set(value) == {'version', 'enabled'}
+                and type(value['version']) is int and value['version'] == 1 and value['enabled'] is True)
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def available_for_user(user):
+    return bool(pilot_enabled() and isinstance(user, dict) and user.get('approved') is True
+                and user.get('role') in ('admin', 'user') and user.get('account_id')
+                and not any(user.get(flag) for flag in ('paused', 'pause_pending', 'revoking'))
+                and (user.get('role') == 'admin' or public_enabled()))
 
 
 def shared_rules_url():
@@ -155,12 +177,11 @@ def create_pilot_device(owner, name):
     """Provision a fresh peer; never adopt an existing/router identity."""
     with core._wireguard_lock:
         user = core.load_users().get(owner, {})
-        if (not pilot_enabled() or user.get('role') != 'admin' or not user.get('approved')
-                or user.get('paused') or user.get('revoking')):
+        if not available_for_user(user):
             return False, '', 'unavailable'
         if name in wireguard.get_user_devices(owner):
             return False, '', 'already_exists'
-        ok, wg_name, _error = wireguard.create_device(owner, name)
+        ok, wg_name, _error = wireguard.create_device(owner, name, happ=True)
         if not ok:
             return False, '', 'provision_failed'
         try:
@@ -174,14 +195,12 @@ def create_pilot_device(owner, name):
             # Reuse the existing per-peer DNS redirect to the central target's
             # configured port. This does not lock the administrator's account.
             wireguard.reconcile_safe_dns()
+            from .happ_peers import ensure_mode_peers
+            ensure_mode_peers(wg_name)
             return True, wg_name, ''
         except (OSError, ValueError, SafeDnsEnforcementError):
-            def disable(meta):
-                device = meta.get(wg_name)
-                if device:
-                    device['happ_pilot'] = False
-                    device.pop('happ_subscription_nonce', None)
-            mutate_device_meta(disable)
+            # Keep the Happ binding while cascading fresh children. Removing
+            # the marker first could leave active orphan transports on failure.
             wireguard.delete_device(wg_name)
             return False, '', 'provision_failed'
 
@@ -212,16 +231,17 @@ def subscription_modes(device):
     return ('all',) if device['safe_internet'] else BUNDLE_MODES
 
 
-def _central_config(device):
-    config = wireguard.get_config(device['wg_name'])
+def _central_config(device, transport_name=None, *, dns=None):
+    config = wireguard.get_config(transport_name or device['wg_name'])
     if not config:
         raise HappStateError('unavailable')
     # Only the Happ export uses the existing central resolver. No stored .conf,
     # DNS policy, account flag or authoritative exception list is rewritten.
-    target = load_safe_dns_target(wireguard.WG_DIR)
-    if not target.custom:
-        raise HappStateError('central_dns_unavailable')
-    dns = target.client_dns_servers
+    if dns is None:
+        target = load_safe_dns_target(wireguard.WG_DIR)
+        if not target.custom:
+            raise HappStateError('central_dns_unavailable')
+        dns = target.client_dns_servers
     return wireguard._render_config_dns(config, dns)
 
 
@@ -234,13 +254,31 @@ def _export_config(device, mode, rules, config):
 
 
 def exported_config(device, mode, rules):
-    return _export_config(device, mode, rules, _central_config(device))
+    from . import happ_peers
+    if happ_peers.is_internal(device) or device.get('happ_transport_deleting'):
+        raise HappStateError('unavailable')
+    transport = device['wg_name']
+    if mode != 'all':
+        if device['safe_internet']:
+            raise HappStateError('unavailable')
+        mapping = happ_peers.mode_mapping(device['wg_name'])
+        transport = mapping['custom' if mode == 'custom' else 'by-ru-direct']
+    return _export_config(device, mode, rules, _central_config(device, transport))
 
 
 def exported_bundle(device, rules):
-    # All entries share one transport/DNS snapshot and one WireGuard identity.
-    config = _central_config(device)
-    return [_export_config(device, mode, rules, config) for mode in subscription_modes(device)]
+    from . import happ_peers
+    with core._wireguard_lock:
+        if happ_peers.is_internal(device) or device.get('happ_transport_deleting'):
+            raise HappStateError('unavailable')
+        modes = subscription_modes(device)
+        mapping = ({'all': device['wg_name']} if device['safe_internet']
+                   else happ_peers.mode_mapping(device['wg_name']))
+        target = load_safe_dns_target(wireguard.WG_DIR)
+        if not target.custom:
+            raise HappStateError('central_dns_unavailable')
+        return [_export_config(device, mode, rules, _central_config(
+            device, mapping[mode], dns=target.client_dns_servers)) for mode in modes]
 
 
 def routing_header(device, mode, config):

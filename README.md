@@ -59,19 +59,51 @@ still bypass domain filtering.
 
 ## Interface
 
-### Closed Happ pilot
+### Connection choices and Happ availability
 
-The administrator can choose **Classic — WireGuard** (ordinary full-tunnel
-configuration) or **Modern — Happ** (client-side routing) when adding a device.
-This is an opt-in pilot, not a default migration. Ordinary members and existing
-WireGuard profiles retain their current interface and downloads.
+Adding a device is a two-step flow. `/add` first offers **Классический VPN ·
+WireGuard / Classic VPN · WireGuard** and **Современный VPN · Happ / Modern VPN ·
+Happ** as large keyboard- and touch-accessible links. A choice opens
+`/add?client_app=wireguard` or `/add?client_app=happ`, then the device-name form
+submits that fixed method as `client_app`. The back link returns to the choices.
+Existing direct POSTs without `client_app` still create Classic WireGuard.
+Unknown or duplicate method fields are rejected, and a forged Happ submission
+cannot bypass availability. The card animations respect reduced-motion settings.
+
+Classic remains an actively maintained WireGuard setup with the existing
+configuration and peer helpers. It routes internet traffic through the tunnel;
+selective routing needs manual configuration rather than ready-made switches.
+Happ offers the service's routing modes through a JSON subscription, currently
+with WireGuard as the transport. Choosing Happ does not imply a deployed VLESS
+server. On family-protected accounts, Happ currently offers the full tunnel only;
+the UI must not promise Smart VPN or country bypasses for those accounts.
 
 The feature is disabled unless the operator creates `happ_pilot.json` in the
 configured private data directory with `{"version":1,"enabled":true}`. Keep this
 file owner-only, like the rest of the data directory. The pilot page is
-`/admin/happ-pilot`. Only an approved, active administrator can provision a fresh
-pilot device. Existing identities, protected devices and infrastructure peers
-cannot be adopted as pilots. Each physical device needs its own identity.
+`/admin/happ-pilot`. Before rollout, only approved, active administrators can use
+Happ. After verification, the operator can additionally enable the private
+`happ_rollout.json` file with `{"version":1,"enabled":true}` (or the test override
+`HAPP_ROLLOUT_ENABLED=True`) to make Happ available to approved, active ordinary
+members too. Enable this final rollout flag only after acceptance checks. The
+master pilot flag remains required. The choice page is visible to all approved
+members, but its Happ card stays non-interactive until their account is eligible.
+Existing Classic profiles are not migrated. Existing identities, protected
+devices and infrastructure peers cannot be adopted as pilots. Each physical
+device needs its own identity. Hidden Happ transport peers are never exposed by
+generic device pages or downloads, even to administrators.
+
+The choice screen links to official vendor downloads. WireGuard's current
+[installation page](https://www.wireguard.com/install/) targets Windows 10/11
+for its current Windows client. Windows 7 is labelled separately as the older
+0.5.3 release, with official
+[64-bit MSI](https://download.wireguard.com/windows-client/wireguard-amd64-0.5.3.msi)
+and [32-bit MSI](https://download.wireguard.com/windows-client/wireguard-x86-0.5.3.msi)
+links. This is not a claim that current installers support Windows 7. Happ's
+official [download site](https://happ.info/) supplies Windows x64, macOS/iOS,
+Android and Linux downloads; Happ support for Windows 7 is not asserted.
+The optional kill-switch instructions are specifically for the official desktop
+WireGuard app on Windows, not Happ or mobile apps.
 
 Happ uses the existing WireGuard server. A device's main subscription, import
 link, QR code and **VPN modes / Режимы VPN** JSON download expose one JSON array
@@ -88,6 +120,23 @@ servers or geographic exit locations:
   legacy account-specific list.
 - `by-ru-direct` — **Внутренние сайты без VPN**: Belarusian and Russian IP
   addresses go directly; other traffic goes through the VPN.
+
+Each offered mode has its own WireGuard key pair, preshared key and VPN address.
+The original device peer remains the `all` transport; the two split modes use
+bound internal peers. This prevents concurrent subscription checks from moving
+one WireGuard peer between competing client endpoints. They still count as one
+device: traffic rolls up to the parent, account pauses include every transport,
+and deleting the parent revokes its children first. Internal peers cannot be
+opened, downloaded or deleted through ordinary device URLs.
+
+For an existing Happ device, the operator explicitly runs
+`happ_peers.ensure_mode_peers(parent_wg_name)` in the panel environment before
+opening the updated bundle. This operation preserves the original profile,
+prepares fresh children, applies central DNS enforcement, then activates them.
+It is idempotent for a valid completed group. GET requests and exports never
+provision or repair peers; incomplete groups fail closed. Protected family
+accounts still expose only `all` and need no additional transports. Clients
+must refresh their subscription and reconnect to receive new mode identities.
 
 The new bundle and its preview selector contain these three entries only.
 Legacy individual `by-direct` and `ru-direct` URLs remain available for

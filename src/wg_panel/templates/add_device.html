@@ -1,16 +1,75 @@
 {% extends 'base.html' %}
-{% from 'components.html' import heading, flashes, guide with context %}
+{% from 'components.html' import heading, flashes with context %}
+{% macro features(client) %}
+<ul class="vpn-choice-features">
+  {% if client == 'wireguard' %}
+  <li>{{ icon('shield', 18) }}<span>{{ tr('vpn_classic_full') }}</span></li>
+  <li>{{ icon('config', 18) }}<span>{{ tr('vpn_classic_manual') }}</span></li>
+  <li>{{ icon('devices', 18) }}<span>{{ tr('vpn_classic_import') }}</span></li>
+  {% else %}
+  <li>{{ icon('globe', 18) }}<span>{{ tr('vpn_happ_locked' if account_locked else 'vpn_happ_modes') }}</span></li>
+  <li>{{ icon('shield', 18) }}<span>{{ tr('vpn_happ_dns') }}</span></li>
+  <li>{{ icon('qr', 18) }}<span>{{ tr('vpn_happ_subscription') }}</span></li>
+  {% endif %}
+</ul>
+{% endmacro %}
+{% macro downloads(client) %}
+<section class="panel vpn-download-panel" aria-labelledby="vpn-download-{{ client }}">
+  <h3 id="vpn-download-{{ client }}">{{ tr('vpn_classic_title' if client == 'wireguard' else 'vpn_happ_title') }}</h3>
+  <p>{{ tr('vpn_classic_platforms' if client == 'wireguard' else 'vpn_happ_platforms') }}</p>
+  <ul class="vpn-download-links">
+  {% if client == 'wireguard' %}
+    <li><a href="https://www.wireguard.com/install/" target="_blank" rel="noopener noreferrer">{{ tr('vpn_wireguard_current') }} ↗</a></li>
+    <li><a href="https://download.wireguard.com/windows-client/wireguard-amd64-0.5.3.msi" target="_blank" rel="noopener noreferrer">{{ tr('vpn_wireguard_win7_64') }} ↗</a></li>
+    <li><a href="https://download.wireguard.com/windows-client/wireguard-x86-0.5.3.msi" target="_blank" rel="noopener noreferrer">{{ tr('vpn_wireguard_win7_32') }} ↗</a></li>
+  {% else %}
+    <li><a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe" target="_blank" rel="noopener noreferrer">{{ tr('vpn_happ_windows') }} ↗</a></li>
+    <li><a href="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215" target="_blank" rel="noopener noreferrer">macOS / iPhone / iPad · App Store ↗</a></li>
+    <li><a href="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/Happ.macOS.universal.dmg" target="_blank" rel="noopener noreferrer">macOS · DMG ↗</a></li>
+    <li><a href="https://play.google.com/store/apps/details?id=com.happproxy" target="_blank" rel="noopener noreferrer">Android · Google Play ↗</a></li>
+    <li><a href="https://happ.info/" target="_blank" rel="noopener noreferrer">{{ tr('vpn_happ_linux') }} ↗</a></li>
+  {% endif %}
+  </ul>
+  <p class="field-help">{{ tr('vpn_classic_legacy' if client == 'wireguard' else 'vpn_happ_legacy') }}</p>
+  {% if client == 'wireguard' %}<details class="vpn-platform-note"><summary>{{ tr('vpn_windows_kill_title') }}</summary><p>{{ tr('kill_switch_notice_windows') }}</p><p>{{ tr('vpn_windows_kill_scope') }}</p></details>{% endif %}
+</section>
+{% endmacro %}
 {% block content %}
-<a class="back-link" href="{{ url_for('dashboard') }}">{{ icon('back', 17) }}{{ tr('ui_back_devices') }}</a>
-{{ heading(tr('ui_add'), tr('add_sub')) }}{{ flashes() }}
-<div class="form-layout"><section class="panel form-panel"><span class="form-icon">{{ icon('devices', 29) }}</span><h2>{{ tr('ui_connect_next') }}</h2><p class="muted">{{ tr('ui_add_hint') }}</p><form method="post" class="form-stack">{{ csrf() }}
-<label for="device">{{ tr('ui_device_name') }}</label><input id="device" name="device" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]|[a-z0-9]" maxlength="64" placeholder="my-phone" value="{{ request.form.get('device', '') }}" aria-describedby="name-help" required autofocus><p class="field-help" id="name-help">{{ tr('ui_name_hint') }}</p>
-{% if happ_pilot_enabled|default(false) and is_admin %}
-{% set selected_client = request.form.get('client_app', request.args.get('client_app', 'wireguard')) %}
-<fieldset class="happ-client-choice"><legend>{{ tr('happ_client_choice') }}</legend>
-  <label class="happ-client-option" for="client-wireguard"><input id="client-wireguard" type="radio" name="client_app" value="wireguard"{% if selected_client != 'happ' %} checked{% endif %}><span><strong>{{ tr('happ_client_wireguard') }}</strong><small>{{ tr('happ_client_wireguard_hint') }}</small></span></label>
-  <label class="happ-client-option" for="client-happ"><input id="client-happ" type="radio" name="client_app" value="happ"{% if selected_client == 'happ' %} checked{% endif %}><span><strong>{{ tr('happ_client_modern') }}</strong><small>{{ tr('happ_client_modern_hint') }}</small></span></label>
-</fieldset>
-{% endif %}
-<div class="form-actions"><button class="button primary" type="submit">{{ icon('plus', 18) }}{{ tr('ui_create') }}</button><a class="button secondary" href="{{ url_for('dashboard') }}">{{ tr('ui_cancel') }}</a></div></form></section><aside class="form-aside"><span class="eyebrow">WIREGUARD</span><h2>{{ tr('ui_guide') }}</h2>{% for n in [1,2,3] %}<div class="guide-step"><span class="step-number">0{{ n }}</span><div><h3>{{ tr('ui_step' ~ n) }}</h3><p>{{ tr('ui_step' ~ n ~ '_sub') }}</p></div></div>{% endfor %}</aside></div>
+<div class="vpn-create-workspace">
+  <a class="back-link" href="{{ url_for('add_device') if selected_client else url_for('dashboard') }}">{{ icon('back', 17) }}{{ tr('vpn_back_choices' if selected_client else 'ui_back_devices') }}</a>
+  <p class="vpn-create-step">{{ tr('vpn_step_two' if selected_client else 'vpn_step_one') }}</p>
+  {{ heading(tr('vpn_name_title' if selected_client else 'vpn_choose_title'), tr('vpn_name_intro' if selected_client else 'vpn_choose_intro')) }}
+  {{ flashes() }}
+  {% if not selected_client %}
+  <div class="vpn-choice-grid">
+    {% for client in ['wireguard', 'happ'] %}
+    {% set enabled = client == 'wireguard' or happ_available|default(false) %}
+    {% if enabled %}<a class="vpn-choice-card vpn-choice-{{ client }}" href="{{ url_for('add_device', client_app=client) }}" aria-labelledby="vpn-choice-title-{{ client }}" aria-describedby="vpn-choice-desc-{{ client }}">
+    {% else %}<article class="vpn-choice-card vpn-choice-{{ client }} is-disabled" aria-disabled="true" aria-labelledby="vpn-choice-title-{{ client }}" aria-describedby="vpn-choice-desc-{{ client }}">{% endif %}
+      <div class="vpn-choice-top"><span class="vpn-choice-emblem">{{ icon('shield' if client == 'wireguard' else 'globe', 36) }}</span><span class="vpn-choice-number">{{ '01 / CLASSIC' if client == 'wireguard' else '02 / MODERN' }}</span></div>
+      <h2 id="vpn-choice-title-{{ client }}">{{ tr('vpn_classic_title' if client == 'wireguard' else 'vpn_happ_title') }}</h2>
+      <p class="vpn-choice-desc" id="vpn-choice-desc-{{ client }}">{{ tr('vpn_classic_desc' if client == 'wireguard' else 'vpn_happ_desc') }}</p>
+      {{ features(client) }}
+      <div class="vpn-choice-action"><span>{{ tr('vpn_choose_action' if enabled else 'vpn_happ_unavailable') }}</span>{% if enabled %}{{ icon('arrow', 22) }}{% else %}{{ icon('lock', 20) }}{% endif %}</div>
+    {% if enabled %}</a>{% else %}</article>{% endif %}
+    {% endfor %}
+  </div>
+  <p class="vpn-choice-footnote">{{ tr('vpn_transport_note') }}</p>
+  <div class="vpn-download-grid">{{ downloads('wireguard') }}{{ downloads('happ') }}</div>
+  {% else %}
+  <div class="vpn-name-layout">
+    <section class="panel form-panel vpn-name-panel" aria-labelledby="vpn-selected-title">
+      <div class="vpn-selected-method"><span class="form-icon">{{ icon('shield' if selected_client == 'wireguard' else 'globe', 29) }}</span><div><p class="eyebrow">{{ tr('vpn_selected_method') }}</p><h2 id="vpn-selected-title">{{ tr('vpn_classic_title' if selected_client == 'wireguard' else 'vpn_happ_title') }}</h2></div></div>
+      <p class="happ-panel-intro">{{ tr('vpn_classic_desc' if selected_client == 'wireguard' else 'vpn_happ_desc') }}</p>
+      {% if selected_client == 'happ' and account_locked %}<p class="notice" role="note">{{ tr('vpn_happ_locked') }}</p>{% endif %}
+      <form method="post" action="{{ url_for('add_device') }}" class="form-stack">
+        {{ csrf() }}<input type="hidden" name="client_app" value="{{ selected_client }}">
+        <label for="device">{{ tr('ui_device_name') }}</label><input id="device" name="device" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]|[a-z0-9]" maxlength="64" placeholder="my-phone" value="{{ request.form.get('device', '') }}" aria-describedby="name-help" required autofocus><p class="field-help" id="name-help">{{ tr('ui_name_hint') }}</p>
+        <div class="form-actions"><button class="button primary" type="submit">{{ icon('plus', 18) }}{{ tr('ui_create') }}</button><a class="button secondary" href="{{ url_for('add_device') }}">{{ tr('vpn_change_method') }}</a></div>
+      </form>
+    </section>
+    <aside class="vpn-selected-help">{{ features(selected_client) }}{{ downloads(selected_client) }}{% if selected_client == 'happ' %}<p class="vpn-choice-footnote">{{ tr('vpn_transport_note') }}</p>{% endif %}</aside>
+  </div>
+  {% endif %}
+</div>
 {% endblock %}

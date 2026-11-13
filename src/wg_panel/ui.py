@@ -64,7 +64,7 @@ def device_icon(name):
 
 def render_page(template, title_key, *, lang=None, auth_view=False, **context):
     """Render user content as autoescaped data, never as Jinja source."""
-    from .happ_pilot import pilot_enabled
+    from .happ_pilot import available_for_user, pilot_enabled, public_enabled
     from .happ_shared_rules import managed_mode
     lang = lang or _lang()
     username = session.get("user", "")
@@ -83,6 +83,8 @@ def render_page(template, title_key, *, lang=None, auth_view=False, **context):
         current_paused=bool(user.get("paused")),
         auth_view=auth_view,
         happ_pilot_enabled=pilot_enabled(),
+        happ_public_enabled=public_enabled(),
+        happ_available=available_for_user(user),
         happ_rules_managed=managed_mode(),
         **context,
     )

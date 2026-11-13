@@ -196,35 +196,86 @@ def get_client_ip(wg_name):
 
 
 def collect_traffic():
+    with _wireguard_lock:
+        return _collect_traffic()
+
+
+def _collect_traffic():
     """Collect WireGuard counters and atomically accumulate monthly deltas."""
+    from . import happ_peers
     from .wireguard import get_all_devices
 
     ensure_private_dir(os.path.dirname(TRAFFIC_FILE))
     peer_stats = get_wg_peer_stats()
     if not peer_stats:
         return
-    devices = get_all_devices()
+    devices = get_all_devices(include_internal=True)
+    meta = load_device_meta()
+    targets = {}
+    groups = {}
+    for _owner, _device, name in devices:
+        record = meta.get(name, {})
+        if happ_peers.is_internal(record):
+            parent = record.get("happ_parent")
+            if not isinstance(parent, str):
+                continue
+            try:
+                if parent not in groups:
+                    groups[parent] = set(happ_peers.children_for_parent(parent))
+            except (OSError, ValueError):
+                groups[parent] = set()
+            if name not in groups[parent]:
+                continue
+            targets[name] = (parent, record.get("happ_config_sha256"))
+        else:
+            targets[name] = (name, None)
     month_key = datetime.now(UTC).strftime("%Y-%m")
 
     def apply(traffic):
         for _owner, _device, wg_name in devices:
+            if wg_name not in targets:
+                continue
             address = get_client_ip(wg_name)
             if not address or address not in peer_stats:
                 continue
             received_now, transmitted_now = peer_stats[address]
+            logical_name, fingerprint = targets[wg_name]
             entry = traffic.setdefault(
-                wg_name,
+                logical_name,
                 {"last_rx": 0, "last_tx": 0, "monthly": {}},
             )
             monthly = entry.setdefault("monthly", {})
             current = monthly.setdefault(month_key, {"rx": 0, "tx": 0})
-            previous_rx = entry.get("last_rx", 0)
-            previous_tx = entry.get("last_tx", 0)
+            counters = entry
+            if logical_name != wg_name:
+                counters = entry.setdefault("happ_transports", {}).setdefault(
+                    wg_name, {"last_rx": 0, "last_tx": 0, "fingerprint": fingerprint},
+                )
+                if counters.get("fingerprint") != fingerprint:
+                    counters.update(last_rx=0, last_tx=0, fingerprint=fingerprint)
+            previous_rx = counters.get("last_rx", 0)
+            previous_tx = counters.get("last_tx", 0)
             current["rx"] += received_now - previous_rx if received_now >= previous_rx else received_now
             current["tx"] += (
                 transmitted_now - previous_tx if transmitted_now >= previous_tx else transmitted_now
             )
-            entry["last_rx"] = received_now
-            entry["last_tx"] = transmitted_now
+            counters["last_rx"] = received_now
+            counters["last_tx"] = transmitted_now
 
     mutate_traffic(apply)
+
+
+def reset_peer_counters(wg_name):
+    """Reset one kernel peer checkpoint while retaining all logical history."""
+    from .happ_peers import is_internal
+    with _wireguard_lock:
+        record = load_device_meta().get(wg_name, {})
+        def reset(records):
+            if is_internal(record):
+                parent = records.get(record.get("happ_parent"), {})
+                counters = parent.get("happ_transports", {}).get(wg_name)
+            else:
+                counters = records.get(wg_name)
+            if isinstance(counters, dict):
+                counters.update(last_rx=0, last_tx=0)
+        mutate_traffic(reset)
