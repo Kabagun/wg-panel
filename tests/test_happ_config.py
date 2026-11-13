@@ -60,7 +60,9 @@ def test_preserves_wireguard_identity_transport_and_dns():
         ("127.0.0.1", 10809, "http"),
     ]
     assert output["inbounds"][0]["settings"]["udp"] is True
-    assert all(inbound["sniffing"]["routeOnly"] for inbound in output["inbounds"])
+    # The SOCKS destination must become the sniffed hostname as well: a TUN
+    # IPv6 literal cannot be converted by the direct outbound's ForceIPv4.
+    assert all(inbound["sniffing"]["routeOnly"] is False for inbound in output["inbounds"])
     assert [(out["tag"], out["protocol"]) for out in output["outbounds"]] == [
         ("vpn", "wireguard"),
         ("direct", "freedom"),
@@ -214,15 +216,22 @@ def test_modes_and_rule_priority(mode, countries, default):
     assert not any("domain" in rule and "ip" in rule for rule in rules)
 
 
-def test_family_dns_is_protected_before_lan_bypass_without_public_fallback():
+@pytest.mark.parametrize("mode", MODES)
+def test_family_dns_is_protected_before_lan_bypass_without_public_fallback(mode):
     config = WG.replace("9.9.9.9, 149.112.112.112", "10.8.0.1")
-    output = build(config, safe=True)
+    output = build(config, mode=mode, safe=True)
     assert output["dns"]["servers"] == ["10.8.0.1"]
     assert output["outbounds"][0]["settings"]["remoteDNS"] == ["10.8.0.1"]
     rules = output["routing"]["rules"]
     assert rules[2]["ip"] == ["10.8.0.1/32"] and rules[2]["outboundTag"] == "vpn"
-    assert rules[3]["outboundTag"] == "direct" and "10.0.0.0/8" in rules[3]["ip"]
-    assert not any(public in json.dumps(output) for public in ("1.1.1.1", "8.8.8.8", "9.9.9.9"))
+    lan_index = next(i for i,r in enumerate(rules) if '10.0.0.0/8' in r.get('ip',[]))
+    assert lan_index > 2 and rules[lan_index]['outboundTag'] == 'direct'
+    dns_out = next(out for out in output['outbounds'] if out['tag']=='dns-out')
+    assert dns_out['settings']['rewriteAddress'] == '10.8.0.1'
+    assert dns_out['settings']['rules'] == [{'action': 'direct'}]
+    assert dns_out['streamSettings']['sockopt']['dialerProxy'] == 'vpn'
+    # Public resolver IPs in block rules are not DNS fallbacks.
+    assert output['dns']['servers'] == [dns_out['settings']['rewriteAddress']]
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -236,8 +245,7 @@ def test_raw_dns_is_rewritten_to_exported_resolver_for_every_mode(mode):
         "rules": [{"action": "direct"}],
     }
     assert dns_outbound["streamSettings"]["sockopt"]["dialerProxy"] == "vpn"
-    # The DNS outbound preserves both original transports. Its unconditional
-    # rule forwards all qtypes, including TXT and HTTPS, instead of empty replies.
+    # Preserve both transports and all query types without synthesizing replies.
     assert "rewriteNetwork" not in dns_outbound["settings"]
     rules = output["routing"]["rules"]
     assert rules[0]["inboundTag"] == [output["dns"]["tag"]]
@@ -250,15 +258,58 @@ def test_raw_dns_is_rewritten_to_exported_resolver_for_every_mode(mode):
     }
 
 
-@pytest.mark.parametrize("mode", MODES[1:])
-def test_family_split_modes_fail_closed(mode):
-    with pytest.raises(ValueError, match="requires full-tunnel"):
-        build(mode=mode, safe=True)
+def first_route(output, *, host, port, domain=None, network='tcp'):
+    """Evaluate only literal/domain rules relevant to DNS guard priority."""
+    for rule in output['routing']['rules']:
+        if 'inboundTag' in rule:
+            continue
+        if 'network' in rule and network not in rule['network'].split(','):
+            continue
+        if 'port' in rule and str(port) != rule['port']:
+            continue
+        if 'domain' in rule and not any(
+            domain is not None and (domain == value[7:] or domain.endswith('.'+value[7:]))
+            for value in rule['domain'] if value.startswith('domain:')
+        ):
+            continue
+        if 'ip' in rule and not any(
+            not value.startswith('geoip:') and ipaddress.ip_address(host) in ipaddress.ip_network(value)
+            for value in rule['ip']
+        ):
+            continue
+        return rule['outboundTag']
+    raise AssertionError('No matching literal/domain rule')
 
 
-def test_family_rejects_underlying_split_wireguard():
+@pytest.mark.parametrize('mode', MODES)
+@pytest.mark.parametrize('network', ['tcp','udp'])
+def test_family_split_modes_keep_dns_and_block_known_encrypted_dns_before_bypasses(mode, network):
+    config = WG.replace('9.9.9.9, 149.112.112.112','10.8.0.1')
+    # Deliberately overlapping proxy rules must not override DNS restrictions.
+    output = build(config, mode=mode, rules=['1.1.1.1','10.8.0.0/16','dns.google'], safe=True)
+    assert first_route(output,host='1.1.1.1',port=53,network=network) == 'dns-out'
+    assert first_route(output,host='10.8.0.1',port=53,network=network) == 'dns-out'
+    assert first_route(output,host='10.8.0.1',port=443,network=network) == 'vpn'
+    assert first_route(output,host='192.168.1.1',port=853,network=network) == 'block'
+    assert first_route(output,host='1.1.1.1',port=443,network=network) == 'block'
+    assert first_route(output,host='2606:4700:4700::1111',port=443,network=network) == 'block'
+    assert first_route(output,host='203.0.113.5',domain='dns.google',port=443,network=network) == 'block'
+    assert first_route(output,host='203.0.113.5',domain='child.cloudflare-dns.com',port=443,network=network) == 'block'
+    assert first_route(output,host='192.168.1.1',port=443,network=network) == 'direct'
+    assert output['routing']['rules'][-1]['outboundTag'] == ('direct' if mode=='custom' else 'vpn')
+
+
+def test_ordinary_smart_mode_does_not_apply_family_encrypted_dns_blocks():
+    output = build(mode='custom')
+    assert first_route(output,host='1.1.1.1',port=443) == 'direct'
+    assert first_route(output,host='192.168.1.1',port=853) == 'direct'
+    assert first_route(output,host='203.0.113.5',domain='dns.google',port=443) == 'direct'
+
+
+@pytest.mark.parametrize('mode',MODES)
+def test_family_rejects_underlying_split_wireguard(mode):
     with pytest.raises(ValueError, match="full-tunnel WireGuard"):
-        build(WG.replace("0.0.0.0/0, ::/0", "0.0.0.0/1, 128.0.0.0/2, ::/0"), safe=True)
+        build(WG.replace("0.0.0.0/0, ::/0", "0.0.0.0/1, 128.0.0.0/2, ::/0"), mode=mode, safe=True)
 
 
 @pytest.mark.parametrize(

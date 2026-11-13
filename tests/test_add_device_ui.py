@@ -171,14 +171,18 @@ def test_invalid_name_stays_on_selected_form_and_is_escaped(runtime):
     assert not runtime.calls
 
 
-def test_locked_account_is_not_promised_selective_happ_modes(runtime):
+def test_family_account_can_choose_all_happ_modes_without_changing_dns_policy(runtime):
     enable_member(runtime)
     account_policy.save_account_policies({"alice": {"safe_internet_locked": True}})
     page = DashboardHTML(browser().get("/add", headers={"Accept-Language": "ru"}).get_data(as_text=True))
     modern, = page.with_class("vpn-choice-happ")
-    assert t("vpn_happ_locked", "ru") in modern["text"]
-    assert t("vpn_happ_modes", "ru") not in modern["text"]
-    assert 'name="safe_internet"' not in browser().get("/add?client_app=happ").get_data(as_text=True)
+    assert t("vpn_happ_modes", "ru") in modern["text"]
+    detail = browser().get("/add?client_app=happ",headers={'Accept-Language':'ru'}).get_data(as_text=True)
+    assert t('happ_modes_family_dns','ru') in detail
+    for key in ('happ_mode_all','happ_mode_custom','happ_mode_by_ru_direct'):
+        assert t(key,'ru') in detail
+    assert 'name="safe_internet"' not in detail
+    assert account_policy.load_account_policies() == {'alice':{'safe_internet_locked':True}}
 
 
 @pytest.mark.parametrize("available", [False,True])

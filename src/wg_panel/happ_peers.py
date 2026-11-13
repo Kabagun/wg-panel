@@ -203,8 +203,6 @@ def mode_mapping(parent_name):
         device = wireguard.get_device(parent_name)
         if not device:
             raise ValueError(_ERROR)
-        if device["safe_internet"]:
-            return {"all": parent_name}
         children = children_for_parent(parent_name)
         names = traffic.load_device_meta()[parent_name].get("happ_transports", {}).get("peers", {})
         if len(children) != len(CHILD_MODES) or set(names) != set(CHILD_MODES):
@@ -253,8 +251,6 @@ def ensure_mode_peers(parent_name):
     """Explicitly allocate two fresh inactive peers, enforce DNS, then activate."""
     with core._wireguard_lock:
         meta, parent, _user, parent_identity, binding = _parent(parent_name, active=True)
-        if wireguard.get_device(parent_name)["safe_internet"]:
-            return {"all": parent_name}
         if "happ_transports" in parent:
             return mode_mapping(parent_name)
         if any(record.get("happ_parent") == parent_name for record in meta.values()):
@@ -283,7 +279,8 @@ def ensure_mode_peers(parent_name):
                         or identity["address"] == parent_identity["address"]):
                     raise ValueError(_ERROR)
                 record = {"owner": parent["owner"], "device": name, "vpn_type": "wireguard",
-                          "safe_internet": False, "happ_pilot": True, "happ_transport_internal": True,
+                          "safe_internet": wireguard.get_device(parent_name)["safe_internet"],
+                          "happ_pilot": True, "happ_transport_internal": True,
                           "happ_parent": parent_name, "happ_mode": mode,
                           "happ_parent_fingerprint": binding, "happ_config_sha256": identity["sha256"],
                           "provisioning": True}

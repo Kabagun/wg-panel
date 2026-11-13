@@ -252,6 +252,10 @@ def _safe_dns_ips(meta, excluded=None, override=None, policies=None):
         if name in infrastructure or name == excluded or item.get("revoked"):
             continue
         enabled = effective_safe_internet(item, policies)
+        if item.get('happ_transport_internal'):
+            # Internal mode peers inherit protection even for a legacy
+            # device-level lock, before an owner-wide policy was established.
+            enabled = enabled or effective_safe_internet(meta.get(item.get('happ_parent'), {}), policies)
         if override and name in override:
             enabled = bool(override[name]) or account_safe_internet_locked(item.get("owner"), policies)
         if not enabled:

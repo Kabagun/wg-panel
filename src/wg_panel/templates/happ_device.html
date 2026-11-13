@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% from 'components.html' import flashes, pause_notice, deletion_badge with context %}
+{% from 'happ_modes.html' import modes_guide with context %}
 {% block content %}
 <div class="device-workspace happ-workspace">
   <a class="back-link" href="{{ url_for('dashboard') }}">{{ icon('back', 17) }}{{ tr('ui_back_devices') }}</a>
@@ -33,6 +34,8 @@
     <p class="field-help happ-private-note">{{ icon('lock', 15) }}{{ tr('happ_private_subscription') }}</p>
     <details class="happ-private-details"><summary>{{ tr('happ_show_subscription') }}</summary><pre id="happ-subscription-url"><code>{{ subscription_url }}</code></pre></details>
   </section>
+
+  {{ modes_guide('happ-device-modes', device.safe_internet) }}
 
   <section class="panel happ-rules-panel" aria-labelledby="happ-rules-title">
     {% if shared_rules|default(false) %}
@@ -79,7 +82,6 @@
       <div class="happ-mode-controls"><select id="happ-mode" name="mode" aria-describedby="happ-mode-help">{% for option in modes %}<option value="{{ option.id }}"{% if mode == option.id %} selected{% endif %}{% if not option.enabled %} disabled{% endif %}>{{ tr(option.title_key) }}</option>{% endfor %}</select><button type="submit" class="button secondary">{{ tr('happ_mode_apply') }}</button></div>
       <p class="field-help" id="happ-mode-help">{{ tr('happ_mode_custom_private_help' if mode == 'custom' and not shared_rules|default(false) else 'happ_mode_' ~ (mode|replace('-', '_')) ~ '_help') }}</p>
     </form>
-    {% if device.safe_internet %}<p class="happ-protected-note">{{ icon('shield', 18) }}<span>{{ tr('happ_protected_modes_note' if modes|selectattr('enabled')|list|length == 1 else 'happ_protected_dns_note') }}</span></p>{% endif %}
     <button type="button" class="button secondary" data-copy-target="happ-config-block" data-copy-success="{{ tr('happ_config_copied') }}" data-copy-error="{{ tr('happ_copy_error') }}">{{ icon('copy', 18) }}{{ tr('happ_copy_json') }}</button>
     <a class="button secondary" href="{{ url_for('download_happ_device', wg_name=wg_name, mode=mode, transport=transport) if transport_options|default([]) and transport|default('') else url_for('download_happ_device', wg_name=wg_name, mode=mode) }}">{{ icon('down', 18) }}{{ tr('happ_download_preview') }}</a>
     <p class="copy-toast" data-copy-status role="status" aria-live="polite"></p>

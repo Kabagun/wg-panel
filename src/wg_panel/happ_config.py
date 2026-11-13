@@ -244,7 +244,7 @@ def _parse_wireguard(text: str) -> _WireGuard:
         raise ValueError(_WG_ERROR) from None
 
 
-def _routing(mode: str, proxy_rules: list[str], dns: list[str]) -> dict:
+def _routing(mode: str, proxy_rules: list[str], dns: list[str], *, safe_internet=False) -> dict:
     def rule(tag: str, **conditions) -> dict:
         return {"type": "field", **conditions, "outboundTag": tag}
 
@@ -253,6 +253,18 @@ def _routing(mode: str, proxy_rules: list[str], dns: list[str]) -> dict:
         rule("dns-out", network="tcp,udp", port="53"),
         rule("vpn", ip=[str(ipaddress.ip_network(ip)) for ip in dns]),
     ]
+    if safe_internet:
+        # Split traffic still resolves through the account's family DNS.
+        # Keep common encrypted-resolver bypasses ahead of every direct rule.
+        from .happ_transports import _DOH_IPS
+        rules.extend([
+            rule('block', network='tcp,udp', port='853'),
+            rule('block', network='tcp,udp', port='443', ip=list(_DOH_IPS)),
+            rule('block', domain=['domain:' + host for host in (
+                'dns.google', 'cloudflare-dns.com', 'mozilla.cloudflare-dns.com',
+                'dns.quad9.net', 'doh.opendns.com', 'dns.nextdns.io',
+                'dns.adguard-dns.com', 'dns.adguard.com')]),
+        ])
     domains = [value for value in proxy_rules if value.startswith("domain:")]
     networks = [value for value in proxy_rules if not value.startswith("domain:")]
     if domains:
@@ -277,8 +289,7 @@ def build_happ_config(
 ) -> dict:
     """Build a standalone Xray configuration without altering the WG identity.
 
-    Safe internet currently permits only ``all``. This check must remain until
-    client-side DNS enforcement with direct traffic has been verified.
+    Safe internet keeps the same protected resolver in every routing mode.
     DNS and WireGuard failures have no direct/public resolver fallback. Raw
     plaintext DNS is rewritten to the first exported resolver through the VPN;
     callers supply the central server resolver in the rendered WG DNS field.
@@ -287,8 +298,6 @@ def build_happ_config(
         raise ValueError("Unsupported routing mode")
     if not isinstance(safe_internet, bool):
         raise ValueError("Invalid Safe internet setting")  # noqa: TRY004 - public ValueError API
-    if safe_internet and mode != "all":
-        raise ValueError("Safe internet currently requires full-tunnel mode")
     if (
         not isinstance(proxy_rules, list)
         or len(proxy_rules) > MAX_PROXY_RULES
@@ -317,7 +326,10 @@ def build_happ_config(
     }
     if wg.mtu is not None:
         settings["mtu"] = wg.mtu
-    sniffing = {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True}
+    # Happ TUN can pass a literal IPv6 destination into SOCKS. Retain the
+    # sniffed hostname for dialing too, so ForceIPv4 resolves it through the
+    # account DNS instead of leaving an unusable IPv6 literal unchanged.
+    sniffing = {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": False}
     return {
         "remarks": remarks,
         "log": {"loglevel": "warning"},
@@ -356,12 +368,11 @@ def build_happ_config(
                 "settings": {
                     "rewriteAddress": wg.dns[0],
                     "rewritePort": 53,
-                    # A bare DNS outbound hijacks A/AAAA and returns empty
-                    # answers for other query types. Forward every type intact.
+                    # Preserve every query type through the account resolver.
                     "rules": [{"action": "direct"}],
                 },
                 "streamSettings": {"sockopt": {"dialerProxy": "vpn"}},
             },
         ],
-        "routing": _routing(mode, normalized, wg.dns),
+        "routing": _routing(mode, normalized, wg.dns, safe_internet=safe_internet),
     }

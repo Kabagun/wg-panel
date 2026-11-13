@@ -242,7 +242,7 @@ def rotate_subscription(wg_name):
 
 
 def subscription_modes(device):
-    return ('all',) if device['safe_internet'] else BUNDLE_MODES
+    return BUNDLE_MODES
 
 
 def _central_config(device, transport_name=None, *, dns=None):
@@ -281,8 +281,6 @@ def exported_config(device, mode, rules, transport='wireguard'):
         raise HappStateError('unavailable')
     peer_name = device['wg_name']
     if mode != 'all':
-        if device['safe_internet']:
-            raise HappStateError('unavailable')
         mapping = happ_peers.mode_mapping(device['wg_name'])
         peer_name = mapping['custom' if mode == 'custom' else 'by-ru-direct']
     return _export_config(device, mode, rules, _central_config(device, peer_name), transport)
@@ -294,8 +292,7 @@ def exported_bundle(device, rules):
         if happ_peers.is_internal(device) or device.get('happ_transport_deleting'):
             raise HappStateError('unavailable')
         modes = subscription_modes(device)
-        mapping = ({'all': device['wg_name']} if device['safe_internet']
-                   else happ_peers.mode_mapping(device['wg_name']))
+        mapping = happ_peers.mode_mapping(device['wg_name'])
         from .happ_runtime import transport_options
         return [_export_config(device, mode, rules, _central_config(device, mapping[mode]), option['id'])
                 for option in transport_options(device) if option['available'] for mode in modes]

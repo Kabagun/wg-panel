@@ -192,7 +192,10 @@ def test_collision_is_not_adopted_or_rolled_back(runtime):
 
 
 @pytest.mark.parametrize("stage", ["dns", "resume"])
-def test_failed_provision_rolls_back_only_new_children_and_preserves_parent(runtime, stage):
+@pytest.mark.parametrize('family',[False,True])
+def test_failed_provision_rolls_back_only_new_children_and_preserves_parent(runtime, stage, family):
+    if family:
+        traffic.mutate_device_meta(lambda meta: meta[PARENT].update(safe_internet=True))
     original = (runtime.clients / f"{PARENT}.conf").read_bytes()
     if stage == "dns":
         runtime.failures["dns"] = 2
@@ -204,6 +207,7 @@ def test_failed_provision_rolls_back_only_new_children_and_preserves_parent(runt
     assert (runtime.clients / f"{PARENT}.conf").read_bytes() == original
     assert traffic.load_device_meta()[PARENT].get("happ_transports") is None
     assert runtime.active == {PARENT}
+    assert wireguard._safe_dns_ips(traffic.load_device_meta()) == (['10.0.0.2'] if family else [])
     assert not any(event[:2] == ("remove-client.sh", PARENT) for event in runtime.events)
 
 
@@ -251,17 +255,37 @@ def test_account_pause_resume_and_delete_include_children(runtime):
     assert not traffic.load_device_meta()
 
 
-def test_family_parent_needs_no_children_and_no_split_export(runtime):
-    traffic.mutate_device_meta(lambda meta: meta[PARENT].update(safe_internet=True))
-    assert happ_peers.ensure_mode_peers(PARENT) == {"all": PARENT}
-    assert not runtime.events
+@pytest.mark.parametrize('protection', ['device','account'])
+def test_family_parent_gets_distinct_mode_peers_with_same_central_dns(runtime, protection):
+    original = (runtime.clients/f'{PARENT}.conf').read_bytes()
+    if protection == 'device':
+        traffic.mutate_device_meta(lambda meta: meta[PARENT].update(safe_internet=True))
+    else:
+        account_policy.save_account_policies({'alice':{'safe_internet_locked':True}})
+    mapping = happ_peers.ensure_mode_peers(PARENT)
+    assert set(mapping) == {'all','custom','by-ru-direct'}
+    assert happ_peers.mode_mapping(PARENT) == mapping
+    assert all(traffic.load_device_meta()[name]['safe_internet'] is True for name in mapping.values() if name!=PARENT)
     bundle = happ_pilot.exported_bundle(wireguard.get_device(PARENT), [])
-    assert len(bundle) == 1
-    assert bundle[0]["dns"]["servers"] == ["10.0.0.1"]
-    assert bundle[0]["outbounds"][0]["settings"]["remoteDNS"] == ["10.0.0.1"]
-    assert wireguard._safe_dns_ips(traffic.load_device_meta()) == ["10.0.0.2"]
-    with pytest.raises(ValueError):
-        happ_pilot.exported_config(wireguard.get_device(PARENT), "custom", [])
+    assert len(bundle) == 3
+    settings = [item['outbounds'][0]['settings'] for item in bundle]
+    assert len({item['secretKey'] for item in settings}) == 3
+    assert len({tuple(item['address']) for item in settings}) == 3
+    assert all(item['dns']['servers'] == ['10.0.0.1'] for item in bundle)
+    assert all(item['remoteDNS'] == ['10.0.0.1'] for item in settings)
+    assert set(wireguard._safe_dns_ips(traffic.load_device_meta())) == {'10.0.0.2','10.0.0.3','10.0.0.4'}
+    dns_index = max(i for i,event in enumerate(runtime.events) if event[0]=='dns')
+    assert dns_index < min(i for i,event in enumerate(runtime.events) if event[0]=='set-client-state.sh' and event[-1]=='resume')
+    assert (runtime.clients/f'{PARENT}.conf').read_bytes() == original
+
+
+def test_legacy_device_level_family_flag_protects_already_created_children(runtime):
+    mapping = happ_peers.ensure_mode_peers(PARENT)
+    assert wireguard._safe_dns_ips(traffic.load_device_meta()) == []
+    traffic.mutate_device_meta(lambda meta: meta[PARENT].update(safe_internet=True))
+    assert all(traffic.load_device_meta()[child]['safe_internet'] is False for mode,child in mapping.items() if mode!='all')
+    assert set(wireguard._safe_dns_ips(traffic.load_device_meta())) == {'10.0.0.2','10.0.0.3','10.0.0.4'}
+    assert all(config['dns']['servers']==['10.0.0.1'] for config in happ_pilot.exported_bundle(wireguard.get_device(PARENT),[]))
 
 
 def test_traffic_children_roll_up_deltas_independently_and_resets_preserve_history(runtime, monkeypatch):

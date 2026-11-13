@@ -128,9 +128,9 @@ def test_dashboard_happ_type_and_bundle_do_not_become_wireguard_when_creation_is
 def render_detail(username="pilot-member", *, options=None, locked=False, lang="en"):
     context = {
         "device": {"device": "synthetic-phone", "safe_internet": locked}, "wg_name": "pilot-happ",
-        "mode": "all" if locked else "custom",
+        "mode": "custom",
         "modes": [{"id": mode, "title_key": "happ_mode_" + mode.replace("-", "_"),
-                "enabled": not locked or mode == "all"} for mode in ("all", "custom", "by-ru-direct")],
+                "enabled": True} for mode in ("all", "custom", "by-ru-direct")],
         "rules_text": "example.org", "proxy_rules": ["domain:example.org"], "rules_revision": "a" * 64,
         "config_json": '{"remarks":"synthetic"}', "qr": None,
         "subscription_url": "https://vpn.example.org/sub/synthetic/bundle",
@@ -166,7 +166,7 @@ def test_transport_mode_preview_uses_backend_inventory_and_keeps_bundle_unfilter
     assert "disabled" in by_id["hysteria2"]["attrs"]
     assert set(by_id) == {item["id"] for item in inventory}
     links = [node["attrs"]["href"] for node in page.nodes if node["tag"] == "a"]
-    mode = "all" if locked else "custom"
+    mode = "custom"
     assert f"/device/pilot-happ/happ/{mode}/download?transport=vless-reality" in links
     assert "/device/pilot-happ/happ/bundle/download" in links
     assert not any("bundle/download?transport=" in link for link in links)
@@ -175,12 +175,12 @@ def test_transport_mode_preview_uses_backend_inventory_and_keeps_bundle_unfilter
     assert 'href="/admin/' not in body
     assert "WireGuard VPN</span>" not in body
     assert not [node for node in page.nodes if node["attrs"].get("name") in {"ping", "interval", "update_interval"}]
-    if locked:
-        assert t("happ_protected_modes_note", lang) in unescape(body)
-        mode_select, = [node for node in page.nodes if node["tag"] == "select"
-                        and node["attrs"].get("name") == "mode"]
-        assert len([node for node in page.within(mode_select) if node["tag"] == "option"
-                    and "disabled" in node["attrs"]]) == 2
+    assert t('happ_modes_family_dns' if locked else 'happ_modes_account_dns',lang) in unescape(body)
+    mode_select, = [node for node in page.nodes if node["tag"] == "select"
+                    and node["attrs"].get("name") == "mode"]
+    mode_options = [node for node in page.within(mode_select) if node['tag']=='option']
+    assert {node['attrs']['value'] for node in mode_options} == {'all','custom','by-ru-direct'}
+    assert not any('disabled' in node['attrs'] for node in mode_options)
 
 
 def test_legacy_detail_does_not_advertise_unconfigured_transports(runtime):

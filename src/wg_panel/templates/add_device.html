@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% from 'components.html' import heading, flashes with context %}
+{% from 'happ_modes.html' import modes_guide with context %}
 {% macro features(client) %}
 <ul class="vpn-choice-features">
   {% if client == 'wireguard' %}
@@ -7,7 +8,7 @@
   <li>{{ icon('config', 18) }}<span>{{ tr('vpn_classic_manual') }}</span></li>
   <li>{{ icon('devices', 18) }}<span>{{ tr('vpn_classic_import') }}</span></li>
   {% else %}
-  <li>{{ icon('globe', 18) }}<span>{{ tr('vpn_happ_locked' if account_locked else 'vpn_happ_modes') }}</span></li>
+  <li>{{ icon('globe', 18) }}<span>{{ tr('vpn_happ_modes') }}</span></li>
   <li>{{ icon('shield', 18) }}<span>{{ tr('vpn_happ_dns') }}</span></li>
   <li>{{ icon('qr', 18) }}<span>{{ tr('vpn_happ_subscription') }}</span></li>
   {% endif %}
@@ -57,14 +58,14 @@
   <p class="vpn-choice-footnote">{{ tr('vpn_transport_note' if happ_available|default(false) else 'vpn_classic_only_note') }}</p>
   <div class="vpn-download-grid{{ ' is-single' if not happ_available|default(false) else '' }}">{{ downloads('wireguard') }}{% if happ_available|default(false) %}{{ downloads('happ') }}{% endif %}</div>
   {% else %}
+  {% if selected_client == 'happ' %}{{ modes_guide('happ-create-modes', account_locked, true) }}{% endif %}
   <div class="vpn-name-layout">
     <section class="panel form-panel vpn-name-panel" aria-labelledby="vpn-selected-title">
       <div class="vpn-selected-method"><span class="form-icon">{{ icon('shield' if selected_client == 'wireguard' else 'globe', 29) }}</span><div><p class="eyebrow">{{ tr('vpn_selected_method') }}</p><h2 id="vpn-selected-title">{{ tr('vpn_classic_title' if selected_client == 'wireguard' else 'vpn_happ_title') }}</h2></div></div>
       <p class="happ-panel-intro">{{ tr('vpn_classic_desc' if selected_client == 'wireguard' else 'vpn_happ_desc') }}</p>
-      {% if selected_client == 'happ' and account_locked %}<p class="notice" role="note">{{ tr('vpn_happ_locked') }}</p>{% endif %}
       <form method="post" action="{{ url_for('add_device') }}" class="form-stack">
         {{ csrf() }}<input type="hidden" name="client_app" value="{{ selected_client }}">
-        <label for="device">{{ tr('ui_device_name') }}</label><input id="device" name="device" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]|[a-z0-9]" maxlength="64" placeholder="my-phone" value="{{ request.form.get('device', '') }}" aria-describedby="name-help" required autofocus><p class="field-help" id="name-help">{{ tr('ui_name_hint') }}</p>
+        <label for="device">{{ tr('ui_device_name') }}</label><input id="device" name="device" pattern="[a-z0-9][a-z0-9_-]*[a-z0-9]|[a-z0-9]" maxlength="64" placeholder="my-phone" value="{{ request.form.get('device', '') }}" aria-describedby="name-help" required{% if selected_client == 'wireguard' %} autofocus{% endif %}><p class="field-help" id="name-help">{{ tr('ui_name_hint') }}</p>
         <div class="form-actions"><button class="button primary" type="submit">{{ icon('plus', 18) }}{{ tr('ui_create') }}</button><a class="button secondary" href="{{ url_for('add_device') }}">{{ tr('vpn_change_method') }}</a></div>
       </form>
     </section>

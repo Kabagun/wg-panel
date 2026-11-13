@@ -36,7 +36,7 @@ def _pilot_device(wg_name, *, public=False):
 
 def _mode(device):
     mode = request.values.get('mode', 'all' if device['safe_internet'] else 'custom')
-    if mode not in MODES or (device['safe_internet'] and mode != 'all'):
+    if mode not in MODES:
         abort(404)
     return mode
 
@@ -59,7 +59,7 @@ def _subscription_url(device, user, mode):
 
 
 def _valid_export_mode(device, mode):
-    return mode == 'bundle' or (mode in MODES and (not device['safe_internet'] or mode == 'all'))
+    return mode == 'bundle' or mode in MODES
 
 
 @core.app.route('/admin/happ-pilot', methods=['GET', 'POST'], endpoint='happ_pilot')
@@ -107,7 +107,7 @@ def view_happ_device(wg_name):
     return render_page('happ_device.html', 'happ_title', device=device, wg_name=wg_name,
                        transport=transport, transport_options=transport_options(device),
                        mode=mode, modes=[{'id': key, 'title_key': 'happ_mode_' + key.replace('-', '_'),
-                                         'enabled': not device['safe_internet'] or key == 'all'}
+                                         'enabled': True}
                                         for key in happ_pilot.BUNDLE_MODES], proxy_rules=rules,
                        rules_text='\n'.join(rule.removeprefix('domain:') for rule in rules)
                        if shared_context['shared_rules'] else '\n'.join(rules), rules_revision=revision,
@@ -128,6 +128,9 @@ def _response(device, mode, rules):
     response.headers['profile-title'] = 'VPN modes' if mode == 'bundle' else f'Happ pilot - {mode}'
     response.headers['profile-update-interval'] = '1'
     response.headers['tun-enable'] = '1'
+    # Happ's native TUN feeds the configured sniffing SOCKS inbound. The
+    # desktop Xray TUN injected into JSON configs skips those domain rules.
+    response.headers['tun-type'] = 'default'
     return response
 
 

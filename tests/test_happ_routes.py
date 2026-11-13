@@ -191,6 +191,7 @@ def test_ordinary_public_subscription_exports_public_dns_and_hourly_import_heade
     assert response.mimetype == "application/json"
     assert "attachment;" in response.headers["Content-Disposition"]
     assert response.headers["tun-enable"] == "1"
+    assert response.headers['tun-type'] == 'default'
     assert response.headers["profile-update-interval"] == "1"
     assert response.headers["Cache-Control"].startswith("no-store")
     assert response.headers["Referrer-Policy"] == "no-referrer"
@@ -225,6 +226,7 @@ def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runt
     assert response.headers['Cache-Control'].startswith('no-store')
     assert response.headers['profile-title'] == 'VPN modes'
     assert response.headers['tun-enable'] == '1'
+    assert response.headers['tun-type'] == 'default'
     assert 'Set-Cookie' not in response.headers
     bundle = response.get_json()
     assert isinstance(bundle, list) and len(bundle) == 3
@@ -258,19 +260,24 @@ def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runt
     assert browser().get(f'/device/{PILOT}/happ/bundle/download').get_json() == bundle
 
 
-def test_protected_bundle_exports_only_full_tunnel_without_geo_bypass(runtime):
+def test_protected_bundle_exports_all_three_modes_with_same_family_dns(runtime):
     account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
     response = browser(None).get(subscription(mode='bundle'))
     assert response.status_code == 200
-    assert response.get_json() == [browser(None).get(subscription(mode='all')).get_json()]
-    config = response.get_json()[0]
-    assert config['dns']['servers'] == ['10.8.0.1']
-    vpn, = [item for item in config['outbounds'] if item['tag'] == 'vpn']
-    assert vpn['settings']['remoteDNS'] == ['10.8.0.1']
+    bundle = response.get_json()
+    assert len(bundle) == 3
+    for mode,config in zip(happ_pilot.BUNDLE_MODES,bundle,strict=True):
+        assert config == browser(None).get(subscription(mode=mode)).get_json()
+        assert config['dns']['servers'] == ['10.8.0.1']
+        vpn, = [item for item in config['outbounds'] if item['tag'] == 'vpn']
+        assert vpn['settings']['remoteDNS'] == ['10.8.0.1']
+        assert any(rule.get('port')=='853' and rule['outboundTag']=='block' for rule in config['routing']['rules'])
+    assert len({config['outbounds'][0]['settings']['secretKey'] for config in bundle}) == 3
+    assert bundle[1]['routing']['rules'][-1]['outboundTag'] == 'direct'
     assert response.headers['profile-update-interval'] == '1'
     routing = json.loads(base64.b64decode(
         response.headers['routing'].removeprefix('happ://routing/onadd/')))
-    assert not any(ip.startswith('geoip:') for ip in routing['DirectIp'])
+    assert {'geoip:by','geoip:ru'} <= set(routing['DirectIp'])
     assert routing['GlobalProxy'] == 'true'
     assert routing['RemoteDNSIP'] == routing['DomesticDNSIP'] == '10.8.0.1'
 
@@ -377,11 +384,15 @@ def test_wrong_or_malformed_subscription_credentials_fail_closed(runtime, token)
 
 
 @pytest.mark.parametrize("mode", MODES[1:])
-def test_protected_device_rejects_split_modes_without_downgrading_protection(runtime, mode):
+def test_protected_device_allows_split_modes_without_downgrading_dns_policy(runtime, mode):
     account_policy.save_account_policies({ADMIN: {"safe_internet_locked": True}})
     before = account_policy.load_account_policies()
-    assert browser().get(f"/device/{PILOT}/happ/{mode}/download").status_code == 404
-    assert browser(None).get(subscription(mode=mode)).status_code == 404
+    for response in (browser().get(f"/device/{PILOT}/happ/{mode}/download"),
+                     browser(None).get(subscription(mode=mode))):
+        assert response.status_code == 200
+        config = response.get_json()
+        assert config['dns']['servers'] == ['10.8.0.1']
+        assert config['outbounds'][0]['settings']['remoteDNS'] == ['10.8.0.1']
     assert browser(None).get(subscription(mode="all")).status_code == 200
     assert account_policy.load_account_policies() == before
 
@@ -677,7 +688,7 @@ def test_happ_marker_alone_does_not_enable_family_dns_redirect_or_lock_account(r
     assert wireguard.get_device(PILOT)["safe_internet"] is False
     assert wireguard.get_device(CLASSIC)["safe_internet"] is False
     traffic.mutate_device_meta(lambda meta: meta[PILOT].update(safe_internet=True))
-    assert set(wireguard._safe_dns_ips(traffic.load_device_meta())) == {'10.0.0.2'}
+    assert set(wireguard._safe_dns_ips(traffic.load_device_meta())) == {'10.0.0.2','10.0.0.100','10.0.0.101'}
     account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
     assert set(wireguard._safe_dns_ips(traffic.load_device_meta())) == {
         '10.0.0.2', '10.0.0.3', '10.0.0.6', *(f'10.0.0.{value}' for value in range(100,104)),
@@ -738,12 +749,13 @@ def test_rollout_allows_approved_owner_and_preserves_classic_export(runtime, mon
     assert browser(None).get(subscription(mode='bundle')).status_code == 404
 
 
-def test_family_owner_rollout_still_exports_only_full_tunnel(runtime, monkeypatch):
+def test_family_owner_rollout_exports_three_modes_with_account_dns(runtime, monkeypatch):
     monkeypatch.setitem(app.config, 'HAPP_ROLLOUT_ENABLED', True)
     account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
     bundle = browser(None).get(subscription(mode='bundle'))
-    assert bundle.status_code == 200 and len(bundle.get_json()) == 1
-    assert browser(None).get(subscription(mode='custom')).status_code == 404
+    assert bundle.status_code == 200 and len(bundle.get_json()) == 3
+    assert all(config['dns']['servers']==['10.8.0.1'] for config in bundle.get_json())
+    assert browser(None).get(subscription(mode='custom')).status_code == 200
 
 
 def test_internal_transports_cannot_be_opened_downloaded_or_deleted_in_panel(runtime):
@@ -756,14 +768,18 @@ def test_internal_transports_cannot_be_opened_downloaded_or_deleted_in_panel(run
         assert browser().post(f'/device/{child}/delete', data={'csrf_token': CSRF}).status_code == 302
 
 
+@pytest.mark.parametrize('family',[False,True])
 def test_unprepared_bundle_get_fails_without_provisioning_and_full_tunnel_stays_available(
-    runtime, monkeypatch,
+    runtime, monkeypatch, family,
 ):
+    if family:
+        account_policy.save_account_policies({ADMIN:{'safe_internet_locked':True}})
     def unavailable(_parent):
         raise ValueError('unavailable')
     monkeypatch.setattr(happ_peers, 'mode_mapping', unavailable)
     paths = [*runtime.clients.glob('*.conf'), runtime.data / 'device_meta.json']
     before = {path: path.read_bytes() for path in paths}
     assert browser(None).get(subscription(mode='bundle')).status_code == 503
+    assert browser(None).get(subscription(mode='custom')).status_code == 503
     assert browser(None).get(subscription(mode='all')).status_code == 200
     assert {path: path.read_bytes() for path in paths} == before

@@ -1,0 +1,24 @@
+{% macro modes_guide(guide_id, family_locked=false, creation=false) %}
+<section class="panel happ-modes-guide" aria-labelledby="{{ guide_id }}-title">
+  <div class="happ-modes-heading"><span class="happ-modes-icon">{{ icon('globe', 24) }}</span><div><h2 id="{{ guide_id }}-title">{{ tr('happ_modes_guide_title') }}</h2><p>{{ tr('happ_modes_creation_intro' if creation else 'happ_modes_device_intro') }}</p></div></div>
+  <div class="happ-modes-grid">
+    <article class="happ-mode-card" aria-labelledby="{{ guide_id }}-all">
+      <div class="happ-mode-card-title"><span class="happ-mode-number" aria-hidden="true">01</span><h3 id="{{ guide_id }}-all">{{ tr('happ_mode_all') }}</h3></div>
+      <div class="happ-mode-routes"><p class="happ-mode-route"><span>{{ tr('happ_flow_internet') }}</span>{{ icon('arrow', 18) }}<strong class="happ-route-vpn">VPN</strong></p></div>
+      <p class="happ-mode-explanation">{{ tr('happ_modes_all_note') }}</p>
+    </article>
+    <article class="happ-mode-card" aria-labelledby="{{ guide_id }}-regional">
+      <div class="happ-mode-card-title"><span class="happ-mode-number" aria-hidden="true">02</span><h3 id="{{ guide_id }}-regional">{{ tr('happ_mode_by_ru_direct') }}</h3></div>
+      <div class="happ-mode-routes"><p class="happ-mode-route"><span>{{ tr('happ_flow_regional') }}</span>{{ icon('arrow', 18) }}<strong class="happ-route-direct">{{ tr('happ_flow_direct') }}</strong></p><p class="happ-mode-route"><span>{{ tr('happ_flow_other') }}</span>{{ icon('arrow', 18) }}<strong class="happ-route-vpn">VPN</strong></p></div>
+      <p class="happ-mode-explanation">{{ tr('happ_modes_regional_note') }}</p>
+    </article>
+    <article class="happ-mode-card" aria-labelledby="{{ guide_id }}-smart">
+      <div class="happ-mode-card-title"><span class="happ-mode-number" aria-hidden="true">03</span><h3 id="{{ guide_id }}-smart">{{ tr('happ_mode_custom') }}</h3></div>
+      <div class="happ-mode-routes"><p class="happ-mode-route"><span>{{ tr('happ_flow_admin_list') }}</span>{{ icon('arrow', 18) }}<strong class="happ-route-vpn">VPN</strong></p><p class="happ-mode-route"><span>{{ tr('happ_flow_other') }}</span>{{ icon('arrow', 18) }}<strong class="happ-route-direct">{{ tr('happ_flow_direct') }}</strong></p></div>
+      <p class="happ-mode-explanation">{{ tr('happ_modes_smart_note') }}</p>
+    </article>
+  </div>
+  <p class="happ-modes-dns {{ 'is-family' if family_locked }}">{{ icon('shield', 18) }}<span>{{ tr('happ_modes_family_dns' if family_locked else 'happ_modes_account_dns') }}</span></p>
+  <p class="happ-modes-count">{{ tr('happ_modes_transport_count') }}</p>
+</section>
+{% endmacro %}

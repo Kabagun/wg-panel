@@ -12,10 +12,22 @@ These files, credentials, certificates and infrastructure addresses must never
 be committed. There is no automatic public rollout or removal after seven days.
 
 The panel's Safe internet setting governs Happ too. Protected accounts receive
-the central family DNS and full-tunnel profiles. Ordinary accounts receive
-public unfiltered DNS and the three existing routing modes. Shared Smart VPN
+the central family DNS. Ordinary accounts receive public unfiltered DNS.
+Both receive all three routing modes: full tunnel, BY/RU IP addresses direct,
+and Smart VPN using the administrator's list. Common encrypted DNS endpoints
+are blocked in protected client profiles before direct routing is considered.
+Every mode has its own bound WG identity; modern transports retain per-device
+authentication across modes. Shared Smart VPN
 rules keep their existing publication/update path. Subscription refresh remains
 one hour. Changing account protection never silently unlocks its permanent policy.
+
+Desktop subscriptions select Happ TUN, which passes traffic through the
+configuration's SOCKS inbound with domain sniffing. Verify an actual listed
+domain reaching the VPN server; a successful HTTP response alone is not proof
+that split routing was applied. Current profiles use IPv4 for direct egress.
+Sniffing rewrites the dialing destination to its hostname as well as selecting
+the route, so TUN IPv6 literals do not bypass the outbound's IPv4 resolution.
+All DNS query types are forwarded to the selected account resolver.
 
 Provision the optional runtime only after testing an official Xray binary and
 its release checksum. The reference unit uses `/root/Programs/wg-panel-happ/xray`
