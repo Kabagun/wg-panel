@@ -333,13 +333,32 @@ def build_happ_config(
     # sniffed hostname for dialing too, so ForceIPv4 resolves it through the
     # account DNS instead of leaving an unusable IPv6 literal unchanged.
     sniffing = {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": False}
+    dns_settings = {"servers": [
+        ("tcp://" + (f"[{value}]" if ":" in value else value))
+        if dns_transport == "tcp" else value for value in wg.dns
+    ], "queryStrategy": "UseIPv4", "tag": _DNS_TAG}
+    if dns_transport == "tcp" and len(wg.dns) > 1:
+        # Start the existing TCP resolvers together instead of waiting for one
+        # resolver's deadline before trying the next. No server is added.
+        dns_settings["enableParallelQuery"] = True
+    dns_out_settings = {
+        "rewriteAddress": wg.dns[0],
+        "rewritePort": 53,
+        # Preserve every query type through the account resolver.
+        "rules": [{"action": "direct"}],
+    }
+    if dns_transport == "tcp":
+        # App/TUN A queries share the ForceIPv4 resolver and its cache.
+        # Keep AAAA transparent: UseIPv4 would otherwise synthesize empty replies.
+        dns_out_settings["rules"] = [
+            {"qType": 1, "action": "hijack"},
+            {"action": "direct"},
+        ]
+        dns_out_settings["rewriteNetwork"] = "tcp"
     return {
         "remarks": remarks,
         "log": {"loglevel": "warning"},
-        "dns": {"servers": [
-            ("tcp://" + (f"[{value}]" if ":" in value else value))
-            if dns_transport == "tcp" else value for value in wg.dns
-        ], "queryStrategy": "UseIPv4", "tag": _DNS_TAG},
+        "dns": dns_settings,
         "inbounds": [
             {
                 "tag": "socks-in",
@@ -371,12 +390,7 @@ def build_happ_config(
             {
                 "tag": "dns-out",
                 "protocol": "dns",
-                "settings": {
-                    "rewriteAddress": wg.dns[0],
-                    "rewritePort": 53,
-                    # Preserve every query type through the account resolver.
-                    "rules": [{"action": "direct"}],
-                },
+                "settings": dns_out_settings,
                 "streamSettings": {"sockopt": {"dialerProxy": "vpn"}},
             },
         ],

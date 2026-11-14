@@ -258,6 +258,109 @@ def test_raw_dns_is_rewritten_to_exported_resolver_for_every_mode(mode):
     }
 
 
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("safe", [False, True])
+def test_tcp_dns_uses_cached_ipv4_queries_and_same_resolver_for_other_records(mode, safe):
+    config = WG.replace("9.9.9.9, 149.112.112.112", "10.8.0.1") if safe else WG
+    baseline = build(config, mode=mode, safe=safe)
+    tcp = build_happ_config(
+        config, mode, [], safe_internet=safe, remarks="Pilot", dns_transport="tcp"
+    )
+    resolvers = baseline["dns"]["servers"]
+    expected_dns = {
+        "servers": ["tcp://" + resolver for resolver in resolvers],
+        "queryStrategy": "UseIPv4",
+        "tag": "dns-internal",
+    }
+    if len(resolvers) > 1:
+        expected_dns["enableParallelQuery"] = True
+    assert tcp["dns"] == expected_dns
+    dns_out = next(out for out in tcp["outbounds"] if out["tag"] == "dns-out")
+    assert dns_out["settings"] == {
+        "rewriteAddress": resolvers[0],
+        "rewritePort": 53,
+        "rewriteNetwork": "tcp",
+        # Only A enters the built-in DNS cache. AAAA/MX/TXT/HTTPS and all other
+        # types reach the rewritten resolver without a synthetic empty reply.
+        "rules": [{"qType": 1, "action": "hijack"}, {"action": "direct"}],
+    }
+    assert dns_out["streamSettings"] == {"sockopt": {"dialerProxy": "vpn"}}
+    assert tcp["routing"]["rules"][0] == {
+        "type": "field", "inboundTag": ["dns-internal"], "outboundTag": "vpn"
+    }
+    assert tcp["routing"]["rules"][1] == {
+        "type": "field", "network": "tcp,udp", "port": "53", "outboundTag": "dns-out"
+    }
+    assert tcp["outbounds"][0]["settings"]["remoteDNS"] == resolvers
+    # No resolver, fallback, route, leak guard, or ForceIPv4 change is permitted.
+    normalized = copy.deepcopy(tcp)
+    normalized["dns"]["servers"] = baseline["dns"]["servers"]
+    normalized["dns"].pop("enableParallelQuery", None)
+    next(out for out in normalized["outbounds"] if out["tag"] == "dns-out")["settings"] = (
+        next(out for out in baseline["outbounds"] if out["tag"] == "dns-out")["settings"]
+    )
+    assert normalized == baseline
+
+
+@pytest.mark.parametrize("transport", ["udp", "tcp"])
+@pytest.mark.parametrize("safe", [False, True])
+@pytest.mark.parametrize("resolvers", [["10.8.0.1"], ["10.8.0.1", "10.8.0.3"]])
+def test_parallel_dns_is_only_enabled_for_multiple_existing_tcp_resolvers(transport, safe, resolvers):
+    config = WG.replace("9.9.9.9, 149.112.112.112", ", ".join(resolvers))
+    output = build_happ_config(
+        config, "custom", [], safe_internet=safe, remarks="Pilot", dns_transport=transport
+    )
+    expected_dns = {
+        "servers": ["tcp://" + resolver if transport == "tcp" else resolver for resolver in resolvers],
+        "queryStrategy": "UseIPv4",
+        "tag": "dns-internal",
+    }
+    if transport == "tcp" and len(resolvers) > 1:
+        expected_dns["enableParallelQuery"] = True
+    assert output["dns"] == expected_dns
+    assert output["outbounds"][0]["settings"]["remoteDNS"] == resolvers
+
+
+@pytest.mark.parametrize("qtype", [28, 15, 16, 65])
+def test_tcp_dns_keeps_aaaa_and_non_ip_records_on_transparent_path(qtype):
+    output = build_happ_config(
+        WG, "all", [], safe_internet=False, remarks="Pilot", dns_transport="tcp"
+    )
+    settings = next(out for out in output["outbounds"] if out["tag"] == "dns-out")["settings"]
+    # The first matching rule must transparently forward AAAA, MX, TXT and HTTPS.
+    matching_rule = next(rule for rule in settings["rules"] if rule.get("qType", qtype) == qtype)
+    assert matching_rule == {"action": "direct"}
+    assert settings["rewriteNetwork"] == "tcp"
+
+
+def test_tcp_dns_brackets_ipv6_only_in_internal_server_url():
+    config = WG.replace("Address = 10.8.0.2/32", "Address = fd00::2/128")
+    config = config.replace("9.9.9.9, 149.112.112.112", "2001:db8::53")
+    output = build_happ_config(
+        config, "all", [], safe_internet=True, remarks="Pilot", dns_transport="tcp"
+    )
+    assert output["dns"]["servers"] == ["tcp://[2001:db8::53]"]
+    assert output["outbounds"][0]["settings"]["remoteDNS"] == ["2001:db8::53"]
+    dns_out = next(out for out in output["outbounds"] if out["tag"] == "dns-out")
+    assert dns_out["settings"]["rewriteAddress"] == "2001:db8::53"
+    assert output["routing"]["rules"][2]["ip"] == ["2001:db8::53/128"]
+
+
+def test_explicit_udp_dns_preserves_default_export_bytes():
+    explicit = build_happ_config(
+        WG, "all", [], safe_internet=False, remarks="Pilot", dns_transport="udp"
+    )
+    assert json.dumps(explicit) == json.dumps(build())
+
+
+@pytest.mark.parametrize("transport", [None, "", "TCP", "dot", "udp,tcp", True, []])
+def test_invalid_dns_transport_rejected(transport):
+    with pytest.raises(ValueError, match="Invalid Happ DNS transport"):
+        build_happ_config(
+            WG, "all", [], safe_internet=False, remarks="Pilot", dns_transport=transport
+        )
+
+
 def first_route(output, *, host, port, domain=None, network='tcp'):
     """Evaluate only literal/domain rules relevant to DNS guard priority."""
     for rule in output['routing']['rules']:

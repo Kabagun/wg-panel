@@ -47,7 +47,7 @@ def test_resolver_parser_rejects_non_exported_forms(value):
 
 
 @pytest.mark.parametrize('mode', ['all', 'custom', 'by-ru-direct'])
-def test_tcp_changes_only_internal_dns_transport(mode):
+def test_tcp_changes_only_dns_transport_parallel_lookup_and_a_query_cache_path(mode):
     secret = base64.b64encode(bytes([1]) * 32).decode()
     public = base64.b64encode(bytes([2]) * 32).decode()
     config = (f'[Interface]\nPrivateKey = {secret}\nAddress = 10.8.0.2/32, fd00::2/128\n'
@@ -59,6 +59,19 @@ def test_tcp_changes_only_internal_dns_transport(mode):
     tcp = build_happ_config(config, mode, ['domain:example.test'],
                            safe_internet=True, remarks='Test', dns_transport='tcp')
     assert tcp['dns']['servers'] == ['tcp://192.0.2.53', 'tcp://[2001:db8::53]']
+    assert tcp['dns']['enableParallelQuery'] is True
+    assert 'enableParallelQuery' not in baseline['dns']
+    tcp_out = next(out for out in tcp['outbounds'] if out['tag'] == 'dns-out')
+    assert tcp_out['settings'] == {
+        'rewriteAddress': '192.0.2.53',
+        'rewritePort': 53,
+        'rewriteNetwork': 'tcp',
+        'rules': [{'qType': 1, 'action': 'hijack'}, {'action': 'direct'}],
+    }
     normalized = copy.deepcopy(tcp)
     normalized['dns']['servers'] = baseline['dns']['servers']
+    del normalized['dns']['enableParallelQuery']
+    next(out for out in normalized['outbounds'] if out['tag'] == 'dns-out')['settings'] = (
+        next(out for out in baseline['outbounds'] if out['tag'] == 'dns-out')['settings']
+    )
     assert normalized == baseline
