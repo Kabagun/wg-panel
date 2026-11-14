@@ -2,6 +2,13 @@ The private account-scoped TCP DNS trial applies to both Xray's internal lookups
 and plaintext DNS received from Happ's native TUN. The configured resolvers and
 account family policy are preserved; there is no additional public fallback.
 
+UDP is the normal transport and the preferred starting point. TCP is a diagnostic
+fallback, not an unconditional performance improvement. Through a stream proxy,
+fresh TCP DNS lookups can open new upstream connections for each query. The
+internal cache helps repeated names but does not remove that first-query setup
+cost. Compare both transports through the same native client and the same
+resolver policy before retaining a TCP override.
+
 The private data file `happ_dns_transport.json` has this shape:
 
 ```json
@@ -17,6 +24,8 @@ DNS server. Existing tunnels remain active while the export policy changes.
 Internal DNS servers use TCP URLs such as `tcp://192.0.2.53`, while the native
 Happ routing header retains a plain DNS IP. Internal lookups follow the VPN rule.
 Users must refresh the subscription and reconnect to apply updated exports.
+Changing this private export policy requires no VPN, DNS, or web-service restart;
+it does not modify stored WireGuard configurations or running tunnels.
 
 For TCP exports, A queries enter the internal resolver cache. This lets an app's
 DNS lookup and a later sniffed `ForceIPv4` connection share the same answer.
@@ -61,6 +70,23 @@ and credentials remain intact. Requests submitted to a proxy as hostnames may
 still need resolution to establish the connection. Numeric IPv6 destinations are
 retained too; the existing `ForceIPv4` hostname setting does not translate them.
 Verify actual phone IPv6 reachability before expanding this comparison-only pilot.
+
+Native Happ Tunnel DNS and Xray's JSON DNS are separate settings. For JSON
+subscriptions, Happ uses the provider routing profile's tunnel DNS locally;
+those fields are not injected into the provider JSON. The app's "Use DNS from
+JSON" option concerns the tunnel DNS source. Its disabled state alone is not
+evidence that the JSON `dns` block was removed. See the official
+[Happ routing documentation](https://github.com/HappDev/happ_su/blob/main/dev-docs/routing.md).
+
+When the native client exposes a loopback SOCKS listener, compare a bounded
+public resource through the current TUN and directly into that same core.
+Keep the selected profile and core PID stable; do not start another tunnel or
+core for this check. This separates the TUN front end from the shared core path
+without disconnecting the VPN. TLS sniffing can replace a pinned IP, so retain
+that limitation. A very short local TCP connect time may be tunnel interception,
+not the remote server's RTT. Measure TLS completion, first byte and body transfer
+separately, and do not treat previously cached browser/mail content as a fresh
+application test.
 
 An optional private `reference_control: true` requires `client_dns_only: true`.
 It appends one ordinary Smart control to the admin comparison, preserving the
