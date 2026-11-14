@@ -119,6 +119,7 @@ def view_happ_device(wg_name):
                        config_json=json.dumps(config, ensure_ascii=False, indent=2),
                        subscription_url=subscription_url, import_url=import_url,
                        comparison_bundle=bool(comparison),
+                       comparison_control=bool(comparison and len(comparison['configs']) == 7),
                        qr=happ_pilot.qr_for_link(import_url), owner_paused=False,
                        owner_pause_pending=False, **shared_context)
 
@@ -168,7 +169,8 @@ def _presentation_headers(response, device, comparison):
             panel_base_url=base, device_path=f"/device/{device['wg_name']}/happ",
             usage_month=now.strftime('%Y-%m'), usage_scope='sources' if comparison else 'device',
             usage_started_at=started.astimezone(ZoneInfo('Europe/Minsk')).date().isoformat()
-            if started else None, comparison=bool(comparison))
+            if started else None, comparison=bool(comparison),
+            comparison_control=bool(comparison and len(comparison['configs']) == 7))
     except (ValueError, TypeError, KeyError, OSError):
         # Presentation settings must never make valid VPN configurations unavailable.
         return

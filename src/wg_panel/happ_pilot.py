@@ -341,7 +341,13 @@ def comparison_routing_header(device, configs):
     """One native TUN DNS anchor; each validated JSON retains its own resolver."""
     user = core.load_users().get(device.get('owner'), {})
     if (user.get('role') != 'admin' or device.get('safe_internet')
-            or not isinstance(configs, list) or len(configs) != 6):
+            or not isinstance(configs, list) or len(configs) not in (6, 7)):
+        raise HappStateError('invalid_state')
+    if len(configs) == 7 and any(
+            item.get('routing', {}).get('domainStrategy') != 'AsIs'
+            or not item.get('inbounds')
+            or any(inbound.get('sniffing', {}).get('routeOnly') is not True
+                   for inbound in item['inbounds']) for item in configs):
         raise HappStateError('invalid_state')
     # The family entry anchors native TUN DNS. Every selected JSON rewrites
     # port 53 through its own dns-out before private-IP/direct rules apply.

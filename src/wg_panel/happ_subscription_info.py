@@ -57,7 +57,8 @@ def _panel_links(base_url, device_path):
 
 
 def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
-                  usage_scope, usage_month=None, comparison=False, usage_started_at=None):
+                  usage_scope, usage_month=None, comparison=False, usage_started_at=None,
+                  comparison_control=False):
     """Build up to four standard Happ headers, without expiry or core controls.
 
     Paths are application paths relative to the trusted panel base, including when
@@ -68,7 +69,8 @@ def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
     """
     try:
         if (not isinstance(usage_scope, str) or usage_scope not in _SCOPE
-                or type(comparison) is not bool):
+                or type(comparison) is not bool or type(comparison_control) is not bool
+                or comparison_control and not comparison):
             raise ValueError(_ERROR)
         if usage_started_at is not None:
             if (not isinstance(usage_started_at, str)
@@ -84,6 +86,8 @@ def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
         device_url, support_url = _panel_links(panel_base_url, device_path)
         profiles = ('6 профилей: 3 режима × семейный/обычный DNS.' if comparison else
                     '3 режима: всё через VPN, умный VPN, РБ/РФ напрямую.')
+        if comparison_control:
+            profiles = '7 профилей: 6 для сравнения DNS + контроль UDP без QUIC.'
         announce = f'{profiles} {period}: {_SCOPE[usage_scope]}. Безлимит.'
         if len(announce) > 200:
             raise ValueError(_ERROR)

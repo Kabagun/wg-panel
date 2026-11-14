@@ -56,8 +56,11 @@ def _bindings():
     for name, record in devices.items():
         if not SAFE_NAME_RE.fullmatch(name):
             raise ValueError(_ERROR)
-        _fields(record, ('account_id', 'family'), optional=('client_dns_only',))
-        if 'client_dns_only' in record and not isinstance(record['client_dns_only'], bool):
+        _fields(record, ('account_id', 'family'), optional=('client_dns_only', 'reference_control'))
+        if any(flag in record and not isinstance(record[flag], bool)
+               for flag in ('client_dns_only', 'reference_control')):
+            raise ValueError(_ERROR)
+        if record.get('reference_control', False) and not record.get('client_dns_only', False):
             raise ValueError(_ERROR)
         _account(record['account_id'])
         family = record['family']
@@ -93,8 +96,49 @@ def _source(name, account_id, users, *, family):
     return device, user
 
 
+def _reference_control(source):
+    from .happ_dns import resolver_ip
+
+    config = copy.deepcopy(source)
+    servers = config['dns']['servers']
+    if not isinstance(servers, list) or len(servers) != 2:
+        raise ValueError(_ERROR)
+    resolvers = [resolver_ip(value) for value in reversed(servers)]
+    if len(set(resolvers)) != 2:
+        raise ValueError(_ERROR)
+    config['dns']['servers'] = resolvers
+    config['dns'].pop('enableParallelQuery', None)
+    dns_out, = [out for out in config['outbounds'] if out.get('tag') == 'dns-out']
+    if (dns_out.get('protocol') != 'dns'
+            or dns_out.get('streamSettings', {}).get('sockopt', {}).get('dialerProxy') != 'vpn'):
+        raise ValueError(_ERROR)
+    dns_out['settings'].update(rewriteAddress=resolvers[0], rewriteNetwork='udp', rules=[
+        {'qType': 1, 'action': 'hijack'}, {'action': 'direct'}])
+    rules = config['routing']['rules']
+    if (len(rules) < 4 or rules[0].get('inboundTag') != [config['dns']['tag']]
+            or [rule.get('outboundTag') for rule in rules[:3]] != ['vpn', 'dns-out', 'vpn']
+            or rules[1].get('port') != '53' or 'ip' not in rules[2]
+            or config['routing'].get('domainStrategy') != 'AsIs'
+            or not any(out.get('tag') == 'block' and out.get('protocol') == 'blackhole'
+                       for out in config['outbounds'])):
+        raise ValueError(_ERROR)
+    # Keep internal DNS, plaintext DNS and resolver IP guards ahead of app QUIC.
+    rules.insert(3, {'type': 'field', 'protocol': ['quic'], 'outboundTag': 'block'})
+    for inbound in config.get('inbounds', []):
+        if inbound.get('protocol') in ('socks', 'http'):
+            inbound['tag'] = inbound['protocol'] + '-control-udp'
+    inbound_tags = {inbound['tag'] for inbound in config.get('inbounds', [])}
+    inbound_tags.add(config['dns']['tag'])
+    if any(tag not in inbound_tags for rule in rules for tag in rule.get('inboundTag', [])):
+        raise ValueError(_ERROR)
+    config['remarks'] = 'Контроль · UDP без QUIC'
+    config.setdefault('meta', {})['serverDescription'] = (
+        'Диагностический профиль: обычный DNS по UDP, QUIC отключён.')
+    return config
+
+
 def export_bundle(device):
-    """Return an explicit six-entry comparison, or None for an ordinary subscription.
+    """Return six comparison entries plus an optional control, or None if unbound.
 
     Configured bindings always fail closed. No credentials, source names or account
     identities are included in validation errors or comparison display metadata.
@@ -120,6 +164,7 @@ def export_bundle(device):
             rules = [happ_pilot.get_rules(user['account_id'])[1]
                      for _source_device, user, _label in sources]
             configs = []
+            control_source = None
             for mode, title in _MODES:
                 for index, (source, _user, label) in enumerate(sources):
                     config = copy.deepcopy(happ_pilot.exported_config(source, mode, rules[index]))
@@ -136,6 +181,10 @@ def export_bundle(device):
                     config.setdefault('meta', {})['serverDescription'] = (
                         f'{title}. DNS: {label}.')
                     configs.append(config)
+                    if mode == 'custom' and index == 1:
+                        control_source = config
+            if record.get('reference_control', False):
+                configs.append(_reference_control(control_source))
             return {'configs': configs, 'title': 'Сравнение DNS',
                     'usage_sources': [source['wg_name'] for source, _user, _label in sources]}
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError):

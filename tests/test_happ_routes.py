@@ -443,15 +443,114 @@ def test_comparison_client_dns_opt_in_changes_only_copied_routing_and_sniffing(
 
 
 @pytest.mark.parametrize('flag', [None, 0, 1, 'true', [], {}])
-def test_comparison_client_dns_flag_requires_boolean_before_source_export(runtime, monkeypatch, flag):
+@pytest.mark.parametrize('field', ['client_dns_only', 'reference_control'])
+def test_comparison_flags_require_boolean_before_source_export(runtime, monkeypatch, flag, field):
     from wg_panel import happ_comparison
 
     core.write_json_private(str(runtime.data / 'happ_comparisons.json'), {
         'version': 1, 'devices': {PILOT: {
-            'account_id': 'a' * 64, 'client_dns_only': flag,
+            'account_id': 'a' * 64, field: flag,
             'family': {'wg_name': FOREIGN, 'account_id': 'b' * 64}}}})
     monkeypatch.setattr(happ_pilot, 'exported_config', lambda *_args:
                         pytest.fail('invalid flag must fail before source export'))
+    with pytest.raises(ValueError, match='^Happ comparison unavailable$'):
+        happ_comparison.export_bundle(wireguard.get_device(PILOT))
+
+
+@pytest.mark.parametrize('enabled', [False, True])
+def test_reference_control_appends_only_ordinary_smart_copy_without_mutation(runtime, monkeypatch, enabled):
+    from test_happ_transports import VLESS
+
+    from wg_panel import happ_comparison, happ_runtime
+
+    traffic.mutate_device_meta(lambda meta: meta[FOREIGN].update(safe_internet=True))
+    binding = {'version': 1, 'devices': {PILOT: {
+        'account_id': 'a' * 64, 'client_dns_only': True,
+        'family': {'wg_name': FOREIGN, 'account_id': 'b' * 64}}}}
+    path = runtime.data / 'happ_comparisons.json'
+    core.write_json_private(str(path), binding)
+    core.write_json_private(str(runtime.data / 'happ_dns_transport.json'), {
+        'version': 1, 'accounts': {'a' * 64: 'tcp', 'b' * 64: 'tcp'}})
+    monkeypatch.setattr(happ_runtime, 'transport_options', lambda _device: [
+        {'id': 'vless-reality', 'title': 'VLESS / REALITY', 'available': True}])
+    monkeypatch.setattr(happ_runtime, 'client_settings', lambda item, _transport: {
+        **VLESS, 'uuid': ('d4a79772-9db8-4bdc-a146-63fdd4709975' if item['wg_name'] == PILOT
+                         else 'd4a79772-9db8-4bdc-a146-63fdd4709976')})
+    monkeypatch.setattr(happ_pilot, 'get_rules', lambda account: (
+        1, ['domain:' + account[:1] + '.example.test', '192.0.2.0/24']))
+    users = core.load_users()
+    devices = {name: wireguard.get_device(name) for name in (PILOT, FOREIGN)}
+    source_configs = {
+        (name, mode): happ_pilot.exported_config(
+            device, mode, happ_pilot.get_rules(users[device['owner']]['account_id'])[1])
+        for name, device in devices.items()
+        for mode in happ_pilot.BUNDLE_MODES
+    }
+    sources_before = copy.deepcopy(source_configs)
+    monkeypatch.setattr(happ_pilot, 'exported_config', lambda source, mode, _rules:
+                        source_configs[(source['wg_name'], mode)])
+    baseline = happ_comparison.export_bundle(devices[PILOT])
+    binding['devices'][PILOT]['reference_control'] = enabled
+    core.write_json_private(str(path), binding)
+    files_before = {item: item.read_bytes() for directory in (runtime.data, runtime.clients)
+                    for item in directory.iterdir() if item.is_file()}
+    result = happ_comparison.export_bundle(devices[PILOT])
+    assert json.dumps(result['configs'][:6]) == json.dumps(baseline['configs'])
+    assert result['usage_sources'] == baseline['usage_sources']
+    if not enabled:
+        assert json.dumps(result) == json.dumps(baseline)
+    else:
+        assert len(result['configs']) == 7
+        control = result['configs'][6]
+        ordinary_smart = baseline['configs'][3]
+        expected = copy.deepcopy(ordinary_smart)
+        expected['remarks'] = 'Контроль · UDP без QUIC'
+        expected['meta']['serverDescription'] = (
+            'Диагностический профиль: обычный DNS по UDP, QUIC отключён.')
+        expected['dns']['servers'] = ['8.8.8.8', '1.1.1.1']
+        del expected['dns']['enableParallelQuery']
+        for inbound in expected['inbounds']:
+            inbound['tag'] = inbound['protocol'] + '-control-udp'
+        dns_out = next(out for out in expected['outbounds'] if out['tag'] == 'dns-out')
+        dns_out['settings'].update(rewriteAddress='8.8.8.8', rewriteNetwork='udp')
+        block = {'type': 'field', 'protocol': ['quic'], 'outboundTag': 'block'}
+        expected['routing']['rules'].insert(3, block)
+        assert control == expected
+        assert control['routing']['domainStrategy'] == 'AsIs'
+        assert all(inbound['sniffing']['routeOnly'] is True for inbound in control['inbounds'])
+        assert [inbound['tag'] for inbound in control['inbounds']] == [
+            'socks-control-udp', 'http-control-udp']
+        assert control['dns']['tag'] == ordinary_smart['dns']['tag'] == 'dns-internal'
+        inbound_tags = {inbound['tag'] for inbound in control['inbounds']} | {'dns-internal'}
+        assert all(tag in inbound_tags for rule in control['routing']['rules']
+                   for tag in rule.get('inboundTag', []))
+        assert control['routing']['rules'][:3] == ordinary_smart['routing']['rules'][:3]
+        assert control['routing']['rules'][3] == block
+        assert control['routing']['rules'][4:] == ordinary_smart['routing']['rules'][3:]
+        assert control['outbounds'][0] == ordinary_smart['outbounds'][0]
+        assert control['outbounds'][0] != baseline['configs'][2]['outbounds'][0]
+        assert control['dns']['servers'] != baseline['configs'][2]['dns']['servers']
+        assert control['outbounds'][1] == ordinary_smart['outbounds'][1]
+    assert source_configs == sources_before
+    assert core.load_users() == users
+    assert {name: wireguard.get_device(name) for name in devices} == devices
+    assert {item: item.read_bytes() for item in files_before} == files_before
+    assert happ_comparison.export_bundle(devices[FOREIGN]) is None
+    assert happ_comparison.export_bundle(wireguard.get_device(SECOND)) is None
+
+
+@pytest.mark.parametrize('client_dns_only', [None, False])
+def test_reference_control_requires_client_dns_only_before_export(runtime, monkeypatch, client_dns_only):
+    from wg_panel import happ_comparison
+
+    record = {'account_id': 'a' * 64, 'reference_control': True,
+              'family': {'wg_name': FOREIGN, 'account_id': 'b' * 64}}
+    if client_dns_only is not None:
+        record['client_dns_only'] = client_dns_only
+    core.write_json_private(str(runtime.data / 'happ_comparisons.json'), {
+        'version': 1, 'devices': {PILOT: record}})
+    monkeypatch.setattr(happ_pilot, 'exported_config', lambda *_args:
+                        pytest.fail('invalid control must fail before source export'))
     with pytest.raises(ValueError, match='^Happ comparison unavailable$'):
         happ_comparison.export_bundle(wireguard.get_device(PILOT))
 

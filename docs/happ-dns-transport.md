@@ -61,3 +61,12 @@ and credentials remain intact. Requests submitted to a proxy as hostnames may
 still need resolution to establish the connection. Numeric IPv6 destinations are
 retained too; the existing `ForceIPv4` hostname setting does not translate them.
 Verify actual phone IPv6 reachability before expanding this comparison-only pilot.
+
+An optional private `reference_control: true` requires `client_dns_only: true`.
+It appends one ordinary Smart control to the admin comparison, preserving the
+first six entries exactly. The control reverses the same two public resolvers,
+uses UDP DNS with the A-query cache, and blocks QUIC after the DNS routing guards.
+Its SOCKS/HTTP tags identify control activity in subsequent client logs. It uses
+the same VLESS credentials and server; it does not change account filtering or
+the original subscriptions. This compares a bundle of client behaviors inspired
+by a working reference and cannot isolate their individual causal contributions.
