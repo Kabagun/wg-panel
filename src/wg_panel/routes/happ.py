@@ -1,4 +1,5 @@
 """Owner-scoped Happ configuration and revocable read-only subscriptions."""
+import base64
 import hmac
 import json
 import re
@@ -95,11 +96,13 @@ def view_happ_device(wg_name):
     device, user = _pilot_device(wg_name)
     mode = _mode(device)
     try:
+        from ..happ_comparison import export_bundle
         transport = _transport(device)
         revision, rules = happ_pilot.get_rules(user['account_id'])
         config = happ_pilot.exported_config(device, mode, rules, transport)
         subscription_url = _subscription_url(device, user, 'bundle')
         shared_context = happ_pilot.shared_rules_context()
+        comparison = export_bundle(device)
     except ValueError:
         return 'Happ configuration is unavailable.', 503
     import_url = 'happ://add/' + subscription_url
@@ -113,19 +116,26 @@ def view_happ_device(wg_name):
                        if shared_context['shared_rules'] else '\n'.join(rules), rules_revision=revision,
                        config_json=json.dumps(config, ensure_ascii=False, indent=2),
                        subscription_url=subscription_url, import_url=import_url,
+                       comparison_bundle=bool(comparison),
                        qr=happ_pilot.qr_for_link(import_url), owner_paused=False,
                        owner_pause_pending=False, **shared_context)
 
 
 def _response(device, mode, rules):
-    config = (happ_pilot.exported_bundle(device, rules) if mode == 'bundle'
-              else happ_pilot.exported_config(device, mode, rules, _transport(device)))
+    from ..happ_comparison import export_bundle
+    comparison = export_bundle(device) if mode == 'bundle' else None
+    config = (comparison['configs'] if comparison else
+              happ_pilot.exported_bundle(device, rules) if mode == 'bundle' else
+              happ_pilot.exported_config(device, mode, rules, _transport(device)))
     response = Response(json.dumps(config, ensure_ascii=False, indent=2),
                         content_type='application/json; charset=utf-8')
     response.headers.set('Content-Disposition', 'attachment',
                          filename=f"{device['device']}-{mode}.json")
-    response.headers['routing'] = happ_pilot.routing_header(device, mode, config)
-    response.headers['profile-title'] = 'VPN modes' if mode == 'bundle' else f'Happ pilot - {mode}'
+    response.headers['routing'] = (happ_pilot.comparison_routing_header(device, config)
+                                   if comparison else happ_pilot.routing_header(device, mode, config))
+    response.headers['profile-title'] = ('base64:' + base64.b64encode(
+                                        comparison['title'].encode()).decode() if comparison else
+                                        'VPN modes' if mode == 'bundle' else f'Happ pilot - {mode}')
     response.headers['profile-update-interval'] = '1'
     response.headers['tun-enable'] = '1'
     # Happ's native TUN feeds the configured sniffing SOCKS inbound. The

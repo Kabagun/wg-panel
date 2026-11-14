@@ -333,6 +333,28 @@ def routing_header(device, mode, config):
         json.dumps(profile, ensure_ascii=False, separators=(',', ':')).encode()).decode()
 
 
+def comparison_routing_header(device, configs):
+    """One native TUN DNS anchor; each validated JSON retains its own resolver."""
+    user = core.load_users().get(device.get('owner'), {})
+    if (user.get('role') != 'admin' or device.get('safe_internet')
+            or not isinstance(configs, list) or len(configs) != 6):
+        raise HappStateError('invalid_state')
+    # The family entry anchors native TUN DNS. Every selected JSON rewrites
+    # port 53 through its own dns-out before private-IP/direct rules apply.
+    # Only header inputs are normalized; returned source configs are untouched.
+    servers = configs[0]['dns']['servers']
+    header_configs = [{**item, 'dns': {**item['dns'], 'servers': servers}}
+                      for item in configs]
+    link = routing_header(device, 'bundle', header_configs)
+    prefix = 'happ://routing/onadd/'
+    profile = json.loads(base64.b64decode(link.removeprefix(prefix)))
+    profile['Name'] = 'DNS-comparison-' + hashlib.sha256(device['wg_name'].encode()).hexdigest()[:12]
+    profile['ProxyIp'] = list(dict.fromkeys(
+        resolver_ip(server) for item in configs for server in item['dns']['servers']))
+    return prefix + base64.b64encode(
+        json.dumps(profile, ensure_ascii=False, separators=(',', ':')).encode()).decode()
+
+
 def qr_for_link(link):
     try:
         result = subprocess.run(['qrencode', '-t', 'SVG', '-o', '-'], input=link.encode(),

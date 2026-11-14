@@ -1,6 +1,6 @@
-{% macro modes_guide(guide_id, family_locked=false, creation=false) %}
+{% macro modes_guide(guide_id, family_locked=false, creation=false, comparison=false) %}
 <section class="panel happ-modes-guide" aria-labelledby="{{ guide_id }}-title">
-  <div class="happ-modes-heading"><span class="happ-modes-icon">{{ icon('globe', 24) }}</span><div><h2 id="{{ guide_id }}-title">{{ tr('happ_modes_guide_title') }}</h2><p>{{ tr('happ_modes_creation_intro' if creation else 'happ_modes_device_intro') }}</p></div></div>
+  <div class="happ-modes-heading"><span class="happ-modes-icon">{{ icon('globe', 24) }}</span><div><h2 id="{{ guide_id }}-title">{{ tr('happ_modes_guide_title') }}</h2><p>{{ tr('happ_comparison_intro' if comparison else 'happ_modes_creation_intro' if creation else 'happ_modes_device_intro') }}</p></div></div>
   <div class="happ-modes-grid">
     <article class="happ-mode-card" aria-labelledby="{{ guide_id }}-all">
       <div class="happ-mode-card-title"><span class="happ-mode-number" aria-hidden="true">01</span><h3 id="{{ guide_id }}-all">{{ tr('happ_mode_all') }}</h3></div>
@@ -18,7 +18,7 @@
       <p class="happ-mode-explanation">{{ tr('happ_modes_smart_note') }}</p>
     </article>
   </div>
-  <p class="happ-modes-dns {{ 'is-family' if family_locked }}">{{ icon('shield', 18) }}<span>{{ tr('happ_modes_family_dns' if family_locked else 'happ_modes_account_dns') }}</span></p>
-  <p class="happ-modes-count">{{ tr('happ_modes_server_selection') }}</p>
+  <p class="happ-modes-dns {{ 'is-family' if family_locked }}">{{ icon('shield', 18) }}<span>{{ tr('happ_comparison_dns' if comparison else 'happ_modes_family_dns' if family_locked else 'happ_modes_account_dns') }}</span></p>
+  <p class="happ-modes-count">{{ tr('happ_comparison_count' if comparison else 'happ_modes_server_selection') }}</p>
 </section>
 {% endmacro %}

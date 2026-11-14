@@ -288,6 +288,62 @@ def test_account_scoped_tcp_dns_bundle_preserves_policy_headers_and_stored_confi
     assert {path.name: path.read_bytes() for path in runtime.clients.glob('*.conf')} == before
 
 
+def test_admin_comparison_bundle_has_six_named_modes_and_keeps_other_subscriptions(runtime, monkeypatch):
+    from test_happ_transports import VLESS
+
+    from wg_panel import happ_runtime
+    traffic.mutate_device_meta(lambda meta: meta[FOREIGN].update(safe_internet=True))
+    core.write_json_private(str(runtime.data / 'happ_comparisons.json'), {
+        'version': 1, 'devices': {PILOT: {
+            'account_id': 'a' * 64,
+            'family': {'wg_name': FOREIGN, 'account_id': 'b' * 64}}}})
+    core.write_json_private(str(runtime.data / 'happ_dns_transport.json'), {
+        'version': 1, 'accounts': {'a' * 64: 'tcp', 'b' * 64: 'tcp'}})
+    monkeypatch.setattr(happ_runtime, 'transport_options', lambda _device: [
+        {'id': 'vless-reality', 'title': 'VLESS / REALITY', 'available': True}])
+    monkeypatch.setattr(happ_runtime, 'client_settings', lambda item, _transport: {
+        **VLESS, 'uuid': ('d4a79772-9db8-4bdc-a146-63fdd4709975' if item['wg_name'] == PILOT
+                         else 'd4a79772-9db8-4bdc-a146-63fdd4709976')})
+    before = {path.name: path.read_bytes() for path in runtime.clients.glob('*.conf')}
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200
+    bundle = response.get_json()
+    assert len(bundle) == 6
+    assert len({item['remarks'] for item in bundle}) == 6
+    assert [item['routing']['rules'][-1]['outboundTag'] for item in bundle] == [
+        'vpn', 'vpn', 'direct', 'direct', 'vpn', 'vpn']
+    for index, item in enumerate(bundle):
+        assert item['dns']['servers'] == (
+            ['tcp://10.8.0.1'] if index % 2 == 0 else ['tcp://1.1.1.1', 'tcp://8.8.8.8'])
+        assert next(out for out in item['outbounds'] if out['tag'] == 'vpn')['protocol'] == 'vless'
+    title = response.headers['profile-title']
+    assert title.startswith('base64:')
+    assert base64.b64decode(title.removeprefix('base64:')).decode() == 'Сравнение DNS'
+    routing = json.loads(base64.b64decode(
+        response.headers['routing'].removeprefix('happ://routing/onadd/')))
+    assert routing['RemoteDNSIP'] == routing['DomesticDNSIP'] == '10.8.0.1'
+    assert set(routing['ProxyIp']) == {'10.8.0.1', '1.1.1.1', '8.8.8.8'}
+    assert {'geoip:by', 'geoip:ru'} <= set(routing['DirectIp'])
+    assert response.headers['profile-update-interval'] == '1'
+    assert len(browser(None).get(subscription(name=FOREIGN, mode='bundle')).get_json()) == 3
+    assert browser(None).get(subscription(mode='all')).get_json()['dns']['servers'] == [
+        'tcp://1.1.1.1', 'tcp://8.8.8.8']
+    page = browser().get(f'/device/{PILOT}/happ', headers={'Accept-Language': 'ru'}).get_data(as_text=True)
+    assert 'Шесть профилей в одной подписке' in page
+    assert 'Одиночная конфигурация ниже' in page
+    assert {path.name: path.read_bytes() for path in runtime.clients.glob('*.conf')} == before
+
+
+def test_normal_bundle_rejects_mixed_dns_and_comparison_rejects_nonadmin(runtime):
+    configs = [{'dns': {'servers': ['1.1.1.1']}, 'routing': {'rules': []}},
+               {'dns': {'servers': ['10.8.0.1']}, 'routing': {'rules': []}}]
+    device = wireguard.get_device(PILOT)
+    with pytest.raises(ValueError):
+        happ_pilot.routing_header(device, 'bundle', configs)
+    with pytest.raises(ValueError):
+        happ_pilot.comparison_routing_header({**device, 'owner': 'alice'}, configs * 3)
+
+
 def test_protected_bundle_exports_all_three_modes_with_same_family_dns(runtime):
     account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
     response = browser(None).get(subscription(mode='bundle'))
