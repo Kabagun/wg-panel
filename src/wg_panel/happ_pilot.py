@@ -307,6 +307,10 @@ def routing_header(device, mode, config):
     configs = config if mode == 'bundle' else [config]
     if not configs:
         raise HappStateError('invalid_state')
+    strategies = [item.get('routing', {}).get('domainStrategy') for item in configs]
+    if (any(value not in ('IPOnDemand', 'AsIs') for value in strategies)
+            or any(value != strategies[0] for value in strategies)):
+        raise HappStateError('invalid_state')
     direct_ips = []
     for item in configs:
         for rule in item['routing']['rules']:
@@ -327,7 +331,7 @@ def routing_header(device, mode, config):
         'DomesticDNSType': 'DoU', 'DomesticDNSDomain': '', 'DomesticDNSIP': dns,
         'Geoipurl': GEOIP_URL, 'Geositeurl': '', 'DirectIp': direct_ips,
         'DirectSites': [], 'ProxySites': [], 'ProxyIp': [dns],
-        'DomainStrategy': 'IPOnDemand', 'FakeDNS': 'false',
+        'DomainStrategy': strategies[0], 'FakeDNS': 'false',
     }
     return 'happ://routing/onadd/' + base64.b64encode(
         json.dumps(profile, ensure_ascii=False, separators=(',', ':')).encode()).decode()

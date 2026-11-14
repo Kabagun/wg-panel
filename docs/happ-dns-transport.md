@@ -47,3 +47,17 @@ Protocol semantics follow the official Xray documentation:
 
 - [DNS outbound](https://xtls.github.io/en/config/outbounds/dns.html)
 - [Built-in DNS and parallel lookup](https://xtls.github.io/en/config/dns.html)
+
+The private admin comparison binding also accepts optional `client_dns_only: true`.
+This opt-in changes only the six copied comparison entries: `routeOnly: true`
+retains the application's resolved destination, and `domainStrategy: AsIs` uses
+that original IP for IP/country rules and the sniffed domain for domain rules.
+The native Happ routing header uses the same strategy. Normal subscriptions and
+the two source exports remain unchanged; disabling the flag restores the baseline.
+
+This is client/system destination resolution, not a `localhost` resolver override.
+All configured family/ordinary DNS addresses, plaintext DNS forwarding, policies,
+and credentials remain intact. Requests submitted to a proxy as hostnames may
+still need resolution to establish the connection. Numeric IPv6 destinations are
+retained too; the existing `ForceIPv4` hostname setting does not translate them.
+Verify actual phone IPv6 reachability before expanding this comparison-only pilot.

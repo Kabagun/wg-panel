@@ -1,6 +1,7 @@
 """Closed pilot acceptance with synthetic identities, keys and resolver state."""
 
 import base64
+import copy
 import hashlib
 import json
 import logging
@@ -378,6 +379,81 @@ def test_admin_comparison_bundle_has_six_named_modes_and_keeps_other_subscriptio
     assert 'Шесть профилей в одной подписке' in page
     assert 'Одиночная конфигурация ниже' in page
     assert {path.name: path.read_bytes() for path in runtime.clients.glob('*.conf')} == before
+
+
+@pytest.mark.parametrize('client_dns_only', [False, True])
+def test_comparison_client_dns_opt_in_changes_only_copied_routing_and_sniffing(
+        runtime, monkeypatch, client_dns_only):
+    from test_happ_transports import VLESS
+
+    from wg_panel import happ_comparison, happ_runtime
+
+    traffic.mutate_device_meta(lambda meta: meta[FOREIGN].update(safe_internet=True))
+    binding = {'version': 1, 'devices': {PILOT: {
+        'account_id': 'a' * 64,
+        'family': {'wg_name': FOREIGN, 'account_id': 'b' * 64}}}}
+    path = runtime.data / 'happ_comparisons.json'
+    core.write_json_private(str(path), binding)
+    core.write_json_private(str(runtime.data / 'happ_dns_transport.json'), {
+        'version': 1, 'accounts': {'a' * 64: 'tcp', 'b' * 64: 'tcp'}})
+    monkeypatch.setattr(happ_runtime, 'transport_options', lambda _device: [
+        {'id': 'vless-reality', 'title': 'VLESS / REALITY', 'available': True}])
+    monkeypatch.setattr(happ_runtime, 'client_settings', lambda _device, _transport: VLESS)
+    monkeypatch.setattr(happ_pilot, 'get_rules', lambda account: (
+        1, ['domain:' + account[:1] + '.example.test']))
+    users = core.load_users()
+    devices = {name: wireguard.get_device(name) for name in (PILOT, FOREIGN)}
+    source_configs = {
+        (name, mode): happ_pilot.exported_config(
+            device, mode, happ_pilot.get_rules(users[device['owner']]['account_id'])[1])
+        for name, device in devices.items()
+        for mode in happ_pilot.BUNDLE_MODES
+    }
+    sources_before = copy.deepcopy(source_configs)
+    monkeypatch.setattr(happ_pilot, 'exported_config', lambda source, mode, _rules:
+                        source_configs[(source['wg_name'], mode)])
+    baseline = happ_comparison.export_bundle(devices[PILOT])
+    assert len(baseline['configs']) == 6
+    assert [item['routing']['rules'][-1]['outboundTag'] for item in baseline['configs']] == [
+        'vpn', 'vpn', 'direct', 'direct', 'vpn', 'vpn']
+    for index, item in enumerate(baseline['configs']):
+        assert item['routing']['domainStrategy'] == 'IPOnDemand'
+        assert all(inbound['sniffing']['routeOnly'] is False for inbound in item['inbounds'])
+        assert item['dns']['servers'] == (
+            ['tcp://10.8.0.1'] if index % 2 == 0 else ['tcp://1.1.1.1', 'tcp://8.8.8.8'])
+    binding['devices'][PILOT]['client_dns_only'] = client_dns_only
+    core.write_json_private(str(path), binding)
+    files_before = {item: item.read_bytes() for directory in (runtime.data, runtime.clients)
+                    for item in directory.iterdir() if item.is_file()}
+    expected = copy.deepcopy(baseline)
+    if client_dns_only:
+        for item in expected['configs']:
+            item['routing']['domainStrategy'] = 'AsIs'
+            for inbound in item['inbounds']:
+                inbound['sniffing']['routeOnly'] = True
+    assert happ_comparison.export_bundle(devices[PILOT]) == expected
+    # Account policy, credentials, resolvers, DNS forwarding and original exports
+    # remain byte-for-byte or structurally unchanged outside the copied bundle.
+    assert source_configs == sources_before
+    assert core.load_users() == users
+    assert {name: wireguard.get_device(name) for name in devices} == devices
+    assert {item: item.read_bytes() for item in files_before} == files_before
+    assert happ_comparison.export_bundle(devices[FOREIGN]) is None
+    assert happ_comparison.export_bundle(wireguard.get_device(SECOND)) is None
+
+
+@pytest.mark.parametrize('flag', [None, 0, 1, 'true', [], {}])
+def test_comparison_client_dns_flag_requires_boolean_before_source_export(runtime, monkeypatch, flag):
+    from wg_panel import happ_comparison
+
+    core.write_json_private(str(runtime.data / 'happ_comparisons.json'), {
+        'version': 1, 'devices': {PILOT: {
+            'account_id': 'a' * 64, 'client_dns_only': flag,
+            'family': {'wg_name': FOREIGN, 'account_id': 'b' * 64}}}})
+    monkeypatch.setattr(happ_pilot, 'exported_config', lambda *_args:
+                        pytest.fail('invalid flag must fail before source export'))
+    with pytest.raises(ValueError, match='^Happ comparison unavailable$'):
+        happ_comparison.export_bundle(wireguard.get_device(PILOT))
 
 
 def test_normal_bundle_rejects_mixed_dns_and_comparison_rejects_nonadmin(runtime):

@@ -25,8 +25,9 @@ def _object(pairs):
     return result
 
 
-def _fields(value, fields):
-    if not isinstance(value, dict) or set(value) != set(fields):
+def _fields(value, fields, *, optional=()):
+    if (not isinstance(value, dict) or not set(fields) <= set(value)
+            or not set(value) <= set(fields) | set(optional)):
         raise ValueError(_ERROR)
 
 
@@ -55,7 +56,9 @@ def _bindings():
     for name, record in devices.items():
         if not SAFE_NAME_RE.fullmatch(name):
             raise ValueError(_ERROR)
-        _fields(record, ('account_id', 'family'))
+        _fields(record, ('account_id', 'family'), optional=('client_dns_only',))
+        if 'client_dns_only' in record and not isinstance(record['client_dns_only'], bool):
+            raise ValueError(_ERROR)
         _account(record['account_id'])
         family = record['family']
         _fields(family, ('wg_name', 'account_id'))
@@ -124,6 +127,11 @@ def export_bundle(device):
                     if (len(vpns) != 1 or vpns[0].get('protocol') != 'vless'
                             or vpns[0].get('streamSettings', {}).get('security') != 'reality'):
                         raise ValueError(_ERROR)
+                    if record.get('client_dns_only', False):
+                        config['routing']['domainStrategy'] = 'AsIs'
+                        for inbound in config.get('inbounds', []):
+                            if 'sniffing' in inbound:
+                                inbound['sniffing']['routeOnly'] = True
                     config['remarks'] = f'{title} · {label}'
                     config.setdefault('meta', {})['serverDescription'] = (
                         f'{title}. DNS: {label}.')
