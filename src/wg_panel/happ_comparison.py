@@ -128,6 +128,7 @@ def export_bundle(device):
                     config.setdefault('meta', {})['serverDescription'] = (
                         f'{title}. DNS: {label}.')
                     configs.append(config)
-            return {'configs': configs, 'title': 'Сравнение DNS'}
+            return {'configs': configs, 'title': 'Сравнение DNS',
+                    'usage_sources': [source['wg_name'] for source, _user, _label in sources]}
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError):
         raise ValueError(_ERROR) from None

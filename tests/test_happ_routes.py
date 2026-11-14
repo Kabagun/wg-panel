@@ -218,6 +218,40 @@ def test_ordinary_public_subscription_exports_public_dns_and_hourly_import_heade
     assert routing["RemoteDNSType"] == routing["DomesticDNSType"] == "DoU"
 
 
+def test_subscription_presentation_uses_new_trusted_usage_without_collecting_or_leaking_history(
+        runtime, monkeypatch):
+    from wg_panel import happ_runtime
+    from wg_panel.happ_subscription_usage import record_sample
+
+    entry = {'monthly': {'2026-11': {'rx': 999_000, 'tx': 123_000}}}
+    start = datetime(2026, 11, 14, 22, tzinfo=UTC)
+    record_sample(entry, generation='test', upload_bytes=100, download_bytes=200, sampled_at=start)
+    record_sample(entry, generation='test', upload_bytes=223, download_bytes=656,
+                  sampled_at=start + timedelta(minutes=1))
+    traffic.save_traffic({PILOT: entry, SECOND: {'monthly': {'2026-11': {'rx': 10**12, 'tx': 10**12}}}})
+    before = traffic.load_traffic()
+    monkeypatch.setattr(happ_runtime, 'collect_traffic', lambda: pytest.fail('public request collected traffic'))
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200
+    assert response.headers['subscription-userinfo'] == 'upload=123; download=456; total=0'
+    assert response.headers['profile-web-page-url'] == f'https://vpn.example.test/device/{PILOT}/happ'
+    assert response.headers['support-url'] == 'https://vpn.example.test/'
+    announcement = base64.b64decode(response.headers['announce'].removeprefix('base64:')).decode()
+    assert '15.11.2026' in announcement  # 22:00 UTC is the next day in Minsk.
+    assert 'Безлимит' in announcement and '3 режима' in announcement
+    assert len(announcement) <= 200 and 'expire' not in response.headers['subscription-userinfo']
+    assert traffic.load_traffic() == before
+
+
+@pytest.mark.parametrize('history', [[], {PILOT: []}, {PILOT: {'happ_subscription_usage': {'version': 999}}}])
+def test_invalid_optional_usage_never_blocks_subscription(runtime, history):
+    traffic.save_traffic(history)
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200 and len(response.get_json()) == 3
+    assert 'subscription-userinfo' not in response.headers
+    assert response.headers['support-url'] == 'https://vpn.example.test/'
+
+
 def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runtime):
     identity = core.load_users()[ADMIN]['account_id']
     happ_pilot.save_rules(identity, 'ai.example.org\n192.0.2.0/24', 0)
@@ -304,6 +338,16 @@ def test_admin_comparison_bundle_has_six_named_modes_and_keeps_other_subscriptio
     monkeypatch.setattr(happ_runtime, 'client_settings', lambda item, _transport: {
         **VLESS, 'uuid': ('d4a79772-9db8-4bdc-a146-63fdd4709975' if item['wg_name'] == PILOT
                          else 'd4a79772-9db8-4bdc-a146-63fdd4709976')})
+    from wg_panel.happ_subscription_usage import record_sample
+    usage_history = {}
+    for name, upload, download in [(PILOT, 123, 456), (FOREIGN, 7, 8), (SECOND, 10**9, 10**9)]:
+        entry = {}
+        record_sample(entry, generation='test', upload_bytes=0, download_bytes=0,
+                      sampled_at=datetime(2026, 11, 14, tzinfo=UTC))
+        record_sample(entry, generation='test', upload_bytes=upload, download_bytes=download,
+                      sampled_at=datetime(2026, 11, 14, 1, tzinfo=UTC))
+        usage_history[name] = entry
+    traffic.save_traffic(usage_history)
     before = {path.name: path.read_bytes() for path in runtime.clients.glob('*.conf')}
     response = browser(None).get(subscription(mode='bundle'))
     assert response.status_code == 200
@@ -325,6 +369,8 @@ def test_admin_comparison_bundle_has_six_named_modes_and_keeps_other_subscriptio
     assert set(routing['ProxyIp']) == {'10.8.0.1', '1.1.1.1', '8.8.8.8'}
     assert {'geoip:by', 'geoip:ru'} <= set(routing['DirectIp'])
     assert response.headers['profile-update-interval'] == '1'
+    assert response.headers['subscription-userinfo'] == 'upload=130; download=464; total=0'
+    assert '6 профилей' in base64.b64decode(response.headers['announce'].removeprefix('base64:')).decode()
     assert len(browser(None).get(subscription(name=FOREIGN, mode='bundle')).get_json()) == 3
     assert browser(None).get(subscription(mode='all')).get_json()['dns']['servers'] == [
         'tcp://1.1.1.1', 'tcp://8.8.8.8']

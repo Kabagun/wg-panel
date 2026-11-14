@@ -227,6 +227,7 @@ def collect_traffic():
     from datetime import UTC, datetime
 
     from . import traffic
+    from .happ_subscription_usage import record_sample
     try:
         raw = _run([cfg['binary'], 'api', 'statsquery', '-s=127.0.0.1:18012'])
         values = json.loads(raw).get('stat', [])
@@ -236,12 +237,13 @@ def collect_traffic():
         if not generation or any(value < 0 for value in counters.values()):
             raise ValueError
         month = datetime.now(UTC).strftime('%Y-%m')
+        sampled_at = datetime.now(UTC)
         records = _registry()['devices']
         def apply(history):
             for name, record in records.items():
                 if not _active(name, record):
                     continue
-                # Server uplink is upload from the client; panel rx is download to client.
+                # Retain legacy rx/tx history; presentation below uses explicit client directions.
                 rx = counters.get('user>>>' + record['email'] + '>>>traffic>>>downlink', 0)
                 tx = counters.get('user>>>' + record['email'] + '>>>traffic>>>uplink', 0)
                 entry = history.setdefault(name, {'last_rx': 0, 'last_tx': 0, 'monthly': {}})
@@ -252,6 +254,10 @@ def collect_traffic():
                     old = previous.get(field, 0)
                     total[field] += value - old if value >= old else value
                 checkpoint.update(generation=generation, rx=rx, tx=tx)
+                record_sample(entry, generation=generation,
+                              upload_bytes=counters.get('user>>>' + record['email'] + '>>>traffic>>>uplink'),
+                              download_bytes=counters.get('user>>>' + record['email'] + '>>>traffic>>>downlink'),
+                              sampled_at=sampled_at)
         traffic.mutate_traffic(apply)
     except (ValueError, TypeError, KeyError, OSError):
         logger.warning('Happ transport counters unavailable; classic accounting is unchanged')

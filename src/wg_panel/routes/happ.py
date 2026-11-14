@@ -3,6 +3,8 @@ import base64
 import hmac
 import json
 import re
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from flask import Response, abort, flash, redirect, request, session, url_for
 
@@ -141,7 +143,36 @@ def _response(device, mode, rules):
     # Happ's native TUN feeds the configured sniffing SOCKS inbound. The
     # desktop Xray TUN injected into JSON configs skips those domain rules.
     response.headers['tun-type'] = 'default'
+    _presentation_headers(response, device, comparison)
     return response
+
+
+def _presentation_headers(response, device, comparison):
+    from ..happ_subscription_info import build_headers
+    from ..happ_subscription_usage import read_usage
+    from ..traffic import load_traffic
+
+    # The public subscription reads cached counters only. Collection and Xray
+    # API calls stay in the existing background collector, never this request.
+    try:
+        history = load_traffic()
+        names = list(dict.fromkeys(comparison['usage_sources'] if comparison else [device['wg_name']]))
+        usages = [read_usage(history.get(name, {})) for name in names] if isinstance(history, dict) else []
+        valid = bool(usages) and all(item is not None for item in usages)
+        started = min((datetime.fromisoformat(item['started_at']) for item in usages), default=None) if valid else None
+        now = datetime.now(UTC)
+        base = core.app.config.get('HAPP_PUBLIC_BASE_URL', f'https://{core.DOMAIN}')
+        headers = build_headers(
+            upload_bytes=sum(item['upload'] for item in usages) if valid else None,
+            download_bytes=sum(item['download'] for item in usages) if valid else None,
+            panel_base_url=base, device_path=f"/device/{device['wg_name']}/happ",
+            usage_month=now.strftime('%Y-%m'), usage_scope='sources' if comparison else 'device',
+            usage_started_at=started.astimezone(ZoneInfo('Europe/Minsk')).date().isoformat()
+            if started else None, comparison=bool(comparison))
+    except (ValueError, TypeError, KeyError, OSError):
+        # Presentation settings must never make valid VPN configurations unavailable.
+        return
+    response.headers.update(headers)
 
 
 @core.app.route('/device/<wg_name>/happ/<mode>/download')
