@@ -286,6 +286,7 @@ def build_happ_config(
     *,
     safe_internet: bool,
     remarks: str,
+    dns_transport: str = "udp",
 ) -> dict:
     """Build a standalone Xray configuration without altering the WG identity.
 
@@ -298,6 +299,8 @@ def build_happ_config(
         raise ValueError("Unsupported routing mode")
     if not isinstance(safe_internet, bool):
         raise ValueError("Invalid Safe internet setting")  # noqa: TRY004 - public ValueError API
+    if dns_transport not in ("udp", "tcp"):
+        raise ValueError("Invalid Happ DNS transport")
     if (
         not isinstance(proxy_rules, list)
         or len(proxy_rules) > MAX_PROXY_RULES
@@ -333,7 +336,10 @@ def build_happ_config(
     return {
         "remarks": remarks,
         "log": {"loglevel": "warning"},
-        "dns": {"servers": list(wg.dns), "queryStrategy": "UseIPv4", "tag": _DNS_TAG},
+        "dns": {"servers": [
+            ("tcp://" + (f"[{value}]" if ":" in value else value))
+            if dns_transport == "tcp" else value for value in wg.dns
+        ], "queryStrategy": "UseIPv4", "tag": _DNS_TAG},
         "inbounds": [
             {
                 "tag": "socks-in",

@@ -260,6 +260,34 @@ def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runt
     assert browser().get(f'/device/{PILOT}/happ/bundle/download').get_json() == bundle
 
 
+@pytest.mark.parametrize('family', [False, True])
+def test_account_scoped_tcp_dns_bundle_preserves_policy_headers_and_stored_configs(runtime, family):
+    if family:
+        account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
+    before = {path.name: path.read_bytes() for path in runtime.clients.glob('*.conf')}
+    identity = core.load_users()[ADMIN]['account_id']
+    core.write_json_private(str(runtime.data / 'happ_dns_transport.json'),
+                            {'version': 1, 'accounts': {identity: 'tcp'}})
+    response = browser(None).get(subscription(mode='bundle'))
+    assert response.status_code == 200
+    bundle = response.get_json()
+    resolver = '10.8.0.1' if family else '1.1.1.1'
+    expected = ['tcp://10.8.0.1'] if family else ['tcp://1.1.1.1', 'tcp://8.8.8.8']
+    assert all(item['dns']['servers'] == expected for item in bundle)
+    assert [item['routing']['rules'][-1]['outboundTag'] for item in bundle] == [
+        'vpn', 'direct', 'vpn']
+    assert all(item['routing']['rules'][0] == {
+        'type': 'field', 'inboundTag': ['dns-internal'], 'outboundTag': 'vpn'} for item in bundle)
+    routing = json.loads(base64.b64decode(
+        response.headers['routing'].removeprefix('happ://routing/onadd/')))
+    assert routing['RemoteDNSIP'] == routing['DomesticDNSIP'] == resolver
+    assert routing['RemoteDNSType'] == routing['DomesticDNSType'] == 'DoU'
+    assert response.headers['profile-update-interval'] == '1'
+    assert all(not server.startswith('tcp://') for server in
+               browser(None).get(subscription(name=FOREIGN, mode='all')).get_json()['dns']['servers'])
+    assert {path.name: path.read_bytes() for path in runtime.clients.glob('*.conf')} == before
+
+
 def test_protected_bundle_exports_all_three_modes_with_same_family_dns(runtime):
     account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
     response = browser(None).get(subscription(mode='bundle'))

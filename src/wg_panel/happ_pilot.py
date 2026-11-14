@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from . import core, wireguard
 from .dns_enforcement import SafeDnsEnforcementError
 from .happ_config import GEOIP_URL, MODES, build_happ_config, normalize_proxy_rules
+from .happ_dns import client_dns_transport, resolver_ip
 from .happ_shared_rules import load_snapshot, managed_mode, publication_status
 from .i18n import t
 from .safe_dns_settings import load_safe_dns_target
@@ -265,7 +266,8 @@ def _central_config(device, transport_name=None, *, dns=None):
 def _export_config(device, mode, rules, config, transport='wireguard'):
     key = 'happ_mode_' + mode.replace('-', '_')
     exported = build_happ_config(config, mode, rules, safe_internet=device['safe_internet'],
-                                 remarks=t(key, 'ru'))
+                                 remarks=t(key, 'ru'),
+                                 dns_transport=client_dns_transport(device['owner']))
     exported['meta'] = {'serverDescription': t(key + '_help', 'ru')}
     from .happ_runtime import client_settings
     from .happ_transports import overlay_transport
@@ -314,6 +316,7 @@ def routing_header(device, mode, config):
     if (not isinstance(dns, str)
             or any(item['dns']['servers'] != configs[0]['dns']['servers'] for item in configs)):
         raise HappStateError('invalid_state')
+    dns = resolver_ip(dns)
     # JSON subscriptions allow only one routing profile. Include every entry's
     # GeoIP tags so Happ's trimmed database can run either BY or RU preset.
     direct_ips = list(dict.fromkeys(direct_ips))
