@@ -56,6 +56,13 @@ requests originating on the server do not test the cloud firewall's ingress.
 `data/happ_runtime.json` contains `version:1`, `enabled:true`, an absolute
 `binary` path, public `host`, certificate `tls_name`, `reality_public_key`, and
 `server` options documented in `happ_transports.create_server_config`.
+Optional `server.tcp_congestion` accepts only `cubic` or `bbr` and sets the
+congestion algorithm on the VLESS TCP listener. Omitting it preserves the
+existing configuration and OS default. It does not change Hysteria2 UDP, the
+API, outbounds, client profiles, DNS, or classic WireGuard. The selected Linux
+algorithm must already be available; configuration generation does not load
+kernel modules or change the global TCP default. Choose it using controlled
+comparisons on the intended path.
 Server private keys and TLS file paths belong only in that private file.
 The panel stores per-device credentials separately in
 `data/happ_protocol_devices.json`; GET/export does not provision identities.

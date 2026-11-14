@@ -237,12 +237,19 @@ def create_server_config(users, server_options):
     Options require reality_private_key,
     reality_short_ids, reality_target, reality_server_names, certificate_file,
     key_file. Optional listen/port/dns_host/dns_port/api_listen/api_port override
-    defaults. api_port=None disables the API. An empty roster opens no public
-    proxy listeners. Callers own credential files and roster synchronization.
+    defaults. Optional tcp_congestion is cubic or bbr for the VLESS listener
+    only; when absent the OS default is retained. api_port=None disables the API.
+    An empty roster opens no public proxy listeners. Callers own credential
+    files and roster synchronization.
     """
     required = {"reality_private_key", "reality_short_ids", "reality_target",
                 "reality_server_names", "certificate_file", "key_file"}
-    _fields(server_options, required, {"listen", "port", "dns_host", "dns_port", "api_listen", "api_port"})
+    _fields(server_options, required, {"listen", "port", "dns_host", "dns_port", "api_listen",
+                                       "api_port", "tcp_congestion"})
+    tcp_congestion = server_options.get("tcp_congestion")
+    if "tcp_congestion" in server_options and (
+            not isinstance(tcp_congestion, str) or tcp_congestion not in ("cubic", "bbr")):
+        _invalid()
     if not isinstance(users, list) or len(users) > 256:
         _invalid()
     clients, hys_users, seen_ids, seen_emails, seen_passwords = [], [], set(), set(), set()
@@ -302,6 +309,8 @@ def create_server_config(users, server_options):
                                 "tlsSettings": {"alpn": ["h3"], "minVersion": "1.3",
                                                 "certificates": [{"certificateFile": certificate, "keyFile": key}]}}},
         ]
+        if tcp_congestion is not None:
+            inbounds[0]["streamSettings"]["sockopt"] = {"tcpcongestion": tcp_congestion}
     rules = []
     result = {
         "log": {"loglevel": "warning"}, "inbounds": inbounds,

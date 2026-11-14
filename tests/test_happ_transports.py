@@ -161,6 +161,24 @@ def test_server_authentication_policy_dns_order_and_private_api():
     assert all("access" not in key and "error" not in key for key in result["log"])
 
 
+@pytest.mark.parametrize("algorithm", ["cubic", "bbr"])
+def test_optional_tcp_congestion_changes_only_vless_listener_and_preserves_default(algorithm):
+    original = create_server_config(USERS, OPTIONS)
+    assert "sockopt" not in original["inbounds"][0]["streamSettings"]
+    options = {**OPTIONS, "tcp_congestion": algorithm}
+    before = copy.deepcopy(options)
+    result = create_server_config(USERS, options)
+    assert result["inbounds"][0]["streamSettings"].pop("sockopt") == {"tcpcongestion": algorithm}
+    assert result == original
+    assert options == before
+
+
+@pytest.mark.parametrize("algorithm", ["cubic", "bbr"])
+def test_tcp_congestion_never_creates_public_listeners_for_empty_roster(algorithm):
+    assert create_server_config([], {**OPTIONS, "tcp_congestion": algorithm}) == create_server_config([], OPTIONS)
+    assert create_server_config([], {**OPTIONS, "api_port": None, "tcp_congestion": algorithm})["inbounds"] == []
+
+
 def test_mixed_family_roster_enforces_only_protected_users_and_private_block_for_everyone():
     ordinary = {"id":"d4a79772-9db8-4bdc-a146-63fdd4709975", "password":"different-synthetic-password",
                 "email":"device-abcdef0123456789abcdef01@pilot.invalid", "family":False}
@@ -211,14 +229,18 @@ def test_empty_roster_has_no_public_proxy_and_api_can_be_disabled():
     ("reality_target","127.0.0.1:443"),("reality_target","https://example.com:443"),
     ("reality_server_names",["*.example.com"]),("certificate_file","relative.pem"),
     ("key_file","/secret\n.pem"),("arbitrary",True),
+    ("tcp_congestion",None),("tcp_congestion",True),("tcp_congestion",1),
+    ("tcp_congestion",[]),("tcp_congestion",{}),("tcp_congestion",""),
+    ("tcp_congestion","reno"),("tcp_congestion","BBR"),
 ])
 def test_bad_server_options_fail_sanitized(field,value):
     with pytest.raises(ValueError,match="^Invalid Happ transport configuration$"):
         create_server_config(USERS,{**OPTIONS,field:value})
 
 
+@pytest.mark.parametrize("algorithm", [None, "cubic", "bbr"])
 @pytest.mark.parametrize("mutation", ["duplicate-id","duplicate-auth","duplicate-label","no-auth","real-email","extra"])
-def test_server_roster_rejects_ambiguous_or_unauthenticated_users(mutation):
+def test_server_roster_rejects_ambiguous_or_unauthenticated_users(mutation, algorithm):
     users = copy.deepcopy(USERS)
     if mutation.startswith("duplicate"):
         extra = {"id":"d4a79772-9db8-4bdc-a146-63fdd4709975", "password":"different-synthetic-password",
@@ -232,7 +254,7 @@ def test_server_roster_rejects_ambiguous_or_unauthenticated_users(mutation):
     else:
         users[0]["extra"] = True
     with pytest.raises(ValueError):
-        create_server_config(users,OPTIONS)
+        create_server_config(users, OPTIONS if algorithm is None else {**OPTIONS, "tcp_congestion": algorithm})
 
 
 def test_official_xray_26_10_31_parses_all_modes_both_transports_and_server():
@@ -259,6 +281,8 @@ def test_official_xray_26_10_31_parses_all_modes_both_transports_and_server():
         ordinary = {"id":"d4a79772-9db8-4bdc-a146-63fdd4709975", "password":"different-synthetic-password",
                     "email":"device-abcdef0123456789abcdef01@pilot.invalid", "family":False}
         cases += [("server",create_server_config(USERS,options)),
+                  ("server-cubic",create_server_config(USERS,{**options,"tcp_congestion":"cubic"})),
+                  ("server-bbr",create_server_config(USERS,{**options,"tcp_congestion":"bbr"})),
                   ("mixed-server",create_server_config([*USERS,ordinary],options)),
                   ("ordinary-server",create_server_config([ordinary],options)),
                   ("empty-server",create_server_config([],options))]
