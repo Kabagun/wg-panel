@@ -149,25 +149,31 @@ def _response(device, mode, rules):
 
 
 def _presentation_headers(response, device, comparison):
+    from ..happ_device_access import device_access_token
     from ..happ_subscription_info import build_headers
-    from ..happ_subscription_usage import read_usage
     from ..traffic import load_traffic
 
     # The public subscription reads cached counters only. Collection and Xray
     # API calls stay in the existing background collector, never this request.
     try:
+        from ..happ_subscription_usage import read_monthly_usage
+        now = datetime.now(UTC)
         history = load_traffic()
         names = list(dict.fromkeys(comparison['usage_sources'] if comparison else [device['wg_name']]))
-        usages = [read_usage(history.get(name, {})) for name in names] if isinstance(history, dict) else []
+        usages = [read_monthly_usage(history.get(name, {}), at=now)
+                  for name in names] if isinstance(history, dict) else []
         valid = bool(usages) and all(item is not None for item in usages)
         started = min((datetime.fromisoformat(item['started_at']) for item in usages), default=None) if valid else None
-        now = datetime.now(UTC)
         base = core.app.config.get('HAPP_PUBLIC_BASE_URL', f'https://{core.DOMAIN}')
+        user = core.load_users()[device['owner']]
+        path = url_for('happ_device_access', wg_name=device['wg_name'],
+                       token=device_access_token(device, user))
         headers = build_headers(
             upload_bytes=sum(item['upload'] for item in usages) if valid else None,
             download_bytes=sum(item['download'] for item in usages) if valid else None,
-            panel_base_url=base, device_path=f"/device/{device['wg_name']}/happ",
-            usage_month=now.strftime('%Y-%m'), usage_scope='sources' if comparison else 'device',
+            panel_base_url=base, device_path=path,
+            usage_month=now.astimezone(ZoneInfo('Europe/Minsk')).strftime('%Y-%m'),
+            usage_scope='sources' if comparison else 'device',
             usage_started_at=started.astimezone(ZoneInfo('Europe/Minsk')).date().isoformat()
             if started else None, comparison=bool(comparison),
             comparison_control=bool(comparison and len(comparison['configs']) == 7),
@@ -176,6 +182,48 @@ def _presentation_headers(response, device, comparison):
         # Presentation settings must never make valid VPN configurations unavailable.
         return
     response.headers.update(headers)
+
+
+@core.app.route('/device/<wg_name>/happ/access/<token>')
+def happ_device_access(wg_name, token):
+    """Read-only device details; a capability never creates an account session."""
+    from flask import render_template
+
+    from ..happ_device_access import device_access_token
+    from ..happ_subscription_info import profile_caption, profile_label
+    from ..happ_subscription_usage import read_monthly_usage
+    from ..traffic import fmt_bytes, load_traffic
+    from ..ui import icon
+
+    allowed, retry = public_rate_limiter.consume('happ_device_access', client_ip(), 30, 60)
+    if not allowed:
+        return rate_limited_response(retry)
+    with core._wireguard_lock:
+        device, user = _pilot_device(wg_name, public=True)
+        try:
+            expected = device_access_token(device, user)
+        except ValueError:
+            abort(404)
+        if (not re.fullmatch(r'[A-Za-z0-9_-]{43}', token)
+                or not hmac.compare_digest(token, expected)):
+            abort(404)
+        now = datetime.now(UTC)
+        local = now.astimezone(ZoneInfo('Europe/Minsk'))
+        history = load_traffic()
+        usage = read_monthly_usage(history.get(wg_name, {}), at=now) if isinstance(history, dict) else None
+        subscription_url = _subscription_url(device, user, 'bundle')
+        import_url = 'happ://add/' + subscription_url
+        response = Response(render_template(
+            'happ_device_access.html', device=device, usage=usage,
+            period=local.strftime('%m.%Y'),
+            observed=datetime.fromisoformat(usage['started_at']).astimezone(
+                ZoneInfo('Europe/Minsk')).strftime('%d.%m.%Y') if usage else None,
+            subscription_url=subscription_url, import_url=import_url,
+            qr=happ_pilot.qr_for_link(import_url), icon=icon, fmt_bytes=fmt_bytes,
+            profiles=[{'name': profile_label(mode), 'caption': profile_caption(mode)}
+                      for mode in happ_pilot.BUNDLE_MODES]), content_type='text/html; charset=utf-8')
+        response.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive'
+        return response
 
 
 @core.app.route('/device/<wg_name>/happ/<mode>/download')

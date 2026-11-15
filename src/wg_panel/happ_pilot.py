@@ -19,7 +19,7 @@ from .dns_enforcement import SafeDnsEnforcementError
 from .happ_config import GEOIP_URL, MODES, build_happ_config, normalize_proxy_rules
 from .happ_dns import client_dns_transport, resolver_ip
 from .happ_shared_rules import load_snapshot, managed_mode, publication_status
-from .happ_subscription_info import profile_caption, profile_label
+from .happ_subscription_info import profile_caption, server_profile_label
 from .safe_dns_settings import load_safe_dns_target
 from .traffic import mutate_device_meta
 
@@ -265,7 +265,7 @@ def _central_config(device, transport_name=None, *, dns=None):
 
 def _export_config(device, mode, rules, config, transport='wireguard'):
     exported = build_happ_config(config, mode, rules, safe_internet=device['safe_internet'],
-                                 remarks=profile_label(mode),
+                                 remarks=server_profile_label(mode),
                                  dns_transport=client_dns_transport(device['owner']))
     exported['meta'] = {'serverDescription': profile_caption(mode)}
     from .happ_runtime import client_settings

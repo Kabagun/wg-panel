@@ -67,7 +67,7 @@ def test_six_named_entries_use_each_current_source_and_rules_without_mutation(co
     assert result['title'] == 'Сравнение DNS'
     configs = result['configs']
     assert [item['remarks'] for item in configs] == [
-        f'{mode} · {dns}' for mode in ('🌐 Всё через VPN', '🧠 Умный VPN', '🏡 РБ/РФ напрямую')
+        f'🇫🇮 {mode} · {dns}' for mode in ('🌐 Всё через VPN', '🧠 Умный VPN', '🏡 РБ/РФ напрямую')
         for dns in ('семейный DNS', 'обычный DNS')]
     assert len({item['remarks'] for item in configs}) == 6
     assert calls == [(name, mode, [rule])

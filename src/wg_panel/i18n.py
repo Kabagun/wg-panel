@@ -775,6 +775,41 @@ UI_STRINGS.update({
     "happ_rotate_subscription": ("Renew subscription link", "Обновить ссылку подписки"),
 })
 
+UI_STRINGS.update({
+    'family_request_title': ('DNS exception requests', 'Заявки на исключения DNS'),
+    'family_request_subtitle': ('Ask the administrator to unblock a website.', 'Предложите администратору разблокировать сайт.'),
+    'family_request_new': ('Request a website exception', 'Предложить исключение DNS'),
+    'family_request_approval_hint': ('Your request does not change filtering. The administrator must approve it first.', 'Отправка заявки не меняет фильтрацию. Сначала её должен одобрить администратор.'),
+    'family_request_global_hint': ('Approval allows the domain and its subdomains for everyone using family protection.', 'Одобрение разрешит домен и его поддомены для всех с семейной защитой.'),
+    'family_request_reason': ('Comment (optional)', 'Комментарий (необязательно)'),
+    'family_request_reason_hint': ('What is blocked and why do you need this site?', 'Что не работает и для чего нужен сайт?'),
+    'family_request_send': ('Send request', 'Отправить заявку'),
+    'family_request_requires_protection': ('Requests are available when family protection is enabled.', 'Заявки доступны при включённой семейной защите.'),
+    'family_request_history': ('Your requests', 'Ваши заявки'),
+    'family_request_status': ('Status', 'Статус'),
+    'family_request_status_pending': ('Awaiting approval', 'Ожидает одобрения'),
+    'family_request_status_applying': ('Applying', 'Применяется'),
+    'family_request_status_approved': ('Approved', 'Одобрено'),
+    'family_request_status_rejected': ('Rejected', 'Отклонено'),
+    'family_request_empty': ('You have no requests yet.', 'Вы ещё не отправляли заявки.'),
+    'family_request_admin_title': ('User requests', 'Заявки пользователей'),
+    'family_request_user': ('User', 'Пользователь'),
+    'family_request_admin_empty': ('No user requests.', 'Заявок пользователей пока нет.'),
+    'family_request_reject': ('Reject', 'Отклонить'),
+    'family_request_submitted': ('Request sent. Await administrator approval.', 'Заявка отправлена. Ожидайте решения администратора.'),
+    'family_request_duplicate': ('This website already has a pending request from you.', 'У вас уже есть заявка на этот домен, ожидающая решения.'),
+    'family_request_reviewed_approve': ('Request approved; the DNS exception is applied.', 'Заявка одобрена, DNS-исключение применено.'),
+    'family_request_reviewed_reject': ('Request rejected. Filtering is unchanged.', 'Заявка отклонена. Фильтрация не менялась.'),
+    'family_request_error_invalid_domain': ('Enter a domain without a URL or IP address.', 'Введите домен без ссылки, пути и IP-адреса.'),
+    'family_request_error_invalid_reason': ('Use a comment of at most 500 characters.', 'Комментарий должен содержать не больше 500 символов.'),
+    'family_request_error_capacity': ('Too many pending requests. Please wait for a decision.', 'Слишком много заявок. Дождитесь рассмотрения предыдущих.'),
+    'family_request_error_not_found': ('Request not found.', 'Заявка не найдена.'),
+    'family_request_error_ineligible': ('This account can no longer use this request.', 'Заявка больше недоступна этому аккаунту.'),
+    'family_request_error_conflict': ('The request has already been processed.', 'Заявка уже рассмотрена.'),
+    'family_request_error_busy': ('The request is being processed. Check back shortly.', 'Заявка уже обрабатывается. Проверьте результат чуть позже.'),
+    'family_request_error_unavailable': ('Requests are temporarily unavailable. Please retry later.', 'Заявки временно недоступны. Повторите позже.'),
+})
+
 for _key, (_en, _ru) in UI_STRINGS.items():
     STRINGS["en"][_key] = _en
     STRINGS["ru"][_key] = _ru

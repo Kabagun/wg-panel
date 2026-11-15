@@ -7,6 +7,7 @@
 {% if paused %}{{ pause_notice(pause_pending) }}{% endif %}
 <div class="metrics-grid">{{ metric(tr('ui_configured'), devices|length, 'devices', (devices|length|string) ~ ' / ' ~ limit_text) }}{% if paused %}{{ metric(tr('ui_limit'), limit_text, 'lock', tr('ui_pause_limit_hint'), 'slate') }}{% else %}{{ metric(tr('ui_available'), available, 'plus', tr('ui_available_hint'), 'slate') }}{% endif %}{{ metric(tr('ui_protected'), protected_count, 'shield', tr('ui_device_count'), 'green') }}</div>
 {% if not is_admin %}{{ account_protection(account_locked, url_for('update_account_safe_internet'), current_username, paused, protected_count > 0) }}{% endif %}
+{% if account_locked or protected_count > 0 %}<p class="form-actions"><a class="button secondary" href="{{ url_for('family_dns_requests_page') }}">{{ icon('globe', 18) }}{{ tr('family_request_new') }}</a></p>{% endif %}
 <section class="devices-section" data-filter-scope>
   <div class="section-heading"><div><h2>{{ tr('ui_your_devices') }} <span class="count-badge">{{ devices|length }}</span></h2><p>{{ tr('ui_manage_hint') }}</p></div>{% if devices %}{{ search(tr('ui_search')) }}{% endif %}</div>
   <div class="device-grid">

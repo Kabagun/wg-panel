@@ -3,6 +3,13 @@
 {% block content %}
 {{ heading(tr('family_dns_title'), tr('family_dns_scope'), tr('ui_admin_section')) }}
 {{ flashes() }}
+<section class="panel form-panel">
+  <div class="section-heading"><div><h2>{{ tr('family_request_admin_title') }}</h2><p>{{ tr('family_request_global_hint') }}</p></div>{{ icon('users', 24) }}</div>
+  {% if requests_error %}<p class="notice notice-error">{{ tr('family_request_error_unavailable') }}</p>
+  {% elif proposals %}<div class="table-scroll"><table class="responsive-table"><thead><tr><th>{{ tr('family_request_user') }}</th><th>{{ tr('family_dns_domain') }}</th><th>{{ tr('family_request_reason') }}</th><th>{{ tr('family_request_status') }}</th><th>{{ tr('dash_col_act') }}</th></tr></thead><tbody>
+  {% for item in proposals %}<tr><td data-label="{{ tr('family_request_user') }}">{{ item.username }}</td><td data-label="{{ tr('family_dns_domain') }}"><strong>{{ item.domain }}</strong></td><td data-label="{{ tr('family_request_reason') }}">{{ item.reason or '—' }}</td><td data-label="{{ tr('family_request_status') }}">{{ tr('family_request_status_' ~ item.status) }}</td><td data-label="{{ tr('dash_col_act') }}">{% if item.status == 'pending' %}<div class="table-actions"><form method="post" action="{{ url_for('admin_family_dns_review', request_id=item.id, decision='approve') }}" data-confirm="{{ tr('family_request_global_hint') }}">{{ csrf() }}<button class="button primary small">{{ icon('check', 16) }}{{ tr('ui_approve') }}</button></form><form method="post" action="{{ url_for('admin_family_dns_review', request_id=item.id, decision='reject') }}">{{ csrf() }}<button class="button secondary small">{{ tr('family_request_reject') }}</button></form></div>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="muted">{{ tr('family_request_admin_empty') }}</p>{% endif %}
+</section>
 {% if error %}<div class="notice notice-error" role="alert">{{ tr('family_dns_error_' ~ error) }}</div>{% endif %}
 {% if state %}
 <div class="metrics-grid">

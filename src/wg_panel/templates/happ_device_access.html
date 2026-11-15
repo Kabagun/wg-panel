@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive"><meta name="color-scheme" content="light">
+  <title>{{ device.device }} · Kabagun VPN</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='happ-device-access.css') }}">
+  <script src="{{ url_for('static', filename='panel.js') }}" defer></script>
+</head>
+<body class="app-body happ-access-body">
+  <header class="happ-access-header"><strong>{{ icon('shield', 25) }} Kabagun VPN</strong><a class="button secondary small" href="{{ url_for('login') }}">Личный кабинет {{ icon('arrow', 16) }}</a></header>
+  <main class="happ-access-main" id="main">
+    <header class="device-heading"><span class="device-heading-icon">{{ icon('devices', 29) }}</span><div><p class="eyebrow">ВАШЕ ПОДКЛЮЧЕНИЕ · HAPP</p><h1>{{ device.device }}</h1></div></header>
+    <div class="happ-access-status"><span>♾️ Безлимит</span><span>{{ '🛡️ Семейная защита включена' if device.safe_internet else '🌐 Семейная защита выключена' }}</span></div>
+    {% if device.safe_internet %}<p class="form-actions"><a class="button secondary" href="{{ url_for('family_dns_requests_page') }}">{{ icon('globe', 18) }} Предложить исключение DNS</a></p>{% endif %}
+    <section class="panel happ-access-connect" aria-labelledby="connect-title">
+      <div class="happ-access-qr">{% if qr %}<img src="{{ qr }}" alt="QR для добавления подключения в Happ" width="224" height="224">{% else %}{{ icon('qr', 64) }}{% endif %}<p>Отсканируйте в Happ</p></div>
+      <div><p class="eyebrow">ОДНА ПОДПИСКА · ТРИ РЕЖИМА</p><h2 id="connect-title">Подключите устройство</h2><p>Откройте подписку в Happ или скачайте конфигурацию. Затем выберите подходящий режим.</p><div class="form-actions"><a class="button primary" href="{{ import_url }}">{{ icon('plus', 18) }} Открыть в Happ</a><a class="button secondary" href="{{ subscription_url }}">{{ icon('down', 18) }} Скачать профили</a></div><p class="field-help">Не передавайте ссылку и QR: они дают доступ к вашему подключению.</p></div>
+    </section>
+    <section class="happ-access-modes" aria-label="Режимы VPN">
+      {% for profile in profiles %}<article class="panel"><h2>{{ profile.name }}</h2><p>{% if loop.index == 1 %}Весь интернет проходит через VPN. Локальная сеть остаётся доступна напрямую.{% elif loop.index == 2 %}AI и другие сервисы из списка администратора проходят через VPN. Остальной трафик идёт напрямую.{% else %}Сайты на IP-адресах Беларуси и России открываются напрямую. Остальной трафик идёт через VPN.{% endif %}</p></article>{% endfor %}
+    </section>
+    <section class="panel happ-access-traffic" aria-labelledby="traffic-title"><div><p class="eyebrow">ПОМЕСЯЧНЫЙ УЧЁТ</p><h2 id="traffic-title">Трафик через VPN · {{ period }}</h2><p class="field-help">Новый месяц начинается 1-го числа по времени Минска.{% if observed %} В этом месяце данные собираются с {{ observed }}.{% endif %}</p></div><dl><div><dt>Получено</dt><dd>{{ fmt_bytes(usage.download) if usage else 'Ещё нет данных' }}</dd></div><div><dt>Отправлено</dt><dd>{{ fmt_bytes(usage.upload) if usage else 'Ещё нет данных' }}</dd></div><div><dt>Всего</dt><dd>{{ fmt_bytes(usage.upload + usage.download) if usage else 'Ещё нет данных' }}</dd></div></dl><p class="field-help">Прямой трафик не входит в счётчик VPN. Данные обновляются примерно раз в минуту; в Happ — после обновления подписки.</p></section>
+  </main>
+  <footer class="happ-access-footer">Kabagun VPN · Ваше личное подключение</footer>
+</body>
+</html>

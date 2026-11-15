@@ -7,11 +7,13 @@ from urllib.parse import urlsplit, urlunsplit
 
 _ERROR = 'Invalid subscription presentation data'
 _MAX_BYTES = (1 << 63) - 1
-_DEVICE_PATH = re.compile(r'/device/[a-z0-9][a-z0-9_-]{0,127}(?:/happ)?')
+_DEVICE_PATH = re.compile(
+    r'/device/[a-z0-9][a-z0-9_-]{0,127}(?:/happ(?:/access/[A-Za-z0-9_-]{43})?)?')
 _PATH_PART = re.compile(r'[A-Za-z0-9_.-]{1,128}')
 _MONTH = re.compile(r'[0-9]{4}-(?:0[1-9]|1[0-2])')
 _SCOPE = {'device': 'это устройство', 'account': 'все устройства аккаунта',
           'sources': 'устройства подписки'}
+_SCOPE_SHORT = {'device': '', 'account': ' · аккаунт', 'sources': ' · подписка'}
 _PROFILES = {
     'all': ('🌐 Всё через VPN', 'Весь интернет через VPN'),
     'custom': ('🧠 Умный VPN', 'AI и сервисы из списка → VPN'),
@@ -37,6 +39,11 @@ def _profile(mode):
 def profile_label(mode):
     """Return the compact, Unicode routing-mode name shown in Happ."""
     return _profile(mode)[0]
+
+
+def server_profile_label(mode):
+    """Put the current node's flag first so Happ uses its native server icon."""
+    return '🇫🇮 ' + profile_label(mode)
 
 
 def profile_caption(mode):
@@ -91,21 +98,20 @@ def _panel_links(base_url, device_path):
             or any(segments[index:index + 2] == ['happ', 'sub']
                    for index in range(len(segments)))):
         raise ValueError(_ERROR)
-    site = urlunsplit(('https', parts.netloc, base_path + '/', '', ''))
     device = urlunsplit(('https', parts.netloc, base_path + device_path, '', ''))
-    return device, site
+    return device
 
 
 def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
                   usage_scope, usage_month=None, comparison=False, usage_started_at=None,
                   comparison_control=False, safe_internet=None):
-    """Build up to four standard Happ headers, without expiry or core controls.
+    """Build up to three standard Happ headers, without expiry or core controls.
 
     Paths are application paths relative to the trusted panel base, including when
     they start with '/'. Both counts may be None to omit uncertain traffic data;
     otherwise explicit client-direction byte counts are required. Historical rx/tx
     direction, current time, account ownership and traffic collection are not inferred.
-    A validated explicit usage start date takes precedence over the legacy month label.
+    Counts and the optional observed start date belong to the explicit usage month.
     DNS status is explicit: None omits it; comparisons describe both DNS variants.
     """
     try:
@@ -114,18 +120,19 @@ def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
                 or safe_internet is not None and type(safe_internet) is not bool
                 or comparison_control and not comparison):
             raise ValueError(_ERROR)
+        if (not isinstance(usage_month, str) or not _MONTH.fullmatch(usage_month)
+                or usage_month.startswith('0000-')):
+            raise ValueError(_ERROR)
         if usage_started_at is not None:
             if (not isinstance(usage_started_at, str)
                     or not re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', usage_started_at)):
                 raise ValueError(_ERROR)
-            started = date.fromisoformat(usage_started_at)
-            period = f'Учёт с {started:%d.%m.%Y}'
-        else:
-            if (not isinstance(usage_month, str) or not _MONTH.fullmatch(usage_month)
-                    or usage_month.startswith('0000-')):
+            date.fromisoformat(usage_started_at)
+            if usage_started_at[:7] != usage_month:
                 raise ValueError(_ERROR)
-            period = f'Трафик за {usage_month}'
-        device_url, support_url = _panel_links(panel_base_url, device_path)
+        month_label = usage_month[5:] + '.' + usage_month[:4]
+        period = f'📊 Трафик {month_label}{_SCOPE_SHORT[usage_scope]}'
+        device_url = _panel_links(panel_base_url, device_path)
         status = '♾️ Безлимит'
         if comparison:
             count = 7 if comparison_control else 6
@@ -133,15 +140,21 @@ def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
             if comparison_control:
                 status += ' + контроль UDP без QUIC'
         elif safe_internet is not None:
-            status += ' · 🛡️ Семейная защита' if safe_internet else ' · 🌐 Обычный DNS'
-        explanation = ('🧠 Умный VPN: AI и другие сервисы из списка админа → VPN, '
-                       'остальное → напрямую.')
-        announce = f'{status}\n{explanation}\n{period}: {_SCOPE[usage_scope]}.'
-        if len(announce) > 200:
+            status += (' · 🛡️ Семейная защита включена' if safe_internet
+                       else ' · 🛡️ Семейная защита выключена')
+        explanation = (['🧠 Умный VPN: AI и сервисы из списка → VPN, остальное напрямую']
+                       if comparison else [
+                           '🌐 Всё через VPN: весь интернет',
+                           '🧠 Умный VPN: AI и список админа → VPN, остальное напрямую',
+                           '🏡 РБ/РФ напрямую, остальное → VPN'])
+        announce = '\n'.join([status, *explanation, period])
+        if len(announce.encode('utf-16-le')) // 2 > 200:
+            period = f'📊 {month_label}{_SCOPE_SHORT[usage_scope]}'
+            announce = '\n'.join([status, *explanation, period])
+        if len(announce.encode('utf-16-le')) // 2 > 200:
             raise ValueError(_ERROR)
         headers = {
             'profile-web-page-url': device_url,
-            'support-url': support_url,
             'announce': 'base64:' + base64.b64encode(announce.encode('utf-8')).decode('ascii'),
         }
         if upload_bytes is not None or download_bytes is not None:

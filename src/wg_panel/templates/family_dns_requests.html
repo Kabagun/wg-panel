@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% from 'components.html' import heading, flashes with context %}
+{% block content %}
+{{ heading(tr('family_request_title'), tr('family_request_subtitle'), tr('ui_workspace')) }}
+{{ flashes() }}
+{% if unavailable %}<p class="notice notice-error" role="alert">{{ tr('family_request_error_unavailable') }}</p>{% endif %}
+{% if protected and not current_paused and not unavailable %}
+<section class="panel form-panel">
+  <h2>{{ tr('family_request_new') }}</h2><p>{{ tr('family_request_approval_hint') }}</p>
+  <form method="post" class="form-stack">
+    {{ csrf() }}
+    <label for="request-domain">{{ tr('family_dns_domain') }}</label><input id="request-domain" name="domain" maxlength="253" placeholder="example.com" autocapitalize="none" spellcheck="false" autocomplete="off" required><p class="field-help">{{ tr('family_dns_domain_hint') }}</p>
+    <label for="request-reason">{{ tr('family_request_reason') }}</label><textarea id="request-reason" name="reason" maxlength="500" rows="3" placeholder="{{ tr('family_request_reason_hint') }}"></textarea>
+    <button type="submit" class="button primary">{{ icon('plus', 18) }}{{ tr('family_request_send') }}</button>
+  </form>
+</section>
+{% elif not protected %}<p class="notice">{{ tr('family_request_requires_protection') }}</p>{% endif %}
+<section class="panel form-panel"><h2>{{ tr('family_request_history') }}</h2>
+{% if proposals %}<div class="table-scroll"><table class="responsive-table"><thead><tr><th>{{ tr('family_dns_domain') }}</th><th>{{ tr('family_request_reason') }}</th><th>{{ tr('family_request_status') }}</th></tr></thead><tbody>
+{% for item in proposals %}<tr><td data-label="{{ tr('family_dns_domain') }}"><strong>{{ item.domain }}</strong></td><td data-label="{{ tr('family_request_reason') }}">{{ item.reason or '—' }}</td><td data-label="{{ tr('family_request_status') }}"><span class="tag">{{ tr('family_request_status_' ~ item.status) }}</span></td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="muted">{{ tr('family_request_empty') }}</p>{% endif %}
+</section>
+{% endblock %}

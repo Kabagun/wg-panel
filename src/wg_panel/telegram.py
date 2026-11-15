@@ -103,20 +103,19 @@ def answer_callback(callback_id, text=""):
     ) is not None
 
 
-def edit_tg_message(chat_id, message_id, text):
+def edit_tg_message(chat_id, message_id, text, *, remove_buttons=False):
     if not telegram_configured(require_chat=False):
         return False
-    return _telegram_api(
-        "editMessageText",
-        {
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "text": text,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": True,
-        },
-        timeout=5,
-    ) is not None
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": True,
+    }
+    if remove_buttons:
+        payload['reply_markup'] = {'inline_keyboard': []}
+    return _telegram_api('editMessageText', payload, timeout=5) is not None
 
 
 def set_tg_webhook():

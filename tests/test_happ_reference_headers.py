@@ -30,7 +30,7 @@ def test_public_control_bundle_header_and_page_report_seven_entries(runtime, mon
     response = browser(None).get(subscription(mode='bundle'))
     assert response.status_code == 200
     configs = response.get_json()
-    assert len(configs) == 7 and configs[-1]['remarks'] == '🧪 Контроль · UDP без QUIC'
+    assert len(configs) == 7 and configs[-1]['remarks'] == '🇫🇮 🧪 Контроль · UDP без QUIC'
     assert all(c['routing']['domainStrategy'] == 'AsIs' for c in configs)
     routing = json.loads(base64.b64decode(response.headers['routing'].removeprefix('happ://routing/onadd/')))
     assert routing['DomainStrategy'] == 'AsIs'

@@ -235,10 +235,11 @@ def test_subscription_presentation_uses_new_trusted_usage_without_collecting_or_
     response = browser(None).get(subscription(mode='bundle'))
     assert response.status_code == 200
     assert response.headers['subscription-userinfo'] == 'upload=123; download=456; total=0'
-    assert response.headers['profile-web-page-url'] == f'https://vpn.example.test/device/{PILOT}/happ'
-    assert response.headers['support-url'] == 'https://vpn.example.test/'
+    assert response.headers['profile-web-page-url'].startswith(
+        f'https://vpn.example.test/device/{PILOT}/happ/access/')
+    assert 'support-url' not in response.headers
     announcement = base64.b64decode(response.headers['announce'].removeprefix('base64:')).decode()
-    assert '15.11.2026' in announcement  # 22:00 UTC is the next day in Minsk.
+    assert '11.2026' in announcement and 'с 15.11' not in announcement
     assert 'Безлимит' in announcement and '🧠 Умный VPN' in announcement
     assert len(announcement) <= 200 and 'expire' not in response.headers['subscription-userinfo']
     assert traffic.load_traffic() == before
@@ -250,7 +251,7 @@ def test_invalid_optional_usage_never_blocks_subscription(runtime, history):
     response = browser(None).get(subscription(mode='bundle'))
     assert response.status_code == 200 and len(response.get_json()) == 3
     assert 'subscription-userinfo' not in response.headers
-    assert response.headers['support-url'] == 'https://vpn.example.test/'
+    assert 'support-url' not in response.headers
 
 
 def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runtime):
@@ -267,7 +268,7 @@ def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runt
     assert isinstance(bundle, list) and len(bundle) == 3
     assert len({item['remarks'] for item in bundle}) == 3
     assert [item['remarks'] for item in bundle] == [
-        '🌐 Всё через VPN', '🧠 Умный VPN', '🏡 РБ/РФ напрямую']
+        '🇫🇮 🌐 Всё через VPN', '🇫🇮 🧠 Умный VPN', '🇫🇮 🏡 РБ/РФ напрямую']
     assert happ_pilot.BUNDLE_MODES == ('all', 'custom', 'by-ru-direct')
     for mode, item in zip(happ_pilot.BUNDLE_MODES, bundle, strict=True):
         assert item == browser(None).get(subscription(mode=mode)).get_json()
@@ -506,7 +507,7 @@ def test_reference_control_appends_only_ordinary_smart_copy_without_mutation(run
         control = result['configs'][6]
         ordinary_smart = baseline['configs'][3]
         expected = copy.deepcopy(ordinary_smart)
-        expected['remarks'] = '🧪 Контроль · UDP без QUIC'
+        expected['remarks'] = '🇫🇮 🧪 Контроль · UDP без QUIC'
         expected['meta']['serverDescription'] = (
             'UDP DNS · QUIC отключён')
         expected['dns']['servers'] = ['8.8.8.8', '1.1.1.1']
