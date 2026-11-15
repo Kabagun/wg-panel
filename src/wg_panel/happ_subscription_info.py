@@ -12,6 +12,46 @@ _PATH_PART = re.compile(r'[A-Za-z0-9_.-]{1,128}')
 _MONTH = re.compile(r'[0-9]{4}-(?:0[1-9]|1[0-2])')
 _SCOPE = {'device': 'это устройство', 'account': 'все устройства аккаунта',
           'sources': 'устройства подписки'}
+_PROFILES = {
+    'all': ('🌐 Всё через VPN', 'Весь интернет через VPN'),
+    'custom': ('🧠 Умный VPN', 'Сайты из списка через VPN'),
+    'by-ru-direct': ('🏡 РБ/РФ напрямую', 'РБ/РФ мимо · остальное VPN'),
+    'by-direct': ('🇧🇾 Беларусь напрямую', 'Беларусь мимо · остальное VPN'),
+    'ru-direct': ('🇷🇺 Россия напрямую', 'Россия мимо · остальное VPN'),
+}
+_TITLE_LABELS = {
+    'all': '🌐 Всё',
+    'custom': '🧠 Умный',
+    'by-ru-direct': '🏡 РБ/РФ',
+    'by-direct': '🇧🇾 РБ',
+    'ru-direct': '🇷🇺 РФ',
+}
+
+
+def _profile(mode):
+    if not isinstance(mode, str) or mode not in _PROFILES:
+        raise ValueError(_ERROR)
+    return _PROFILES[mode]
+
+
+def profile_label(mode):
+    """Return the compact, Unicode routing-mode name shown in Happ."""
+    return _profile(mode)[0]
+
+
+def profile_caption(mode):
+    """Describe routing behavior in at most 30 Unicode characters."""
+    return _profile(mode)[1]
+
+
+def subscription_title(mode, *, comparison=False):
+    """Return a Unicode title within Happ's 25-character limit; callers encode it."""
+    if type(comparison) is not bool or not isinstance(mode, str):
+        raise ValueError(_ERROR)
+    if mode == 'bundle':
+        return 'Kabagun VPN · 🧪 DNS' if comparison else '🛡️ Kabagun VPN'
+    _profile(mode)
+    return 'Kabagun VPN · ' + _TITLE_LABELS[mode]
 
 
 def _count(value):
@@ -58,7 +98,7 @@ def _panel_links(base_url, device_path):
 
 def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
                   usage_scope, usage_month=None, comparison=False, usage_started_at=None,
-                  comparison_control=False):
+                  comparison_control=False, safe_internet=None):
     """Build up to four standard Happ headers, without expiry or core controls.
 
     Paths are application paths relative to the trusted panel base, including when
@@ -66,10 +106,12 @@ def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
     otherwise explicit client-direction byte counts are required. Historical rx/tx
     direction, current time, account ownership and traffic collection are not inferred.
     A validated explicit usage start date takes precedence over the legacy month label.
+    DNS status is explicit: None omits it; comparisons describe both DNS variants.
     """
     try:
         if (not isinstance(usage_scope, str) or usage_scope not in _SCOPE
                 or type(comparison) is not bool or type(comparison_control) is not bool
+                or safe_internet is not None and type(safe_internet) is not bool
                 or comparison_control and not comparison):
             raise ValueError(_ERROR)
         if usage_started_at is not None:
@@ -84,11 +126,16 @@ def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
                 raise ValueError(_ERROR)
             period = f'Трафик за {usage_month}'
         device_url, support_url = _panel_links(panel_base_url, device_path)
-        profiles = ('6 профилей: 3 режима × семейный/обычный DNS.' if comparison else
-                    '3 режима: всё через VPN, умный VPN, РБ/РФ напрямую.')
-        if comparison_control:
-            profiles = '7 профилей: 6 для сравнения DNS + контроль UDP без QUIC.'
-        announce = f'{profiles} {period}: {_SCOPE[usage_scope]}. Безлимит.'
+        status = '♾️ Безлимит'
+        if comparison:
+            count = 7 if comparison_control else 6
+            status += f' · {count} профилей · семейный/обычный DNS'
+            if comparison_control:
+                status += ' + контроль UDP без QUIC'
+        elif safe_internet is not None:
+            status += ' · 🛡️ Семейная защита' if safe_internet else ' · 🌐 Обычный DNS'
+        profiles = ' · '.join(profile_label(mode) for mode in ('all', 'custom', 'by-ru-direct'))
+        announce = f'{status}\n{profiles}\n{period}: {_SCOPE[usage_scope]}.'
         if len(announce) > 200:
             raise ValueError(_ERROR)
         headers = {

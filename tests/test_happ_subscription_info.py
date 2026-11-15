@@ -4,7 +4,12 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from wg_panel.happ_subscription_info import build_headers
+from wg_panel.happ_subscription_info import (
+    build_headers,
+    profile_caption,
+    profile_label,
+    subscription_title,
+)
 
 
 def headers(**overrides):
@@ -20,6 +25,58 @@ def announcement(result):
     prefix, encoded = result['announce'].split(':', 1)
     assert prefix == 'base64'
     return base64.b64decode(encoded, validate=True).decode('utf-8')
+
+
+@pytest.mark.parametrize('mode,label,caption', [
+    ('all', '🌐 Всё через VPN', 'Весь интернет через VPN'),
+    ('custom', '🧠 Умный VPN', 'Сайты из списка через VPN'),
+    ('by-ru-direct', '🏡 РБ/РФ напрямую', 'РБ/РФ мимо · остальное VPN'),
+    ('by-direct', '🇧🇾 Беларусь напрямую', 'Беларусь мимо · остальное VPN'),
+    ('ru-direct', '🇷🇺 Россия напрямую', 'Россия мимо · остальное VPN'),
+])
+def test_profile_labels_and_short_captions_are_logical_unicode(mode, label, caption):
+    assert profile_label(mode) == label
+    assert profile_caption(mode) == caption
+    assert len(caption) <= 30
+
+
+@pytest.mark.parametrize('mode,suffix', [
+    ('all', '🌐 Всё'), ('custom', '🧠 Умный'), ('by-ru-direct', '🏡 РБ/РФ'),
+    ('by-direct', '🇧🇾 РБ'), ('ru-direct', '🇷🇺 РФ'),
+])
+@pytest.mark.parametrize('comparison', [False, True])
+def test_single_profile_titles_fit_happ_limit(mode, suffix, comparison):
+    title = subscription_title(mode, comparison=comparison)
+    assert title == 'Kabagun VPN · ' + suffix
+    assert len(title) <= 25
+
+
+def test_bundle_titles_distinguish_dns_comparison():
+    assert subscription_title('bundle') == '🛡️ Kabagun VPN'
+    assert subscription_title('bundle', comparison=True) == 'Kabagun VPN · 🧪 DNS'
+    assert len(subscription_title('bundle')) <= 25
+    assert len(subscription_title('bundle', comparison=True)) <= 25
+
+
+@pytest.mark.parametrize('value', [None, True, False, 1, [], {}, '', 'unknown',
+                                 'all\nInjected: yes', 'private-synthetic-text'])
+@pytest.mark.parametrize('present', [profile_label, profile_caption, subscription_title])
+def test_presentation_rejects_invalid_modes_without_echoing_input(present, value):
+    with pytest.raises(ValueError, match='^Invalid subscription presentation data$'):
+        present(value)
+
+
+@pytest.mark.parametrize('present', [profile_label, profile_caption])
+def test_bundle_is_not_a_routing_profile(present):
+    with pytest.raises(ValueError, match='^Invalid subscription presentation data$'):
+        present('bundle')
+
+
+@pytest.mark.parametrize('mode', ['bundle', 'all'])
+@pytest.mark.parametrize('value', [None, 0, 1, '', 'true', [], {}])
+def test_title_comparison_flag_requires_a_boolean(mode, value):
+    with pytest.raises(ValueError, match='^Invalid subscription presentation data$'):
+        subscription_title(mode, comparison=value)
 
 
 @pytest.mark.parametrize('upload,download', [(0, 0), (12, 34), ((1 << 63) - 1, (1 << 63) - 1)])
@@ -97,11 +154,56 @@ def test_device_page_only_never_accepts_subscription_links_or_tokens(path):
 def test_utf8_announcement_describes_exact_profile_and_usage_scope(comparison, scope):
     text = announcement(headers(comparison=comparison, usage_scope=scope))
     assert len(text) <= 200
-    assert ('6 профилей: 3 режима' if comparison else '3 режима: всё через VPN') in text
+    assert len(text.splitlines()) == 3
+    assert text.splitlines()[1] == '🌐 Всё через VPN · 🧠 Умный VPN · 🏡 РБ/РФ напрямую'
+    assert ('6 профилей' in text) is comparison
     assert '2026-11' in text
     assert ('все устройства аккаунта' if scope == 'account' else 'это устройство') in text
     assert 'Безлимит' in text
-    assert 'семейный/обычный DNS' in text if comparison else 'умный VPN' in text
+    assert 'семейный/обычный DNS' in text if comparison else 'Умный VPN' in text
+
+
+@pytest.mark.parametrize('safe,status', [
+    (None, '♾️ Безлимит'),
+    (True, '♾️ Безлимит · 🛡️ Семейная защита'),
+    (False, '♾️ Безлимит · 🌐 Обычный DNS'),
+])
+def test_explicit_dns_status_is_encoded_in_standard_ascii_headers(safe, status):
+    result = headers(safe_internet=safe)
+    text = announcement(result)
+    assert text.splitlines()[0] == status
+    assert base64.b64encode(text.encode('utf-8')).decode('ascii') == result['announce'][7:]
+    assert all(value.isascii() and '\r' not in value and '\n' not in value
+               for value in result.values())
+
+
+@pytest.mark.parametrize('value', [0, 1, '', 'false', 'true', [], {}, 'private\nInjected: yes'])
+def test_dns_status_requires_a_boolean_or_none(value):
+    with pytest.raises(ValueError, match='^Invalid subscription presentation data$'):
+        headers(safe_internet=value)
+
+
+@pytest.mark.parametrize('safe', [None, False, True])
+@pytest.mark.parametrize('comparison,control', [(False, False), (True, False), (True, True)])
+@pytest.mark.parametrize('scope', ['device', 'account', 'sources'])
+@pytest.mark.parametrize('started', [None, '9999-12-31'])
+def test_banner_is_three_bounded_lines_for_every_status_scope_and_period(
+        safe, comparison, control, scope, started):
+    text = announcement(headers(safe_internet=safe, comparison=comparison,
+                                comparison_control=control, usage_scope=scope,
+                                usage_started_at=started))
+    lines = text.splitlines()
+    assert len(lines) == 3 and len(text) <= 200
+    assert lines[0].startswith('♾️ Безлимит')
+    assert lines[2] == (
+        ('Учёт с 31.12.9999' if started else 'Трафик за 2026-11') + ': '
+        + {'device': 'это устройство', 'account': 'все устройства аккаунта',
+           'sources': 'устройства подписки'}[scope] + '.')
+    if comparison:
+        assert f'{7 if control else 6} профилей' in lines[0]
+        assert 'семейный/обычный DNS' in lines[0]
+        assert 'Семейная защита' not in lines[0]
+    assert ('контроль UDP без QUIC' in text) is control
 
 
 @pytest.mark.parametrize('field,value', [
@@ -109,6 +211,7 @@ def test_utf8_announcement_describes_exact_profile_and_usage_scope(comparison, s
     ('usage_month', '2026-11\r\nInjected: yes'), ('usage_month', None),
     ('usage_scope', 'unknown'), ('usage_scope', 'account\nprivate'),
     ('usage_scope', []), ('comparison', 1), ('comparison', 'false'),
+    ('comparison_control', 1), ('comparison_control', 'true'), ('comparison_control', True),
 ])
 def test_announcement_inputs_are_bounded_and_have_no_arbitrary_private_text(field, value):
     with pytest.raises(ValueError, match='^Invalid subscription presentation data$'):

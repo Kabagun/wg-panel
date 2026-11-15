@@ -126,6 +126,7 @@ def view_happ_device(wg_name):
 
 def _response(device, mode, rules):
     from ..happ_comparison import export_bundle
+    from ..happ_subscription_info import subscription_title
     comparison = export_bundle(device) if mode == 'bundle' else None
     config = (comparison['configs'] if comparison else
               happ_pilot.exported_bundle(device, rules) if mode == 'bundle' else
@@ -136,9 +137,8 @@ def _response(device, mode, rules):
                          filename=f"{device['device']}-{mode}.json")
     response.headers['routing'] = (happ_pilot.comparison_routing_header(device, config)
                                    if comparison else happ_pilot.routing_header(device, mode, config))
-    response.headers['profile-title'] = ('base64:' + base64.b64encode(
-                                        comparison['title'].encode()).decode() if comparison else
-                                        'VPN modes' if mode == 'bundle' else f'Happ pilot - {mode}')
+    response.headers['profile-title'] = 'base64:' + base64.b64encode(
+        subscription_title(mode, comparison=bool(comparison)).encode('utf-8')).decode('ascii')
     response.headers['profile-update-interval'] = '1'
     response.headers['tun-enable'] = '1'
     # Happ's native TUN feeds the configured sniffing SOCKS inbound. The
@@ -170,7 +170,8 @@ def _presentation_headers(response, device, comparison):
             usage_month=now.strftime('%Y-%m'), usage_scope='sources' if comparison else 'device',
             usage_started_at=started.astimezone(ZoneInfo('Europe/Minsk')).date().isoformat()
             if started else None, comparison=bool(comparison),
-            comparison_control=bool(comparison and len(comparison['configs']) == 7))
+            comparison_control=bool(comparison and len(comparison['configs']) == 7),
+            safe_internet=device['safe_internet'])
     except (ValueError, TypeError, KeyError, OSError):
         # Presentation settings must never make valid VPN configurations unavailable.
         return

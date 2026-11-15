@@ -5,14 +5,15 @@ import re
 from pathlib import Path
 
 from . import core
+from .happ_subscription_info import profile_label
 
 _ERROR = 'Happ comparison unavailable'
 _ACCOUNT = re.compile(r'[0-9a-f]{64}')
 _MAX_BYTES = 65536
 _MODES = (
-    ('all', 'Всё через VPN'),
-    ('custom', 'Умный VPN'),
-    ('by-ru-direct', 'РБ/РФ напрямую'),
+    ('all', profile_label('all')),
+    ('custom', profile_label('custom')),
+    ('by-ru-direct', profile_label('by-ru-direct')),
 )
 
 
@@ -131,9 +132,9 @@ def _reference_control(source):
     inbound_tags.add(config['dns']['tag'])
     if any(tag not in inbound_tags for rule in rules for tag in rule.get('inboundTag', [])):
         raise ValueError(_ERROR)
-    config['remarks'] = 'Контроль · UDP без QUIC'
+    config['remarks'] = '🧪 Контроль · UDP без QUIC'
     config.setdefault('meta', {})['serverDescription'] = (
-        'Диагностический профиль: обычный DNS по UDP, QUIC отключён.')
+        'UDP DNS · QUIC отключён')
     return config
 
 
@@ -179,7 +180,7 @@ def export_bundle(device):
                                 inbound['sniffing']['routeOnly'] = True
                     config['remarks'] = f'{title} · {label}'
                     config.setdefault('meta', {})['serverDescription'] = (
-                        f'{title}. DNS: {label}.')
+                        '🛡️ Семейный DNS' if index == 0 else '🌐 Обычный DNS')
                     configs.append(config)
                     if mode == 'custom' and index == 1:
                         control_source = config

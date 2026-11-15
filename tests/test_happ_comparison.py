@@ -67,7 +67,7 @@ def test_six_named_entries_use_each_current_source_and_rules_without_mutation(co
     assert result['title'] == 'Сравнение DNS'
     configs = result['configs']
     assert [item['remarks'] for item in configs] == [
-        f'{mode} · {dns}' for mode in ('Всё через VPN', 'Умный VPN', 'РБ/РФ напрямую')
+        f'{mode} · {dns}' for mode in ('🌐 Всё через VPN', '🧠 Умный VPN', '🏡 РБ/РФ напрямую')
         for dns in ('семейный DNS', 'обычный DNS')]
     assert len({item['remarks'] for item in configs}) == 6
     assert calls == [(name, mode, [rule])
@@ -76,8 +76,9 @@ def test_six_named_entries_use_each_current_source_and_rules_without_mutation(co
     assert [item['dns']['servers'][0] for item in configs] == [
         'family.example', 'ordinary.example'] * 3
     assert all(item['meta']['source'] == 'retained' for item in configs)
-    assert all(item['remarks'].split(' · ')[1] in item['meta']['serverDescription']
-               for item in configs)
+    assert [item['meta']['serverDescription'] for item in configs] == [
+        '🛡️ Семейный DNS', '🌐 Обычный DNS'] * 3
+    assert all(len(item['meta']['serverDescription']) <= 30 for item in configs)
     assert all(item['remarks'] == 'source title' for item in source_configs.values())
     assert (users, devices) == before
     assert path.read_bytes() == file_before
