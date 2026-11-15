@@ -6,11 +6,13 @@ routing independently of the underlying transport:
 | Entry | Caption |
 | --- | --- |
 | 🌐 Всё через VPN | Весь интернет через VPN |
-| 🧠 Умный VPN | Сайты из списка через VPN |
+| 🧠 Умный VPN | AI и сервисы из списка → VPN |
 | 🏡 РБ/РФ напрямую | РБ/РФ мимо · остальное VPN |
 
-The announcement shows unlimited service, the device's DNS policy, the available
-modes and the traffic accounting period. The website button opens the device's
+The announcement shows unlimited service, the device's DNS policy, an explanation
+of Smart VPN and the traffic accounting period. Smart VPN sends AI and other
+services from the administrator's list through the VPN; other destinations go
+directly. The website button opens the device's
 panel page; the support button opens the panel homepage.
 
 Traffic metadata contains actual recorded upload and download bytes. A zero total

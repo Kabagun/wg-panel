@@ -29,7 +29,7 @@ def announcement(result):
 
 @pytest.mark.parametrize('mode,label,caption', [
     ('all', '🌐 Всё через VPN', 'Весь интернет через VPN'),
-    ('custom', '🧠 Умный VPN', 'Сайты из списка через VPN'),
+    ('custom', '🧠 Умный VPN', 'AI и сервисы из списка → VPN'),
     ('by-ru-direct', '🏡 РБ/РФ напрямую', 'РБ/РФ мимо · остальное VPN'),
     ('by-direct', '🇧🇾 Беларусь напрямую', 'Беларусь мимо · остальное VPN'),
     ('ru-direct', '🇷🇺 Россия напрямую', 'Россия мимо · остальное VPN'),
@@ -155,7 +155,8 @@ def test_utf8_announcement_describes_exact_profile_and_usage_scope(comparison, s
     text = announcement(headers(comparison=comparison, usage_scope=scope))
     assert len(text) <= 200
     assert len(text.splitlines()) == 3
-    assert text.splitlines()[1] == '🌐 Всё через VPN · 🧠 Умный VPN · 🏡 РБ/РФ напрямую'
+    assert text.splitlines()[1] == (
+        '🧠 Умный VPN: AI и другие сервисы из списка админа → VPN, остальное → напрямую.')
     assert ('6 профилей' in text) is comparison
     assert '2026-11' in text
     assert ('все устройства аккаунта' if scope == 'account' else 'это устройство') in text

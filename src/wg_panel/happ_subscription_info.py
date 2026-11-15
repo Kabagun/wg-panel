@@ -14,7 +14,7 @@ _SCOPE = {'device': 'это устройство', 'account': 'все устро
           'sources': 'устройства подписки'}
 _PROFILES = {
     'all': ('🌐 Всё через VPN', 'Весь интернет через VPN'),
-    'custom': ('🧠 Умный VPN', 'Сайты из списка через VPN'),
+    'custom': ('🧠 Умный VPN', 'AI и сервисы из списка → VPN'),
     'by-ru-direct': ('🏡 РБ/РФ напрямую', 'РБ/РФ мимо · остальное VPN'),
     'by-direct': ('🇧🇾 Беларусь напрямую', 'Беларусь мимо · остальное VPN'),
     'ru-direct': ('🇷🇺 Россия напрямую', 'Россия мимо · остальное VPN'),
@@ -134,8 +134,9 @@ def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
                 status += ' + контроль UDP без QUIC'
         elif safe_internet is not None:
             status += ' · 🛡️ Семейная защита' if safe_internet else ' · 🌐 Обычный DNS'
-        profiles = ' · '.join(profile_label(mode) for mode in ('all', 'custom', 'by-ru-direct'))
-        announce = f'{status}\n{profiles}\n{period}: {_SCOPE[usage_scope]}.'
+        explanation = ('🧠 Умный VPN: AI и другие сервисы из списка админа → VPN, '
+                       'остальное → напрямую.')
+        announce = f'{status}\n{explanation}\n{period}: {_SCOPE[usage_scope]}.'
         if len(announce) > 200:
             raise ValueError(_ERROR)
         headers = {
