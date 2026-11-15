@@ -1,15 +1,16 @@
 """Site-managed Happ routing domains with independent asynchronous publication."""
 
 import re
-import subprocess
 from datetime import UTC, datetime
 
-from flask import abort, flash, redirect, request, url_for
+from flask import abort, flash, redirect, request, session, url_for
 
-from .. import core, happ_pilot, happ_shared_rules
+from .. import core, family_dns_requests, happ_pilot, happ_shared_rules
 from ..auth import admin_required, approved_required
 from ..i18n import t
+from ..security import client_ip, public_rate_limiter, rate_limited_response
 from ..ui import render_page
+from .family_dns import _proposal_error
 
 
 def _require_managed():
@@ -52,22 +53,22 @@ def admin_happ_rules():
         publication = _publication(state["revision"])
     except (OSError, ValueError):
         pass
+    proposals, requests_error = [], False
+    try:
+        users = core.load_users()
+        proposals = [item for item in family_dns_requests.list_requests(kind='smart')
+                     if users.get(item['username'], {}).get('account_id') == item['account_id']]
+    except family_dns_requests.RequestError:
+        requests_error = True
     return render_page(
         "happ_rules.html", "happ_admin_title", state=state, publication=publication,
         domains=[rule.removeprefix("domain:") for rule in state["rules"]] if state else [],
-        time_label=_time_label,
+        time_label=_time_label, proposals=proposals, requests_error=requests_error,
     ), 200 if state else 503
 
 
 def _enqueue_publication():
-    try:
-        result = subprocess.run(
-            ["systemctl", "--no-block", "start", "wg-panel-happ-publish.service"],
-            capture_output=True, timeout=5, check=False,
-        )
-        return result.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
+    return happ_shared_rules.enqueue_publication()
 
 
 def _change(operation):
@@ -115,3 +116,52 @@ def admin_happ_rules_add():
 def admin_happ_rules_remove():
     _require_managed()
     return _change("remove")
+
+
+@core.app.route('/happ/requests', methods=['GET', 'POST'])
+@approved_required
+def smart_vpn_requests_page():
+    _require_managed()
+    username = session['user']
+    user = core.load_users()[username]
+    if request.method == 'POST':
+        allowed, retry = public_rate_limiter.consume(
+            'smart_vpn_proposal', user['account_id'] + ':' + client_ip(), 5, 3600)
+        if not allowed:
+            return rate_limited_response(retry)
+        try:
+            domains, reasons = request.form.getlist('domain'), request.form.getlist('reason')
+            if len(domains) != 1 or len(reasons) > 1:
+                raise family_dns_requests.RequestError('invalid_domain')
+            record, created = family_dns_requests.submit(
+                username, user['account_id'], domains[0], reasons[0] if reasons else '', kind='smart')
+            if created:
+                from ..family_dns_notifications import notify_request
+                notify_request(record, kind='smart')
+            flash(t('family_request_submitted' if created else 'family_request_duplicate', core._lang()), 'ok')
+        except family_dns_requests.RequestError as failure:
+            flash(_proposal_error(failure), 'error')
+        return redirect(url_for('smart_vpn_requests_page'), code=303)
+    proposals, unavailable = [], False
+    try:
+        proposals = family_dns_requests.list_requests(user['account_id'], kind='smart')
+    except family_dns_requests.RequestError:
+        unavailable = True
+    return render_page('family_dns_requests.html', 'smart_request_title',
+                       proposals=proposals, protected=True, unavailable=unavailable, request_kind='smart')
+
+
+@core.app.route('/admin/happ-rules/requests/<request_id>/<decision>', methods=['POST'])
+@approved_required
+@admin_required
+def admin_smart_vpn_review(request_id, decision):
+    _require_managed()
+    if decision not in {'approve', 'reject'}:
+        abort(404)
+    try:
+        family_dns_requests.review(request_id, decision, session['user'], kind='smart')
+        flash(t('smart_request_approved' if decision == 'approve'
+                else 'family_request_reviewed_reject', core._lang()), 'ok')
+    except family_dns_requests.RequestError as failure:
+        flash(_proposal_error(failure), 'error')
+    return redirect(url_for('admin_happ_rules'), code=303)

@@ -6,23 +6,25 @@ from ..core import TG_CHAT_ID, TG_WEBHOOK_SECRET, app, mutate_users
 from ..telegram import answer_callback, edit_tg_message, submit_background
 
 
-def _review_dns_request(request_id, decision, chat_id, message_id):
+def _review_domain_request(request_id, decision, chat_id, message_id, kind='dns'):
     from .. import family_dns, family_dns_requests
     try:
-        record = family_dns_requests.review(request_id, decision, 'Telegram')
+        record = family_dns_requests.review(request_id, decision, 'Telegram', kind=kind)
     except (family_dns_requests.RequestError, family_dns.FamilyDnsError) as failure:
         if failure.code == 'busy':
             return
         expired = failure.code in {'not_found', 'ineligible', 'conflict'}
+        target = 'списка VPN' if kind == 'smart' else 'DNS'
         text = ('⚠️ Заявка уже обработана или недоступна.' if expired else
-                '⚠️ Не удалось подтвердить изменение DNS. Заявка не одобрена. Повторите позже.')
+                f'⚠️ Не удалось подтвердить изменение {target}. Заявка не одобрена. Повторите позже.')
         edit_tg_message(chat_id, message_id, text, remove_buttons=expired)
         return
     approved = record['status'] == 'approved'
     text = (f"{'✅ Одобрено' if approved else '❌ Отклонено'}: `{record['domain']}`\n"
             f"Пользователь: `{record['username']}`")
     if approved:
-        text += '\nИсключение применяется ко всем с семейной защитой.'
+        text += ('\nДомен добавлен в общий список Умного VPN. Обновите подписку в Happ.'
+                 if kind == 'smart' else '\nИсключение применяется ко всем с семейной защитой.')
     edit_tg_message(chat_id, message_id, text, remove_buttons=True)
 
 
@@ -59,12 +61,12 @@ def tg_webhook():
 
     parts = str(callback.get("data") or "").split(":")
     action = parts[0] if parts else ""
-    if action == 'dns':
+    if action in {'dns', 'smart'}:
         if len(parts) != 3 or parts[1] not in {'approve', 'reject'}:
             answer_callback(callback_id, 'Неверное действие')
             return 'ok'
-        queued = submit_background(_review_dns_request, parts[2], parts[1],
-                                   chat_id, message.get('message_id'))
+        queued = submit_background(_review_domain_request, parts[2], parts[1],
+                                   chat_id, message.get('message_id'), action)
         answer_callback(callback_id, 'Проверяю заявку…' if queued else 'Сервис занят. Повторите позже.')
         return 'ok'
     token = parts[1] if len(parts) > 1 else ""

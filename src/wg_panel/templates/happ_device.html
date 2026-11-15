@@ -38,6 +38,7 @@
   </section>
 
   {{ modes_guide('happ-device-modes', device.safe_internet, comparison=comparison_bundle|default(false), control=comparison_control|default(false)) }}
+  {% if shared_rules_managed|default(false) %}<p class="form-actions"><a class="button secondary" href="{{ url_for('smart_vpn_requests_page') }}">{{ icon('globe', 18) }}{{ tr('smart_request_new') }}</a></p>{% endif %}
 
   <section class="panel happ-rules-panel" aria-labelledby="happ-rules-title">
     {% if shared_rules|default(false) %}

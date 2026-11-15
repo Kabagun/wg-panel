@@ -3,6 +3,7 @@
 {% block content %}
 {{ heading(tr('happ_admin_title'), tr('happ_admin_scope'), tr('ui_admin_section')) }}
 {{ flashes() }}
+{% include 'smart_request_queue.html' %}
 {% if state %}
 <div class="metrics-grid">
   {{ metric(tr('happ_admin_domains'), domains|length, 'globe') }}

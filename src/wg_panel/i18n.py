@@ -810,6 +810,16 @@ UI_STRINGS.update({
     'family_request_error_unavailable': ('Requests are temporarily unavailable. Please retry later.', 'Заявки временно недоступны. Повторите позже.'),
 })
 
+UI_STRINGS.update({
+    'smart_request_title': ('Smart VPN requests', 'Заявки в Умный VPN'),
+    'smart_request_subtitle': ('Suggest a website for the shared VPN list.', 'Предложите сайт для общего списка сервисов через VPN.'),
+    'smart_request_new': ('Suggest a site for Smart VPN', 'Предложить сайт в Умный VPN'),
+    'smart_request_hint': ('The administrator must approve the domain before it enters Smart VPN. This does not unblock family DNS.', 'Домен попадёт в Умный VPN только после одобрения администратора. Это не снимает блокировку семейного DNS.'),
+    'smart_request_admin_title': ('Smart VPN proposals', 'Предложения в Умный VPN'),
+    'smart_request_global_hint': ('Approval adds this domain to the shared Smart VPN list. Family DNS is unchanged.', 'Одобрение добавит домен в общий список Умного VPN. Семейный DNS не изменится.'),
+    'smart_request_approved': ('Approved. The domain is in Smart VPN; subscriptions receive it on refresh.', 'Одобрено. Домен добавлен в Умный VPN и появится в подписках после обновления.'),
+})
+
 for _key, (_en, _ru) in UI_STRINGS.items():
     STRINGS["en"][_key] = _en
     STRINGS["ru"][_key] = _ru

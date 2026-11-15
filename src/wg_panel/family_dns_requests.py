@@ -1,7 +1,7 @@
-"""Private administrator-reviewed proposals for the shared family DNS allowlist.
+"""Private administrator-reviewed proposals for independent DNS and Smart lists.
 
 The store lock covers local transactions only. A persisted five-minute claim covers
-each helper call; every retry reads applied DNS state before any versioned mutation.
+each helper call; adapters confirm application before a request becomes approved.
 """
 
 import copy
@@ -15,13 +15,14 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from . import core, family_dns
+from . import core, family_dns, happ_shared_rules
 
 MAX_PENDING_PER_ACCOUNT = 10
 MAX_RECORDS = 2000
 MAX_STORE_BYTES = 8 * 1024 * 1024
 LEASE_SECONDS = 300
 _FILENAME = "family_dns_requests.json"
+_SMART_FILENAME = "smart_vpn_requests.json"
 _LOCK = threading.RLock()
 _ID = re.compile(r"[a-f0-9]{32}\Z", re.ASCII)
 _ACCOUNT = re.compile(r"[a-f0-9]{64}\Z", re.ASCII)
@@ -42,6 +43,25 @@ class RequestError(RuntimeError):
     def __init__(self, code="unavailable"):
         self.code = code if isinstance(code, str) and code in _CODES else "unavailable"
         super().__init__(self.code)
+
+
+def _kind(kind):
+    if not isinstance(kind, str) or kind not in {"dns", "smart"}:
+        raise RequestError("invalid_request")
+    return kind
+
+
+def _normalize_domain(value, kind):
+    _kind(kind)
+    if kind == "smart":
+        return happ_shared_rules.normalize_domain(value)
+    return family_dns.normalize_domain(value)
+
+
+def _smart_error(error):
+    code = str(error) if isinstance(error, ValueError) else "unavailable"
+    return RequestError({"invalid_domain": "invalid_domain", "stale_revision": "busy"}.get(
+        code, "unavailable"))
 
 
 def _now():
@@ -86,7 +106,7 @@ def _unique_object(pairs):
     return result
 
 
-def _validate(store):
+def _validate(store, *, kind="dns"):
     if (not isinstance(store, dict) or set(store) != {"version", "requests"}
             or type(store["version"]) is not int or store["version"] != 1
             or not isinstance(store["requests"], list) or len(store["requests"]) > MAX_RECORDS):
@@ -98,7 +118,7 @@ def _validate(store):
                 or not _matches(_ID, record["id"]) or record["id"] in ids
                 or not _matches(_USERNAME, record["username"])
                 or not _matches(_ACCOUNT, record["account_id"])
-                or family_dns.normalize_domain(record["domain"]) != record["domain"]
+                or _normalize_domain(record["domain"], kind) != record["domain"]
                 or not _safe_text(record["reason"], 500)
                 or _reason(record["reason"]) != record["reason"]
                 or not isinstance(record["status"], str)
@@ -124,7 +144,7 @@ def _validate(store):
     return store
 
 
-def _read(path):
+def _read(path, *, kind="dns"):
     try:
         with path.open("rb") as handle:
             raw = handle.read(MAX_STORE_BYTES + 1)
@@ -133,15 +153,15 @@ def _read(path):
     if len(raw) > MAX_STORE_BYTES:
         raise RequestError()
     try:
-        return _validate(json.loads(raw, object_pairs_hook=_unique_object))
+        return _validate(json.loads(raw, object_pairs_hook=_unique_object), kind=kind)
     except (ValueError, TypeError, KeyError, UnicodeError, RecursionError,
             family_dns.FamilyDnsError):
         raise RequestError() from None
 
 
-def _write(path, store):
+def _write(path, store, *, kind="dns"):
     try:
-        _validate(store)
+        _validate(store, kind=kind)
         if len(json.dumps(store, ensure_ascii=False, indent=2).encode("utf-8")) > MAX_STORE_BYTES:
             raise ValueError
         core.write_json_private(str(path), store)
@@ -150,13 +170,14 @@ def _write(path, store):
 
 
 @contextmanager
-def _locked():
+def _locked(*, kind="dns"):
+    _kind(kind)
     with _LOCK:
         descriptor = None
         locked = False
         try:
             core.ensure_private_dir(core.DATA_DIR)
-            path = Path(core.DATA_DIR) / _FILENAME
+            path = Path(core.DATA_DIR) / (_SMART_FILENAME if kind == "smart" else _FILENAME)
             lock_path = str(path) + ".lock"
             descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
             os.chmod(lock_path, 0o600)
@@ -192,19 +213,22 @@ def _eligible(username, account_id):
         raise RequestError() from None
 
 
-def submit(username, account_id, domain, reason=""):
-    """Queue one eligible account's proposal without reading or changing DNS."""
+def submit(username, account_id, domain, reason="", *, kind="dns"):
+    """Queue an eligible account's proposal without reading or changing either list."""
+    _kind(kind)
     if not _matches(_USERNAME, username) or not _matches(_ACCOUNT, account_id):
         raise RequestError("ineligible")
     try:
-        normalized = family_dns.normalize_domain(domain)
+        normalized = _normalize_domain(domain, kind)
     except family_dns.FamilyDnsError:
         raise RequestError("invalid_domain") from None
+    except (ValueError, OSError) as error:
+        raise _smart_error(error) from None
     reason = _reason(reason)
     if reason is None:
         raise RequestError("invalid_reason")
-    with _locked() as path:
-        store = _read(path)
+    with _locked(kind=kind) as path:
+        store = _read(path, kind=kind)
         _eligible(username, account_id)
         pending = [record for record in store["requests"]
                    if record["account_id"] == account_id and record["status"] in _ACTIVE]
@@ -226,16 +250,17 @@ def submit(username, account_id, domain, reason=""):
                   "created_at": _stamp(_now()), "reviewed_at": None, "reviewer": None,
                   "claim": None, "lease_until": None}
         store["requests"].append(record)
-        _write(path, store)
+        _write(path, store, kind=kind)
         return copy.deepcopy(record), True
 
 
-def list_requests(account_id=None):
+def list_requests(account_id=None, *, kind="dns"):
     """Return copies, newest first; an account filter never includes other accounts."""
+    _kind(kind)
     if account_id is not None and not _matches(_ACCOUNT, account_id):
         raise RequestError("ineligible")
-    with _locked() as path:
-        records = _read(path)["requests"]
+    with _locked(kind=kind) as path:
+        records = _read(path, kind=kind)["requests"]
         return copy.deepcopy(sorted(
             (record for record in records if account_id is None or record["account_id"] == account_id),
             key=lambda record: (record["created_at"], record["id"]), reverse=True))
@@ -255,52 +280,53 @@ def _claimed(store, request_id, claim):
     return record
 
 
-def _refresh(request_id, claim):
-    with _locked() as path:
-        store = _read(path)
+def _refresh(request_id, claim, *, kind="dns"):
+    with _locked(kind=kind) as path:
+        store = _read(path, kind=kind)
         record = _claimed(store, request_id, claim)
         _eligible(record["username"], record["account_id"])
         if _date(record["lease_until"]) <= _now():
             raise RequestError("busy")
         record["lease_until"] = _stamp(_now() + timedelta(seconds=LEASE_SECONDS))
-        _write(path, store)
+        _write(path, store, kind=kind)
 
 
-def _finish(request_id, claim, reviewer):
-    with _locked() as path:
-        store = _read(path)
+def _finish(request_id, claim, reviewer, *, kind="dns"):
+    with _locked(kind=kind) as path:
+        store = _read(path, kind=kind)
         record = _claimed(store, request_id, claim)
         _eligible(record["username"], record["account_id"])
         record.update(status="approved", reviewed_at=_stamp(_now()), reviewer=reviewer,
                       claim=None, lease_until=None)
-        _write(path, store)
+        _write(path, store, kind=kind)
         return copy.deepcopy(record)
 
 
-def _release(request_id, claim):
-    with _locked() as path:
-        store = _read(path)
+def _release(request_id, claim, *, kind="dns"):
+    with _locked(kind=kind) as path:
+        store = _read(path, kind=kind)
         record = _find(store, request_id)
         if record["status"] == "applying" and record["claim"] == claim:
             record.update(status="pending", claim=None, lease_until=None)
-            _write(path, store)
+            _write(path, store, kind=kind)
 
 
-def review(request_id, decision, reviewer):
+def review(request_id, decision, reviewer, *, kind="dns"):
     """Review once; approve only after confirming the live shared list is applied.
 
-    An expired claim can be reclaimed, but never skips a fresh status check. An
-    unapplied list is not mutated. An absent domain in an applied list permits one
-    explicit add guarded by that freshly read generation, including after a timeout.
+    DNS retries recheck live application before any generation-guarded add. Smart
+    retries use its idempotent managed-list adapter, which confirms local application
+    and queues publication. A kind always selects its own private store and adapter.
     """
+    _kind(kind)
     if not _matches(_ID, request_id):
         raise RequestError("not_found")
     if (not isinstance(decision, str) or decision not in {"approve", "reject"}
             or not _safe_text(reviewer, 128, nonempty=True)):
         raise RequestError("invalid_request")
     reviewer = reviewer.strip()
-    with _locked() as path:
-        store = _read(path)
+    with _locked(kind=kind) as path:
+        store = _read(path, kind=kind)
         record = _find(store, request_id)
         _eligible(record["username"], record["account_id"])
         target = "approved" if decision == "approve" else "rejected"
@@ -314,26 +340,33 @@ def review(request_id, decision, reviewer):
         if decision == "reject":
             record.update(status="rejected", reviewed_at=_stamp(now), reviewer=reviewer,
                           claim=None, lease_until=None)
-            _write(path, store)
+            _write(path, store, kind=kind)
             return copy.deepcopy(record)
         claim = secrets.token_hex(16)
         record.update(status="applying", claim=claim,
                       lease_until=_stamp(now + timedelta(seconds=LEASE_SECONDS)))
-        _write(path, store)
+        _write(path, store, kind=kind)
         domain = record["domain"]
     try:
-        state = family_dns.status()
-        if not state.applied:
-            raise family_dns.FamilyDnsError("apply_failed")
-        if domain not in state.domains:
-            _refresh(request_id, claim)
-            state = family_dns.change("add", domain, state.generation)
-        if not state.applied or domain not in state.domains:
-            raise family_dns.FamilyDnsError("apply_failed")
-        return _finish(request_id, claim, reviewer)
+        if kind == "smart":
+            _refresh(request_id, claim, kind=kind)
+            try:
+                happ_shared_rules.apply_proposed_domain(domain)
+            except (ValueError, OSError) as error:
+                raise _smart_error(error) from None
+        else:
+            state = family_dns.status()
+            if not state.applied:
+                raise family_dns.FamilyDnsError("apply_failed")
+            if domain not in state.domains:
+                _refresh(request_id, claim, kind=kind)
+                state = family_dns.change("add", domain, state.generation)
+            if not state.applied or domain not in state.domains:
+                raise family_dns.FamilyDnsError("apply_failed")
+        return _finish(request_id, claim, reviewer, kind=kind)
     except (family_dns.FamilyDnsError, RequestError):
-        _release(request_id, claim)
+        _release(request_id, claim, kind=kind)
         raise
     except Exception:  # noqa: BLE001 - release the lease and hide unexpected helper details.
-        _release(request_id, claim)
+        _release(request_id, claim, kind=kind)
         raise RequestError() from None

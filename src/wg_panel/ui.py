@@ -69,6 +69,17 @@ def render_page(template, title_key, *, lang=None, auth_view=False, **context):
     lang = lang or _lang()
     username = session.get("user", "")
     user = load_users().get(username, {}) if username and not auth_view else {}
+    family_dns_available = False
+    if (user.get("approved") is True and user.get("role") == "user"
+            and not any(user.get(flag) for flag in ("paused", "pause_pending", "revoking"))):
+        from .account_policy import AccountPolicyError
+        from .routes.family_dns import _family_protection
+        try:
+            family_dns_available = _family_protection(username)
+        except (AccountPolicyError, OSError, ValueError):
+            # The form's own policy check remains authoritative. Navigation
+            # cannot advertise a DNS exception when protection is unknown.
+            family_dns_available = False
     return render_template(
         template,
         lang=lang,
@@ -81,6 +92,7 @@ def render_page(template, title_key, *, lang=None, auth_view=False, **context):
         current_username=username,
         is_admin=user.get("role") == "admin",
         current_paused=bool(user.get("paused")),
+        family_dns_available=family_dns_available,
         auth_view=auth_view,
         happ_pilot_enabled=pilot_enabled(),
         happ_public_enabled=public_enabled(),

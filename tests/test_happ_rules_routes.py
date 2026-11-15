@@ -13,7 +13,6 @@ from werkzeug.datastructures import MultiDict
 
 from wg_panel import app, core, happ_pilot, happ_shared_rules
 from wg_panel.i18n import t
-from wg_panel.routes import happ_rules as routes
 from wg_panel.ui import render_page
 
 SOURCE = "https://raw.githubusercontent.com/example-owner/example-repo/main/routing-domains.txt"
@@ -91,7 +90,7 @@ def runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(happ_shared_rules, "load_snapshot", load)
     monkeypatch.setattr(happ_shared_rules, "publication_status", status, raising=False)
     monkeypatch.setattr(happ_shared_rules, "change", change, raising=False)
-    monkeypatch.setattr(routes.subprocess, "run", enqueue)
+    monkeypatch.setattr(happ_shared_rules.subprocess, "run", enqueue)
     return state
 
 
@@ -249,7 +248,7 @@ def test_failed_queue_keeps_saved_list_and_shows_retry_without_raw_output(runtim
             raise subprocess.TimeoutExpired("systemctl", 5, stderr=b"synthetic private stderr")
         return SimpleNamespace(returncode=1, stderr=b"synthetic private stderr")
 
-    monkeypatch.setattr(routes.subprocess, "run", queue)
+    monkeypatch.setattr(happ_shared_rules.subprocess, "run", queue)
     client = browser()
     response = client.post("/admin/happ-rules/add", data=form())
     assert response.status_code == 303

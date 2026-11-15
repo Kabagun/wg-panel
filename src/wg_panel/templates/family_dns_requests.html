@@ -1,12 +1,13 @@
 {% extends 'base.html' %}
 {% from 'components.html' import heading, flashes with context %}
 {% block content %}
-{{ heading(tr('family_request_title'), tr('family_request_subtitle'), tr('ui_workspace')) }}
+{% set smart = request_kind|default('dns') == 'smart' %}
+{{ heading(tr('smart_request_title' if smart else 'family_request_title'), tr('smart_request_subtitle' if smart else 'family_request_subtitle'), tr('ui_workspace')) }}
 {{ flashes() }}
 {% if unavailable %}<p class="notice notice-error" role="alert">{{ tr('family_request_error_unavailable') }}</p>{% endif %}
 {% if protected and not current_paused and not unavailable %}
 <section class="panel form-panel">
-  <h2>{{ tr('family_request_new') }}</h2><p>{{ tr('family_request_approval_hint') }}</p>
+  <h2>{{ tr('smart_request_new' if smart else 'family_request_new') }}</h2><p>{{ tr('smart_request_hint' if smart else 'family_request_approval_hint') }}</p>
   <form method="post" class="form-stack">
     {{ csrf() }}
     <label for="request-domain">{{ tr('family_dns_domain') }}</label><input id="request-domain" name="domain" maxlength="253" placeholder="example.com" autocapitalize="none" spellcheck="false" autocomplete="off" required><p class="field-help">{{ tr('family_dns_domain_hint') }}</p>

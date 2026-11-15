@@ -154,6 +154,47 @@ def managed_mode():
     return os.environ.get("WG_PANEL_HAPP_RULES_MANAGED", "").strip() == "1"
 
 
+def normalize_domain(value):
+    """Normalize a proposed public routing domain without fetching or changing it."""
+    try:
+        if not isinstance(value, str) or len(value) > 1024:
+            raise ValueError
+        return _domain(value.strip())
+    except (ValueError, UnicodeError):
+        raise ValueError('invalid_domain') from None
+
+
+def enqueue_publication():
+    """Schedule the existing publisher; active routing never waits on GitHub."""
+    try:
+        result = subprocess.run(
+            ['systemctl', '--no-block', 'start', 'wg-panel-happ-publish.service'],
+            capture_output=True, timeout=5, check=False)
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def apply_proposed_domain(domain):
+    """Apply one explicitly approved Smart VPN proposal, then schedule publication.
+
+    Only local managed routing is changed. Family DNS and the router are untouched.
+    Publication failure stays visible in the existing admin publication status.
+    """
+    from . import core, happ_pilot
+    if not managed_mode() or not happ_pilot.pilot_enabled():
+        raise ValueError('unavailable')
+    canonical = 'domain:' + normalize_domain(domain)
+    source = happ_pilot.shared_rules_url()
+    previous = load_snapshot(core.DATA_DIR, source)
+    current = previous if canonical in previous['rules'] else change(
+        core.DATA_DIR, source, 'add', domain, previous['revision'])
+    if canonical not in current['rules']:
+        raise ValueError('unavailable')
+    enqueue_publication()
+    return current
+
+
 def _parse_rules(data, *, allow_empty=False):
     if not isinstance(data, bytes) or len(data) > MAX_BYTES:
         raise ValueError(_SOURCE_ERROR)
