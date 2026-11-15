@@ -31,6 +31,29 @@ def client_dns_transport(owner):
         raise ValueError('Invalid Happ DNS transport policy') from None
 
 
+def client_dns_cache_a(owner):
+    """Opt in the current account to one shared app/routing IPv4 DNS cache."""
+    path = Path(core.DATA_DIR) / 'happ_dns_cache.json'
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        return False
+    try:
+        value = json.loads(raw)
+        if (len(raw) > 20000 or not isinstance(value, dict)
+                or set(value) != {'version', 'accounts'}
+                or type(value['version']) is not int or value['version'] != 1
+                or not isinstance(value['accounts'], dict)
+                or any(not isinstance(key, str) or not re.fullmatch(r'[0-9a-f]{64}', key)
+                       or type(enabled) is not bool
+                       for key, enabled in value['accounts'].items())):
+            raise ValueError
+        identity = core.load_users().get(owner, {}).get('account_id')
+        return value['accounts'].get(identity, False)
+    except (TypeError, ValueError):
+        raise ValueError('Invalid Happ DNS cache policy') from None
+
+
 def resolver_ip(value):
     """Keep the native Happ routing header's DNS field an IP, never a TCP URL."""
     try:

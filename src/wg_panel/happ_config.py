@@ -287,6 +287,7 @@ def build_happ_config(
     safe_internet: bool,
     remarks: str,
     dns_transport: str = "udp",
+    dns_cache_a: bool = False,
 ) -> dict:
     """Build a standalone Xray configuration without altering the WG identity.
 
@@ -301,6 +302,8 @@ def build_happ_config(
         raise ValueError("Invalid Safe internet setting")  # noqa: TRY004 - public ValueError API
     if dns_transport not in ("udp", "tcp"):
         raise ValueError("Invalid Happ DNS transport")
+    if type(dns_cache_a) is not bool:
+        raise ValueError("Invalid Happ DNS cache setting")
     if (
         not isinstance(proxy_rules, list)
         or len(proxy_rules) > MAX_PROXY_RULES
@@ -347,13 +350,14 @@ def build_happ_config(
         # Preserve every query type through the account resolver.
         "rules": [{"action": "direct"}],
     }
-    if dns_transport == "tcp":
+    if dns_transport == "tcp" or dns_cache_a:
         # App/TUN A queries share the ForceIPv4 resolver and its cache.
         # Keep AAAA transparent: UseIPv4 would otherwise synthesize empty replies.
         dns_out_settings["rules"] = [
             {"qType": 1, "action": "hijack"},
             {"action": "direct"},
         ]
+    if dns_transport == "tcp":
         dns_out_settings["rewriteNetwork"] = "tcp"
     return {
         "remarks": remarks,
