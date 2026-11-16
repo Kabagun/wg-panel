@@ -39,6 +39,7 @@ class ProtectedProvisionRuntimeTests(unittest.TestCase):
             "WG_DIR": str(self.root), "CLIENTS_DIR": str(self.clients),
             "WG_INTERFACE_NAME": "wg0", "WG_ENDPOINT_HOST": "vpn.example.test",
             "MOCK_WG_STATE": str(self.state),
+            "WG_PANEL_FAMILY_PROTECTION_ENABLED": "1",
         }
 
     def run_helper(self, script, *arguments, **extra_env):

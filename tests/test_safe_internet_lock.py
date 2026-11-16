@@ -8,6 +8,8 @@ import pytest
 
 from wg_panel import account_policy, app, core, traffic, wireguard
 
+pytestmark = pytest.mark.family_archive
+
 
 @pytest.fixture
 def policy_runtime(monkeypatch, tmp_path):

@@ -1,4 +1,5 @@
 {% macro modes_guide(guide_id, family_locked=false, creation=false, comparison=false, control=false) %}
+{% set family_locked = family_locked and family_protection_enabled|default(false) %}
 <section class="panel happ-modes-guide" aria-labelledby="{{ guide_id }}-title">
   <div class="happ-modes-heading"><span class="happ-modes-icon">{{ icon('globe', 24) }}</span><div><h2 id="{{ guide_id }}-title">{{ tr('happ_modes_guide_title') }}</h2><p>{{ tr('happ_comparison_control_intro' if control else 'happ_comparison_intro' if comparison else 'happ_modes_creation_intro' if creation else 'happ_modes_device_intro') }}</p></div></div>
   <div class="happ-modes-grid">

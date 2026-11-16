@@ -115,6 +115,15 @@ class SafeDnsScriptTests(unittest.TestCase):
         self.invoke()
         self.assertEqual(len(self.batches()), 2)
 
+    def test_retired_empty_set_clears_owned_table_despite_malformed_legacy_target(self):
+        self.invoke("10.0.0.2")
+        (self.wg / "safe-dns-target").write_text("invalid retired target\n")
+        self.invoke()
+        self.assertEqual(self.batches()[-1], "delete table inet wg_panel_safe_dns\n")
+        self.assertFalse((self.root / "active.nft").exists())
+        self.invoke()
+        self.assertEqual(len(self.batches()), 2)
+
     def test_invalid_sources_never_reach_a_mutating_transaction(self):
         for address in ("10.0.0.1", "10.0.0.255", "10.0.1.2", "10.0.0.02", "::1", "10.0.0.2;drop"):
             with self.subTest(address=address):

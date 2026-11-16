@@ -150,6 +150,7 @@ def render_detail(username="pilot-member", *, options=None, locked=False, lang="
 
 @pytest.mark.parametrize("lang", ["en", "ru"])
 @pytest.mark.parametrize("locked", [False, True])
+@pytest.mark.family_archive
 def test_preview_only_selects_mode_and_keeps_server_selected_transport_in_details(runtime, lang, locked):
     inventory = [
         {"id": "vless-reality", "title": "VLESS Reality", "available": True},

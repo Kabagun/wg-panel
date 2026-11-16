@@ -145,6 +145,10 @@ def export_bundle(device):
     identities are included in validation errors or comparison display metadata.
     """
     from . import happ_pilot, happ_runtime
+    from .account_policy import family_protection_enabled
+
+    if not family_protection_enabled():
+        return None
 
     try:
         with core._wireguard_lock:

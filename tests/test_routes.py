@@ -161,6 +161,7 @@ def test_login_navigation_cannot_bypass_csrf_with_invalid_authentication(runtime
         assert "user" not in browser_session
 
 
+@pytest.mark.family_archive
 def test_recreated_account_rejects_retained_cookie_but_new_login_works(runtime, monkeypatch):
     _data, clients = runtime
     core.save_users({"alice": user_record()})
@@ -497,6 +498,7 @@ def test_ui_refresh_loads_local_assets_and_accessible_auth_structure():
     assert "Welcome back" not in ru_body
 
 
+@pytest.mark.family_archive
 def test_exact_device_authorization_get_delete_rejection_and_no_store(runtime):
     _data, clients = runtime
     core.save_users({"alice": user_record(), "ali": user_record()})
@@ -527,6 +529,7 @@ def test_exact_device_authorization_get_delete_rejection_and_no_store(runtime):
     assert "PrivateKey = secret" in response.get_data(as_text=True)
 
 
+@pytest.mark.family_archive
 def test_device_safe_internet_first_enable_locks_existing_config_download(runtime):
     _data, clients = runtime
     core.save_users({"alice": user_record()})
@@ -580,6 +583,7 @@ def test_device_safe_internet_first_enable_locks_existing_config_download(runtim
     assert "DNS = 1.1.1.3, 1.0.0.3" in locked_config
 
 
+@pytest.mark.family_archive
 def test_device_safe_internet_copy_is_localized_in_russian(runtime):
     _data, clients = runtime
     core.save_users({"alice": user_record()})
@@ -674,6 +678,7 @@ def test_role_navigation_and_customer_payment_privacy(runtime):
     assert 'href="/traffic"' in admin_body
 
 
+@pytest.mark.family_archive
 def test_device_and_admin_action_forms_keep_csrf_and_post_contracts(runtime):
     _data, clients = runtime
     core.save_users(

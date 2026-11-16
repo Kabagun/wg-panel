@@ -64,13 +64,15 @@ def device_icon(name):
 
 def render_page(template, title_key, *, lang=None, auth_view=False, **context):
     """Render user content as autoescaped data, never as Jinja source."""
+    from .account_policy import family_protection_enabled
     from .happ_pilot import available_for_user, pilot_enabled, public_enabled
     from .happ_shared_rules import managed_mode
     lang = lang or _lang()
     username = session.get("user", "")
     user = load_users().get(username, {}) if username and not auth_view else {}
     family_dns_available = False
-    if (user.get("approved") is True and user.get("role") == "user"
+    protection_enabled = family_protection_enabled()
+    if (protection_enabled and user.get("approved") is True and user.get("role") == "user"
             and not any(user.get(flag) for flag in ("paused", "pause_pending", "revoking"))):
         from .account_policy import AccountPolicyError
         from .routes.family_dns import _family_protection
@@ -93,6 +95,7 @@ def render_page(template, title_key, *, lang=None, auth_view=False, **context):
         is_admin=user.get("role") == "admin",
         current_paused=bool(user.get("paused")),
         family_dns_available=family_dns_available,
+        family_protection_enabled=protection_enabled,
         auth_view=auth_view,
         happ_pilot_enabled=pilot_enabled(),
         happ_public_enabled=public_enabled(),

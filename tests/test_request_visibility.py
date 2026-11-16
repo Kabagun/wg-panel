@@ -41,6 +41,8 @@ class Page(HTMLParser):
 def visible_requests(runtime, monkeypatch):
     from wg_panel import app
 
+    # This module covers archived family access distinctions on explicit restore.
+    monkeypatch.setitem(app.config, "FAMILY_PROTECTION_ENABLED", True)
     monkeypatch.setitem(app.config, "HAPP_ROLLOUT_ENABLED", True)
     core.mutate_users(lambda users: users.update({
         "newcomer": {"role": "user", "approved": True, "session_version": 1},

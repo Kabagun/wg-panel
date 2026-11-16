@@ -8,7 +8,6 @@ PREPARE_ONLY=0
 DNS_SERVERS="1.1.1.1, 8.8.8.8"
 if [ "${2:-}" = "--prepare" ] && [ "$#" -eq 2 ]; then
     PREPARE_ONLY=1
-    DNS_SERVERS="1.1.1.3, 1.0.0.3"
 elif [ "$#" -ne 1 ]; then
     echo "ERROR: Usage: add-client.sh NAME [--prepare]" >&2
     exit 2
@@ -47,7 +46,7 @@ flock -x 9
 # WireGuard's DNS field takes an address only; the selected-source firewall
 # redirects UDP/TCP 53 to the configured listener port. Never silently fall
 # back when an existing target is malformed or cannot be read.
-if [ "$PREPARE_ONLY" -eq 1 ]; then
+if [ "$PREPARE_ONLY" -eq 1 ] && [ "${WG_PANEL_FAMILY_PROTECTION_ENABLED:-0}" = "1" ]; then
     if ! DNS_SERVERS=$(python3 - "$WG_DIR/safe-dns-target" <<'PY'
 import ipaddress
 import os

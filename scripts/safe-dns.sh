@@ -38,21 +38,6 @@ install -d -m 700 "$WG_DIR"
 exec 9>"$WG_DIR/.wg-panel-safe-dns.lock"
 flock -x 9
 
-# Optional operator-owned endpoint for a shared local filtering resolver.
-# Without this file the existing Cloudflare Family behavior is preserved.
-DNS_TARGET="1.1.1.3:53"
-if [ -f "$WG_DIR/safe-dns-target" ]; then
-    DNS_TARGET=$(<"$WG_DIR/safe-dns-target")
-fi
-if [[ ! "$DNS_TARGET" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3}):([0-9]{1,5})$ ]]; then
-    error "Invalid safe DNS target; expected IPv4:port"
-fi
-for target_octet in "${BASH_REMATCH[@]:1:4}"; do
-    (( 10#$target_octet <= 255 )) || error "Invalid safe DNS target address"
-done
-target_port="${DNS_TARGET##*:}"
-(( 10#$target_port >= 1 && 10#$target_port <= 65535 )) || error "Invalid safe DNS target port"
-
 if [ "${1:-}" != "--sync" ]; then
     echo "Usage: $0 --sync [10.0.0.2 ... 10.0.0.254]" >&2
     exit 2
@@ -98,6 +83,21 @@ if [ "${#safe_octets[@]}" -eq 0 ]; then
     fi
     exit 0
 fi
+
+# Retired/empty policy clearing must work independently of archived targets.
+# Validate the target only when filtered clients are explicitly enabled.
+DNS_TARGET="1.1.1.3:53"
+if [ -f "$WG_DIR/safe-dns-target" ]; then
+    DNS_TARGET=$(<"$WG_DIR/safe-dns-target")
+fi
+if [[ ! "$DNS_TARGET" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3}):([0-9]{1,5})$ ]]; then
+    error "Invalid safe DNS target; expected IPv4:port"
+fi
+for target_octet in "${BASH_REMATCH[@]:1:4}"; do
+    (( 10#$target_octet <= 255 )) || error "Invalid safe DNS target address"
+done
+target_port="${DNS_TARGET##*:}"
+(( 10#$target_port >= 1 && 10#$target_port <= 65535 )) || error "Invalid safe DNS target port"
 
 # Delete and recreate only the table owned by this helper. In an nft batch the
 # delete/add sequence is one atomic transaction, so a failed parse or kernel

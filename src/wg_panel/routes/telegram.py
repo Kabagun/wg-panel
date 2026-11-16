@@ -62,6 +62,10 @@ def tg_webhook():
     parts = str(callback.get("data") or "").split(":")
     action = parts[0] if parts else ""
     if action in {'dns', 'smart'}:
+        from ..account_policy import family_protection_enabled
+        if action == 'dns' and not family_protection_enabled():
+            answer_callback(callback_id, 'Семейная защита больше не используется.')
+            return 'ok'
         if len(parts) != 3 or parts[1] not in {'approve', 'reject'}:
             answer_callback(callback_id, 'Неверное действие')
             return 'ok'

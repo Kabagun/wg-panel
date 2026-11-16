@@ -41,6 +41,7 @@ class DashboardHTML(HTMLParser):
 
 @pytest.fixture
 def dashboard_account(monkeypatch, tmp_path):
+    monkeypatch.setitem(app.config, "FAMILY_PROTECTION_ENABLED", False)
     data = tmp_path / "data"
     clients = tmp_path / "wireguard" / "clients"
     clients.mkdir(parents=True)
@@ -116,15 +117,17 @@ def test_device_card_is_one_main_link_with_independent_download(dashboard_accoun
 
 
 @pytest.mark.parametrize("username,role", [("maintainer", "admin"), ("alice", "user")])
-def test_dashboard_account_protection_visibility_follows_role(dashboard_account, username, role):
+def test_dashboard_hides_retired_protection_for_all_roles(dashboard_account, username, role):
     _browser, document, _name, _config = dashboard_account(username=username, role=role)
-    assert bool(document.with_class("protection-settings")) == (role == "user")
+    assert not document.with_class("protection-settings")
+    assert not document.with_class("device-protection")
+    assert len(document.with_class("metric")) == 2
     protection_forms = [node for node in document.nodes
                         if node["attrs"].get("action") == "/account/safe-internet"]
-    assert bool(protection_forms) == (role == "user")
+    assert not protection_forms
     dns_links = [node for node in document.with_class("nav-link")
                  if node["attrs"].get("href") == "/admin/family-dns"]
-    assert bool(dns_links) == (role == "admin")
+    assert not dns_links
 
 
 @pytest.mark.parametrize("paused", [False, True])

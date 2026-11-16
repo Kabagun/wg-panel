@@ -3,7 +3,7 @@ import os
 import subprocess
 from datetime import UTC, datetime
 
-from .account_policy import account_safe_internet_locked
+from .account_policy import account_safe_internet_locked, family_protection_enabled
 from .core import (
     CLIENTS_DIR,
     DEVICE_META_FILE,
@@ -79,7 +79,7 @@ def set_device_meta(wg_name, owner, device, *, provisioning=False):
         existing = meta.get(wg_name, {})
         if existing.get("deletion_protected"):
             raise ValueError("A deletion-protected identity cannot be overwritten")
-        if existing.get("safe_internet_locked") and not (
+        if family_protection_enabled() and existing.get("safe_internet_locked") and not (
             existing.get("owner") == owner and existing.get("revoked")
             and account_safe_internet_locked(owner)
         ):
@@ -104,6 +104,8 @@ def set_device_safe_internet(wg_name, enabled, *, confirmed=False, allow_locked_
     or clearing the lock. ``allow_locked_disable`` is reserved for deliberate
     server maintenance through SSH; no web route may pass it.
     """
+    if not family_protection_enabled():
+        return False
     def update(meta):
         device = meta.get(wg_name)
         if not device or device.get("revoked"):
@@ -128,7 +130,7 @@ def remove_device_meta(wg_name, *, preserve_locked=True):
     """Retain a locked identity after peer revocation to prevent name reuse."""
     def update(meta):
         device = meta.get(wg_name, {})
-        if preserve_locked and device.get("safe_internet_locked"):
+        if family_protection_enabled() and preserve_locked and device.get("safe_internet_locked"):
             meta[wg_name] = {
                 "owner": device["owner"],
                 "device": device["device"],

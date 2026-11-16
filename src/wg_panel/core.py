@@ -86,6 +86,7 @@ app = Flask(
     static_folder=str(_PACKAGE_DIR / "static"),
 )
 app.config.update(
+    FAMILY_PROTECTION_ENABLED=_env_bool("WG_PANEL_FAMILY_PROTECTION_ENABLED", False),
     MAX_CONTENT_LENGTH=MAX_REQUEST_BODY_BYTES,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",

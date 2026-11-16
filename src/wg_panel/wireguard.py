@@ -10,6 +10,7 @@ from .account_policy import (
     AccountPolicyError,
     account_safe_internet_locked,
     effective_safe_internet,
+    family_protection_enabled,
     load_account_policies,
     save_account_policies,
 )
@@ -244,6 +245,8 @@ def _safe_dns_ips(meta, excluded=None, override=None, policies=None):
     Read registered claims during adoption, when the enforcer must run before
     its recovery checkpoint is removed. Ordinary callers check readiness first.
     """
+    if not family_protection_enabled():
+        return []
     infrastructure = load_infrastructure_peers(wg_dir=WG_DIR)
     ips = [item["ipv4"] for item in infrastructure.values()]
     if policies is None:
@@ -291,6 +294,12 @@ def reconcile_safe_dns(*, require_helper=None, allow_unavailable=False):
     installed; once a device is enabled, the helper is mandatory.
     """
     with _wireguard_lock:
+        if not family_protection_enabled():
+            # Clear only the helper-owned policy. Archived targets, locks and
+            # metadata must not become startup dependencies after retirement.
+            sync_safe_dns((), wg_dir=WG_DIR, allow_unavailable=allow_unavailable,
+                          require_helper=False)
+            return {"safe_devices": 0, "ips": []}
         load_safe_dns_target(WG_DIR)
         meta = load_device_meta()
         policies = load_account_policies()
@@ -320,6 +329,8 @@ def set_account_safe_internet(owner, *, confirmed=False):
     user's replaceable account_id. Deleting/recreating that login inherits it.
     Only deliberate SSH maintenance can remove the registry entry.
     """
+    if not family_protection_enabled():
+        return False
     with _wireguard_lock:
         assert_infrastructure_ready(wg_dir=WG_DIR)
         user = load_users().get(owner)
@@ -379,6 +390,8 @@ def set_device_safe_internet(wg_name, enabled, *, confirmed=False, allow_locked_
     fails, the previous firewall set is restored; an enable failure therefore
     cannot leave a client marked safe without server enforcement.
     """
+    if not family_protection_enabled():
+        return False
     enabled = bool(enabled)
     with _wireguard_lock:
         if not get_device(wg_name):
@@ -603,7 +616,7 @@ def create_device(username, device, *, happ=False):
         if user.get("paused"):
             return False, "", "VPN access is paused"
         account_locked = account_safe_internet_locked(username)
-        if not account_locked and any(
+        if family_protection_enabled() and not account_locked and any(
             item.get("owner") == username and item.get("device") == device
             and item.get("safe_internet_locked") and item.get("revoked")
             for item in load_device_meta().values()
@@ -627,7 +640,7 @@ def create_device(username, device, *, happ=False):
         path = _config_path(wg_name)
         existing = load_device_meta().get(wg_name, {})
         replacing_tombstone = (
-            account_locked and existing.get("revoked")
+            (account_locked or not family_protection_enabled()) and existing.get("revoked")
             and existing.get("owner") == username and existing.get("device") == device
         )
         if (existing and not replacing_tombstone) or (path and os.path.exists(path)):

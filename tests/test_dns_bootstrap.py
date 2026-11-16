@@ -9,6 +9,7 @@ from wg_panel import core, dns_bootstrap, traffic, wireguard
 from wg_panel.dns_enforcement import SafeDnsEnforcementError
 
 ROOT = Path(__file__).resolve().parents[1]
+pytestmark = pytest.mark.family_archive
 
 
 @pytest.fixture

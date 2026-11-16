@@ -13,6 +13,8 @@ import pytest
 from wg_panel import core, family_dns
 from wg_panel import family_dns_requests as requests
 
+pytestmark = pytest.mark.family_archive
+
 ACCOUNT = "a" * 64
 OTHER_ACCOUNT = "b" * 64
 NOW = datetime(2026, 11, 15, 12, 0, tzinfo=UTC)

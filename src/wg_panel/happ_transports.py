@@ -316,12 +316,6 @@ def create_server_config(users, server_options):
         "log": {"loglevel": "warning"}, "inbounds": inbounds,
         "outbounds": [
             {"tag": "direct", "protocol": "freedom", "settings": {}},
-            {"tag": "central-dns", "protocol": "freedom", "settings": {
-                "redirect": f"[{dns_host}]:{dns_port}" if ":" in dns_host else f"{dns_host}:{dns_port}",
-                # Server Freedom's default private-IP guard also checks the
-                # rewritten target. Allow only this fixed local resolver.
-                "finalRules": [{"action": "allow", "network": "tcp,udp", "ip": [dns_host],
-                                "port": str(dns_port)}]}},
             {"tag": "block", "protocol": "blackhole", "settings": {}},
         ],
         "routing": {"domainStrategy": "AsIs", "rules": rules},
@@ -334,6 +328,11 @@ def create_server_config(users, server_options):
                          "protocol": "dokodemo-door", "settings": {"address": api_host}})
         rules.append({"type": "field", "inboundTag": ["api-in"], "outboundTag": "api"})
     if family_users:
+        result["outbounds"].insert(1, {
+            "tag": "central-dns", "protocol": "freedom", "settings": {
+                "redirect": f"[{dns_host}]:{dns_port}" if ":" in dns_host else f"{dns_host}:{dns_port}",
+                "finalRules": [{"action": "allow", "network": "tcp,udp", "ip": [dns_host],
+                                "port": str(dns_port)}]}})
         # An empty user matcher means unrestricted matching in Xray. Omit
         # these rules entirely when there are no protected users.
         rules.extend([

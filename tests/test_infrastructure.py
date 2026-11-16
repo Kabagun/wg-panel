@@ -213,6 +213,7 @@ def test_symlink_and_public_config_permissions_are_rejected(storage):
         infra.load_infrastructure_peers()
 
 
+@pytest.mark.family_archive
 def test_adoption_preserves_tunnel_config_policy_traffic_and_selected_set(storage):
     source = source_profile(storage)
     protected = {name: (storage.data / name).read_bytes()
@@ -245,6 +246,7 @@ def test_adoption_requires_explicit_identity_and_maintenance(storage):
 
 
 @pytest.mark.parametrize("fault", ["copy", "registry", "metadata", "source", "enforce"])
+@pytest.mark.family_archive
 def test_every_interrupted_adoption_stage_is_resumable(storage, monkeypatch, fault):
     source_profile(storage)
     real_copy = infra._copy_config
@@ -297,6 +299,7 @@ def test_every_interrupted_adoption_stage_is_resumable(storage, monkeypatch, fau
 
 
 @pytest.mark.parametrize("filename", ["account_policy.json", "traffic.json"])
+@pytest.mark.family_archive
 def test_recovery_never_overwrites_changed_account_policy_or_traffic(storage, monkeypatch, filename):
     source_profile(storage)
     real_copy = infra._copy_config
@@ -316,6 +319,7 @@ def test_recovery_never_overwrites_changed_account_policy_or_traffic(storage, mo
     assert path.read_bytes() == changed
 
 
+@pytest.mark.family_archive
 def test_changed_full_safe_set_leaves_recovery_checkpoint(storage):
     source_profile(storage)
     calls = 0

@@ -13,6 +13,15 @@ class AccountPolicyError(RuntimeError):
     pass
 
 
+def family_protection_enabled():
+    """The retired family feature requires an explicit operator restore opt-in.
+
+    Preserve archived locks for restoration, but do not apply or expose them
+    while the feature is retired. Only an actual boolean True enables it.
+    """
+    return core.app.config.get("FAMILY_PROTECTION_ENABLED") is True
+
+
 def account_policy_path():
     return os.path.join(core.DATA_DIR, "account_policy.json")
 
@@ -48,12 +57,16 @@ def save_account_policies(policies):
 
 
 def account_safe_internet_locked(owner, policies=None):
+    if not family_protection_enabled():
+        return False
     if policies is None:
         policies = load_account_policies()
     return owner in policies
 
 
 def effective_safe_internet(device, policies=None):
+    if not family_protection_enabled():
+        return False
     return bool(
         device.get("safe_internet")
         or account_safe_internet_locked(device.get("owner"), policies)

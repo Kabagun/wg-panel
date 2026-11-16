@@ -17,6 +17,8 @@ def state():
 
 @pytest.fixture
 def runtime(monkeypatch, tmp_path, state):
+    # Retain coverage for the archived feature's explicit restore path.
+    monkeypatch.setitem(app.config, "FAMILY_PROTECTION_ENABLED", True)
     data = tmp_path / "data"
     monkeypatch.setattr(core, "DATA_DIR", str(data))
     monkeypatch.setattr(core, "USERS_FILE", str(data / "users.json"))

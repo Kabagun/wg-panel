@@ -58,6 +58,7 @@ def assert_three_readonly_routes(document, lang):
 
 @pytest.mark.parametrize("lang", ["en", "ru"])
 @pytest.mark.parametrize("family", [False, True])
+@pytest.mark.family_archive
 def test_selected_happ_explains_all_profiles_before_name_form_without_mode_submission(runtime, lang, family):
     if family:
         account_policy.save_account_policies({"pilot-member": {"safe_internet_locked": True}})
@@ -101,6 +102,7 @@ def test_diagram_does_not_change_private_pilot_eligibility(runtime, monkeypatch)
 
 @pytest.mark.parametrize("lang", ["en", "ru"])
 @pytest.mark.parametrize("family", [False, True])
+@pytest.mark.family_archive
 def test_device_reuses_same_three_profiles_with_dns_independent_of_enabled_routing(runtime, lang, family):
     with app.test_request_context("/device/synthetic-pilot/happ"):
         session.update(user="pilot-member", session_version=1, _csrf_token="synthetic-csrf",

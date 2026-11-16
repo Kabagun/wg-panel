@@ -8,7 +8,13 @@ optional Telegram notifications. New registrations require a public Telegram
 username. Administrators can opt individual users into monthly payment
 reminders without exposing payment data in customer dashboards.
 
-Users can permanently enable **Safe internet for their entire account**. Every
+**Family DNS is retired by default.** All new VPN exports use ordinary
+`1.1.1.1` and `8.8.8.8`; family controls and DNS-exception requests are hidden.
+See [ordinary DNS and migration](docs/family-dns-retirement.md). The backup branch
+`backup/family-dns-2026-11-16` contains the original feature, exceptions and restore
+instructions. The Safe internet sections below describe that archived feature.
+
+In the archived implementation, users can permanently enable **Safe internet for their entire account**. Every
 current and future VPN profile then inherits protection. Downloaded configs and
 QR codes use the operator's shared resolver, configured by `safe-dns-target`.
 Without that file, they retain Cloudflare Family DNS (`1.1.1.3`, `1.0.0.3`).

@@ -15,6 +15,8 @@ from test_happ_transports import VLESS
 from wg_panel import core, happ_runtime, traffic
 from wg_panel.happ_subscription_info import build_headers
 
+pytestmark = pytest.mark.family_archive
+
 
 def test_public_control_bundle_header_and_page_report_seven_entries(runtime, monkeypatch):  # noqa: F811
     traffic.mutate_device_meta(lambda meta: meta[FOREIGN].update(safe_internet=True))

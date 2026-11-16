@@ -2,15 +2,27 @@
 
 import re
 from datetime import UTC, datetime
+from functools import wraps
 
 from flask import abort, flash, redirect, request, session, url_for
 
 from .. import family_dns, family_dns_requests
+from ..account_policy import family_protection_enabled
 from ..auth import admin_required, approved_required
 from ..core import _lang, app, load_users
 from ..i18n import t
 from ..security import client_ip, public_rate_limiter, rate_limited_response
 from ..ui import render_page
+
+
+def family_protection_required(view):
+    """Keep archived family routes unavailable without reading or changing state."""
+    @wraps(view)
+    def guarded(*args, **kwargs):
+        if not family_protection_enabled():
+            abort(404)
+        return view(*args, **kwargs)
+    return guarded
 
 
 def _time_label(value):
@@ -23,6 +35,7 @@ def _time_label(value):
 
 
 @app.route("/admin/family-dns")
+@family_protection_required
 @admin_required
 def admin_family_dns():
     state = None
@@ -60,18 +73,22 @@ def _change(operation):
 
 
 @app.route("/admin/family-dns/allow", methods=["POST"])
+@family_protection_required
 @admin_required
 def admin_family_dns_allow():
     return _change("add")
 
 
 @app.route("/admin/family-dns/allow/remove", methods=["POST"])
+@family_protection_required
 @admin_required
 def admin_family_dns_remove():
     return _change("remove")
 
 
 def _family_protection(username):
+    if not family_protection_enabled():
+        return False
     from .. import wireguard
     from ..account_policy import account_safe_internet_locked
     if account_safe_internet_locked(username):
@@ -91,6 +108,7 @@ def _proposal_error(error):
 
 
 @app.route('/family-dns/requests', methods=['GET', 'POST'])
+@family_protection_required
 @approved_required
 def family_dns_requests_page():
     username = session['user']
@@ -126,6 +144,7 @@ def family_dns_requests_page():
 
 
 @app.route('/admin/family-dns/requests/<request_id>/<decision>', methods=['POST'])
+@family_protection_required
 @admin_required
 def admin_family_dns_review(request_id, decision):
     if decision not in {'approve', 'reject'}:

@@ -193,6 +193,7 @@ def test_collision_is_not_adopted_or_rolled_back(runtime):
 
 @pytest.mark.parametrize("stage", ["dns", "resume"])
 @pytest.mark.parametrize('family',[False,True])
+@pytest.mark.family_archive
 def test_failed_provision_rolls_back_only_new_children_and_preserves_parent(runtime, stage, family):
     if family:
         traffic.mutate_device_meta(lambda meta: meta[PARENT].update(safe_internet=True))
@@ -256,6 +257,7 @@ def test_account_pause_resume_and_delete_include_children(runtime):
 
 
 @pytest.mark.parametrize('protection', ['device','account'])
+@pytest.mark.family_archive
 def test_family_parent_gets_distinct_mode_peers_with_same_central_dns(runtime, protection):
     original = (runtime.clients/f'{PARENT}.conf').read_bytes()
     if protection == 'device':
@@ -279,6 +281,7 @@ def test_family_parent_gets_distinct_mode_peers_with_same_central_dns(runtime, p
     assert (runtime.clients/f'{PARENT}.conf').read_bytes() == original
 
 
+@pytest.mark.family_archive
 def test_legacy_device_level_family_flag_protects_already_created_children(runtime):
     mapping = happ_peers.ensure_mode_peers(PARENT)
     assert wireguard._safe_dns_ips(traffic.load_device_meta()) == []

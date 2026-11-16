@@ -24,11 +24,11 @@
     {% if devices %}
     <ul class="happ-device-list">
       {% for device in devices %}
-      <li><a class="happ-device-link" href="{{ url_for('view_happ_device', wg_name=device.wg_name) }}"><span class="device-icon">{{ icon(device_icon(device.device), 24) }}</span><span class="happ-device-label"><strong>{{ device.device }}</strong><span>{{ tr('happ_pilot_badge') }}{% if device.safe_internet %} · {{ tr('safe_title') }}{% endif %}</span></span>{{ icon('arrow', 18) }}</a></li>
+      <li><a class="happ-device-link" href="{{ url_for('view_happ_device', wg_name=device.wg_name) }}"><span class="device-icon">{{ icon(device_icon(device.device), 24) }}</span><span class="happ-device-label"><strong>{{ device.device }}</strong><span>{{ tr('happ_pilot_badge') }}{% if family_protection_enabled|default(false) and device.safe_internet %} · {{ tr('safe_title') }}{% endif %}</span></span>{{ icon('arrow', 18) }}</a></li>
       {% endfor %}
     </ul>
     {% else %}<div class="empty-state compact"><span class="empty-icon">{{ icon('devices', 30) }}</span><h3>{{ tr('happ_empty_title') }}</h3><p>{{ tr('happ_empty_hint') }}</p></div>{% endif %}
   </section>
 </div>
-<p class="happ-dns-note">{{ icon('info', 18) }}<span>{{ tr('happ_routing_dns_note') }} <a href="{{ url_for('admin_family_dns') }}">{{ tr('family_dns_title') }}{{ icon('arrow', 14) }}</a></span></p>
+{% if family_protection_enabled|default(false) %}<p class="happ-dns-note">{{ icon('info', 18) }}<span>{{ tr('happ_routing_dns_note') }} <a href="{{ url_for('admin_family_dns') }}">{{ tr('family_dns_title') }}{{ icon('arrow', 14) }}</a></span></p>{% endif %}
 {% endblock %}

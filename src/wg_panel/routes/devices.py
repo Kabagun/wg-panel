@@ -3,7 +3,7 @@ import secrets
 from flask import Response, flash, redirect, request, session, url_for
 
 from .. import happ_pilot
-from ..account_policy import account_safe_internet_locked
+from ..account_policy import account_safe_internet_locked, effective_safe_internet
 from ..auth import approved_required
 from ..connection_config import connection_details
 from ..core import _lang, _now, app, load_users
@@ -22,6 +22,7 @@ from ..wireguard import (
     qr_svg_b64,
     set_account_safe_internet,
 )
+from .family_dns import family_protection_required
 
 
 @app.route("/dashboard")
@@ -41,7 +42,7 @@ def dashboard():
         devices.append({
             "device": name,
             "wg_name": wg_name,
-            "safe_internet": bool(metadata.get("safe_internet")) or account_locked,
+            "safe_internet": effective_safe_internet(metadata) or account_locked,
             "deletion_protected": bool(metadata.get("deletion_protected")),
             "connection": connection_details(get_config(wg_name)),
             "happ_pilot": metadata.get('happ_pilot') is True,
@@ -147,6 +148,7 @@ def view_device(wg_name):
 
 
 @app.route("/device/<wg_name>/safe-internet", methods=["POST"])
+@family_protection_required
 @approved_required
 def update_device_safe_internet(wg_name):
     device, _user = _authorized_device(wg_name)
@@ -173,6 +175,7 @@ def _update_account_safe_internet(owner):
 
 
 @app.route("/account/safe-internet", methods=["POST"])
+@family_protection_required
 @approved_required
 def update_account_safe_internet():
     _update_account_safe_internet(session["user"])

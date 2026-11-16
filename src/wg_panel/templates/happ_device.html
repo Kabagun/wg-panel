@@ -69,7 +69,7 @@
       <button type="submit" class="button primary">{{ icon('check', 18) }}{{ tr('happ_save_rules') }}</button>
     </form>{% else %}<p class="field-help">{{ tr('happ_member_rules_note') }}</p><details class="happ-private-details"><summary>{{ tr('happ_shared_show') }}</summary><pre><code>{{ rules_text }}</code></pre></details>{% endif %}
     {% endif %}
-    <p class="happ-dns-note">{{ icon('info', 18) }}<span>{{ tr('happ_routing_dns_note') }}{% if is_admin %} <a href="{{ url_for('admin_family_dns') }}">{{ tr('family_dns_title') }}{{ icon('arrow', 14) }}</a>{% endif %}</span></p>
+    {% if family_protection_enabled %}<p class="happ-dns-note">{{ icon('info', 18) }}<span>{{ tr('happ_routing_dns_note') }}{% if is_admin %} <a href="{{ url_for('admin_family_dns') }}">{{ tr('family_dns_title') }}{{ icon('arrow', 14) }}</a>{% endif %}</span></p>{% endif %}
   </section>
 
   <section class="panel happ-config-panel" aria-labelledby="happ-config-title">

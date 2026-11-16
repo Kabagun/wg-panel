@@ -9,6 +9,9 @@ import pytest
 from wg_panel import account_policy, app, core, infrastructure, runner, traffic, wireguard
 from wg_panel.dns_enforcement import SafeDnsEnforcementError
 
+pytestmark = pytest.mark.family_archive
+
+
 REAL_SYNC_SAFE_DNS = wireguard._sync_safe_dns
 
 PRIVATE = base64.b64encode(bytes([11]) * 32).decode()

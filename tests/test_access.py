@@ -245,8 +245,9 @@ def test_customer_paused_dashboard_and_configs_remain_readable(runtime):
     assert config.status_code == 200
     assert config.headers["Cache-Control"].startswith("no-store")
     assert "private-" in config.get_data(as_text=True)
-    for url in ("/add", f"/device/{name}/delete", f"/device/{name}/safe-internet"):
+    for url in ("/add", f"/device/{name}/delete"):
         assert customer.post(url, data=form).status_code == 302
+    assert customer.post(f"/device/{name}/safe-internet", data=form).status_code == 404
     assert customer.get("/add").status_code == 302
     assert (clients / f"{name}.conf").exists()
     assert not traffic.load_device_meta()[name]["safe_internet"]

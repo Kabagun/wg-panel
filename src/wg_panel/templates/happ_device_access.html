@@ -13,8 +13,8 @@
   <header class="happ-access-header"><strong>{{ icon('shield', 25) }} Kabagun VPN</strong><a class="button secondary small" href="{{ url_for('login') }}">Личный кабинет {{ icon('arrow', 16) }}</a></header>
   <main class="happ-access-main" id="main">
     <header class="device-heading"><span class="device-heading-icon">{{ icon('devices', 29) }}</span><div><p class="eyebrow">ВАШЕ ПОДКЛЮЧЕНИЕ · HAPP</p><h1>{{ device.device }}</h1></div></header>
-    <div class="happ-access-status"><span>♾️ Безлимит</span><span>{{ '🛡️ Семейная защита включена' if device.safe_internet else '🌐 Семейная защита выключена' }}</span></div>
-    {% if device.safe_internet %}<p class="form-actions"><a class="button secondary" href="{{ url_for('family_dns_requests_page') }}">{{ icon('globe', 18) }} Предложить исключение DNS</a></p>{% endif %}
+    <div class="happ-access-status"><span>♾️ Безлимит</span>{% if family_protection_enabled %}<span>{{ '🛡️ Семейная защита включена' if device.safe_internet else '🌐 Семейная защита выключена' }}</span>{% endif %}</div>
+    {% if family_protection_enabled and device.safe_internet %}<p class="form-actions"><a class="button secondary" href="{{ url_for('family_dns_requests_page') }}">{{ icon('globe', 18) }} Предложить исключение DNS</a></p>{% endif %}
     <section class="panel happ-access-connect" aria-labelledby="connect-title">
       <div class="happ-access-qr">{% if qr %}<img src="{{ qr }}" alt="QR для добавления подключения в Happ" width="224" height="224">{% else %}{{ icon('qr', 64) }}{% endif %}<p>Отсканируйте в Happ</p></div>
       <div><p class="eyebrow">ОДНА ПОДПИСКА · ТРИ РЕЖИМА</p><h2 id="connect-title">Подключите устройство</h2><p>Откройте подписку в Happ или скачайте конфигурацию. Затем выберите подходящий режим.</p><div class="form-actions"><a class="button primary" href="{{ import_url }}">{{ icon('plus', 18) }} Открыть в Happ</a><a class="button secondary" href="{{ subscription_url }}">{{ icon('down', 18) }} Скачать профили</a></div><p class="field-help">Не передавайте ссылку и QR: они дают доступ к вашему подключению.</p></div>

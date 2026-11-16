@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from flask import Response, abort, flash, redirect, request, session, url_for
 
 from .. import core, happ_pilot, wireguard
+from ..account_policy import family_protection_enabled
 from ..auth import admin_required, approved_required
 from ..happ_config import MODES
 from ..i18n import t
@@ -177,7 +178,7 @@ def _presentation_headers(response, device, comparison):
             usage_started_at=started.astimezone(ZoneInfo('Europe/Minsk')).date().isoformat()
             if started else None, comparison=bool(comparison),
             comparison_control=bool(comparison and len(comparison['configs']) == 7),
-            safe_internet=device['safe_internet'])
+            safe_internet=device['safe_internet'] if family_protection_enabled() else None)
     except (ValueError, TypeError, KeyError, OSError):
         # Presentation settings must never make valid VPN configurations unavailable.
         return
@@ -215,6 +216,7 @@ def happ_device_access(wg_name, token):
         import_url = 'happ://add/' + subscription_url
         response = Response(render_template(
             'happ_device_access.html', device=device, usage=usage,
+            family_protection_enabled=family_protection_enabled(),
             period=local.strftime('%m.%Y'),
             observed=datetime.fromisoformat(usage['started_at']).astimezone(
                 ZoneInfo('Europe/Minsk')).strftime('%d.%m.%Y') if usage else None,

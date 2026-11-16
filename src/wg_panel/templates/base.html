@@ -29,7 +29,7 @@
     {{ nav_link('admin_panel', 'ui_overview', 'grid', request.endpoint == 'admin_panel') }}
     {{ nav_link('admin_users', 'ui_users', 'users', request.endpoint in ['admin_users', 'admin_edit']) }}
     {{ nav_link('admin_devices', 'ui_all_devices', 'devices', request.endpoint == 'admin_devices') }}
-    {{ nav_link('admin_family_dns', 'family_dns_title', 'globe', request.endpoint == 'admin_family_dns') }}
+    {% if family_protection_enabled|default(false) %}{{ nav_link('admin_family_dns', 'family_dns_title', 'globe', request.endpoint == 'admin_family_dns') }}{% endif %}
     {{ nav_link('traffic_page', 'ui_traffic', 'chart', request.endpoint == 'traffic_page') }}
     {% if (happ_pilot_enabled|default(false) or happ_public_enabled|default(false)) and happ_rules_managed|default(false) %}{{ nav_link('admin_happ_rules', 'happ_mode_custom', 'globe', request.endpoint in ['admin_happ_rules', 'admin_happ_rules_add', 'admin_happ_rules_remove']) }}{% endif %}
     {% endif %}

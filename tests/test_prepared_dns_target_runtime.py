@@ -42,6 +42,8 @@ class PreparedDnsTargetRuntimeTests(unittest.TestCase):
             "WG_ENDPOINT_HOST": "vpn.example.test", "MOCK_WG_LOG": str(self.log),
             "INFRASTRUCTURE_CLIENTS_DIR": str(self.root / "infrastructure"),
             "INFRASTRUCTURE_REGISTRY": str(self.data / "infrastructure_peers.json"),
+            # This class retains explicit restore coverage for archived preparation.
+            "WG_PANEL_FAMILY_PROTECTION_ENABLED": "1",
         }
 
     def run_helper(self, name="alice-protected"):
@@ -89,6 +91,16 @@ class PreparedDnsTargetRuntimeTests(unittest.TestCase):
         config = (self.clients / "alice-protected.conf").read_text()
         self.assertIn("\nDNS = 1.1.1.3, 1.0.0.3\n", config)
         self.assertNotIn("set", self.log.read_text().splitlines())
+
+    def test_retired_preparation_uses_ordinary_dns_despite_malformed_legacy_target(self):
+        self.env["WG_PANEL_FAMILY_PROTECTION_ENABLED"] = "0"
+        self.write_target(b"invalid retired target\n")
+        result = self.run_helper("alice-ordinary")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = (self.clients / "alice-ordinary.conf").read_text()
+        self.assertIn("\nDNS = 1.1.1.1, 8.8.8.8\n", config)
+        self.assertNotIn("set", self.log.read_text().splitlines())
+        self.assertNotIn("[Peer]", self.server.read_text())
 
     def test_existing_malformed_address_port_or_string_fails_before_keys(self):
         cases = (

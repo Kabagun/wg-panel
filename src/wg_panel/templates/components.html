@@ -5,6 +5,7 @@
 {% endmacro %}
 
 {% macro account_protection(locked, action, owner, paused=false, legacy_enabled=false) %}
+{% if family_protection_enabled|default(false) %}
 <section class="panel protection-settings" data-device-policy>
   <form method="post" action="{{ action }}" aria-labelledby="safe-internet-title"{% if not paused and not locked %} data-auto-submit data-safe-confirmation="{{ tr('safe_confirm_warning') }}"{% endif %} data-saving-label="{{ tr('ui_saving') }}">
     {{ csrf() }}<input type="hidden" name="safe_internet_confirmed" value="">
@@ -30,6 +31,7 @@
   <div class="dialog-icon">{{ icon('shield', 26) }}</div><h2 id="safe-confirm-title">{{ tr('safe_confirm_title') }}</h2><p id="safe-confirm-description">{{ tr('safe_confirm_warning') }}</p>
   <div class="dialog-actions"><button type="button" class="button secondary" data-safe-cancel autofocus>{{ tr('ui_cancel') }}</button><button type="button" class="button primary" data-safe-accept>{{ tr('safe_confirm_enable') }}</button></div>
 </dialog>{% endif %}
+{% endif %}
 {% endmacro %}
 
 {% macro heading(title, description, eyebrow='') %}

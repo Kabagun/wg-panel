@@ -51,6 +51,13 @@ def _kind(kind):
     return kind
 
 
+def _require_active_kind(kind):
+    from .account_policy import family_protection_enabled
+    _kind(kind)
+    if kind == "dns" and not family_protection_enabled():
+        raise RequestError("ineligible")
+
+
 def _normalize_domain(value, kind):
     _kind(kind)
     if kind == "smart":
@@ -215,7 +222,7 @@ def _eligible(username, account_id):
 
 def submit(username, account_id, domain, reason="", *, kind="dns"):
     """Queue an eligible account's proposal without reading or changing either list."""
-    _kind(kind)
+    _require_active_kind(kind)
     if not _matches(_USERNAME, username) or not _matches(_ACCOUNT, account_id):
         raise RequestError("ineligible")
     try:
@@ -318,7 +325,7 @@ def review(request_id, decision, reviewer, *, kind="dns"):
     retries use its idempotent managed-list adapter, which confirms local application
     and queues publication. A kind always selects its own private store and adapter.
     """
-    _kind(kind)
+    _require_active_kind(kind)
     if not _matches(_ID, request_id):
         raise RequestError("not_found")
     if (not isinstance(decision, str) or decision not in {"approve", "reject"}

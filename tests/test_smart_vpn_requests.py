@@ -93,6 +93,7 @@ def test_duplicate_smart_proposal_returns_original_without_changing_file(runtime
     assert runtime.calls == runtime.dns_calls == []
 
 
+@pytest.mark.family_archive
 def test_smart_store_has_exact_existing_record_schema_and_does_not_modify_dns_file(runtime):
     dns, _ = requests.submit("member", ACCOUNT, "dns.example.com")
     before = runtime.dns_path.read_bytes()
@@ -109,6 +110,7 @@ def test_smart_store_has_exact_existing_record_schema_and_does_not_modify_dns_fi
     assert (runtime.data / "smart_vpn_requests.json.lock").exists()
 
 
+@pytest.mark.family_archive
 def test_smart_and_dns_ids_are_resolved_only_in_selected_namespace(runtime):
     smart, _ = submit()
     assert_error("not_found", requests.review, smart["id"], "approve", "admin")
@@ -119,6 +121,7 @@ def test_smart_and_dns_ids_are_resolved_only_in_selected_namespace(runtime):
     assert requests.list_requests(kind="smart")[0]["status"] == "pending"
 
 
+@pytest.mark.family_archive
 def test_even_equal_ids_in_both_namespaces_cannot_change_the_other_record(runtime, monkeypatch):
     monkeypatch.setattr(requests.secrets, "token_hex", lambda length: "c" * (length * 2))
     dns, _ = requests.submit("member", ACCOUNT, "dns.example.com")
@@ -296,6 +299,7 @@ def test_terminal_smart_callback_still_checks_account_identity(runtime):
     assert runtime.calls == ["example.com"]
 
 
+@pytest.mark.family_archive
 def test_smart_helper_runs_without_store_lock_and_concurrent_callbacks_are_busy(runtime, monkeypatch):
     record, _ = submit()
     entered, release = threading.Event(), threading.Event()
@@ -361,6 +365,7 @@ def test_old_smart_claim_cannot_finalize_over_a_new_claim(runtime, monkeypatch):
     assert runtime.mutations == ["example.com"] and runtime.dns_calls == []
 
 
+@pytest.mark.family_archive
 def test_smart_limits_are_independent_of_dns_pending_records(runtime):
     for number in range(10):
         submit(f"site{number}.example.com")
@@ -384,6 +389,7 @@ def test_smart_list_filters_accounts_sorts_and_returns_independent_copies(runtim
     assert requests.list_requests(ACCOUNT, kind="smart")[0]["domain"] == "example.com"
 
 
+@pytest.mark.family_archive
 def test_smart_corruption_fails_closed_without_affecting_dns(runtime):
     dns, _ = requests.submit("member", ACCOUNT, "dns.example.com")
     smart, _ = submit()

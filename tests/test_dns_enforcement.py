@@ -5,6 +5,8 @@ import pytest
 
 from wg_panel import app, dns_enforcement, traffic, wireguard
 
+pytestmark = pytest.mark.family_archive
+
 
 def _device_runtime(monkeypatch, tmp_path, *, safe=False):
     clients = tmp_path / "wireguard" / "clients"

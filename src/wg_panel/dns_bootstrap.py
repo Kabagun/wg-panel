@@ -8,6 +8,7 @@ It invokes only the managed DNS reconciler, not the panel's server or loops.
 import os
 import sys
 
+from .account_policy import family_protection_enabled
 from .core import WG_DIR, _wireguard_lock
 from .dns_enforcement import SafeDnsEnforcementError
 from .infrastructure import assert_infrastructure_ready
@@ -19,7 +20,8 @@ def bootstrap_safe_dns():
     """Validate ownership and reconcile DNS, returning nonsensitive counts."""
     with _wireguard_lock:
         infrastructure = assert_infrastructure_ready(wg_dir=WG_DIR)
-        load_safe_dns_target(WG_DIR)
+        if family_protection_enabled():
+            load_safe_dns_target(WG_DIR)
         ownership = migrate_device_metadata(dry_run=True)
         if ownership["ambiguous"] or ownership["unowned"] or ownership["migrated"]:
             raise SafeDnsEnforcementError("Safe DNS bootstrap requires prepared personal ownership")

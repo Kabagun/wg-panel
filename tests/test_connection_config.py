@@ -67,6 +67,7 @@ def test_public_key_derivation_uses_stdin_and_returns_only_public_key(monkeypatc
 
 
 @pytest.mark.parametrize("safe", [False, True])
+@pytest.mark.family_archive
 def test_device_summary_and_cards_follow_downloaded_dns_and_addresses(runtime, safe):
     _data, clients = runtime
     core.save_users({"alice": user_record()})

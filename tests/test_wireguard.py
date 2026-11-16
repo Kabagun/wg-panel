@@ -147,6 +147,7 @@ def test_user_mutations_do_not_lose_concurrent_updates(monkeypatch, tmp_path):
     assert json.loads((data_dir / "users.json").read_text(encoding="utf-8"))
 
 
+@pytest.mark.family_archive
 def test_qr_uses_safe_internet_dns(monkeypatch, tmp_path):
     users = {"alice": {"approved": True}}
     clients = configure_paths(monkeypatch, tmp_path, users)
@@ -228,6 +229,7 @@ def test_revocation_blocks_unowned_configs_and_preserves_stale_recovery_state(mo
     assert "alice" in users
 
 
+@pytest.mark.family_archive
 def test_account_revocation_retries_dns_cleanup_after_peer_is_gone(monkeypatch, tmp_path):
     users = {"alice": {"approved": True}}
     clients = configure_paths(monkeypatch, tmp_path, users)
@@ -294,6 +296,7 @@ def test_migration_waits_for_ownership_publication(monkeypatch, tmp_path):
     assert not wireguard.user_owns_device("u5-alice", "u5-alice-phone")
 
 
+@pytest.mark.family_archive
 def test_migration_serializes_safe_internet_write(monkeypatch, tmp_path):
     clients = configure_paths(monkeypatch, tmp_path, {"alice": {"approved": True}})
     write_config(clients, "alice-phone")

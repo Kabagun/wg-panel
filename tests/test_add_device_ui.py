@@ -171,6 +171,7 @@ def test_invalid_name_stays_on_selected_form_and_is_escaped(runtime):
     assert not runtime.calls
 
 
+@pytest.mark.family_archive
 def test_family_account_can_choose_all_happ_modes_without_changing_dns_policy(runtime):
     enable_member(runtime)
     account_policy.save_account_policies({"alice": {"safe_internet_locked": True}})

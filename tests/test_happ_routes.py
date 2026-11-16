@@ -299,6 +299,7 @@ def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runt
 
 
 @pytest.mark.parametrize('family', [False, True])
+@pytest.mark.family_archive
 def test_account_scoped_tcp_dns_bundle_preserves_policy_headers_and_stored_configs(runtime, family):
     if family:
         account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
@@ -326,6 +327,7 @@ def test_account_scoped_tcp_dns_bundle_preserves_policy_headers_and_stored_confi
     assert {path.name: path.read_bytes() for path in runtime.clients.glob('*.conf')} == before
 
 
+@pytest.mark.family_archive
 def test_admin_comparison_bundle_has_six_named_modes_and_keeps_other_subscriptions(runtime, monkeypatch):
     from test_happ_transports import VLESS
 
@@ -385,6 +387,7 @@ def test_admin_comparison_bundle_has_six_named_modes_and_keeps_other_subscriptio
 
 
 @pytest.mark.parametrize('client_dns_only', [False, True])
+@pytest.mark.family_archive
 def test_comparison_client_dns_opt_in_changes_only_copied_routing_and_sniffing(
         runtime, monkeypatch, client_dns_only):
     from test_happ_transports import VLESS
@@ -447,6 +450,7 @@ def test_comparison_client_dns_opt_in_changes_only_copied_routing_and_sniffing(
 
 @pytest.mark.parametrize('flag', [None, 0, 1, 'true', [], {}])
 @pytest.mark.parametrize('field', ['client_dns_only', 'reference_control'])
+@pytest.mark.family_archive
 def test_comparison_flags_require_boolean_before_source_export(runtime, monkeypatch, flag, field):
     from wg_panel import happ_comparison
 
@@ -461,6 +465,7 @@ def test_comparison_flags_require_boolean_before_source_export(runtime, monkeypa
 
 
 @pytest.mark.parametrize('enabled', [False, True])
+@pytest.mark.family_archive
 def test_reference_control_appends_only_ordinary_smart_copy_without_mutation(runtime, monkeypatch, enabled):
     from test_happ_transports import VLESS
 
@@ -543,6 +548,7 @@ def test_reference_control_appends_only_ordinary_smart_copy_without_mutation(run
 
 
 @pytest.mark.parametrize('client_dns_only', [None, False])
+@pytest.mark.family_archive
 def test_reference_control_requires_client_dns_only_before_export(runtime, monkeypatch, client_dns_only):
     from wg_panel import happ_comparison
 
@@ -568,6 +574,7 @@ def test_normal_bundle_rejects_mixed_dns_and_comparison_rejects_nonadmin(runtime
         happ_pilot.comparison_routing_header({**device, 'owner': 'alice'}, configs * 3)
 
 
+@pytest.mark.family_archive
 def test_protected_bundle_exports_all_three_modes_with_same_family_dns(runtime):
     account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})
     response = browser(None).get(subscription(mode='bundle'))
@@ -592,6 +599,7 @@ def test_protected_bundle_exports_all_three_modes_with_same_family_dns(runtime):
 
 @pytest.mark.parametrize('family', [False, True])
 @pytest.mark.parametrize('transport,protocol', [('hysteria2','hysteria'),('vless-reality','vless')])
+@pytest.mark.family_archive
 def test_modern_subscription_delivers_only_selected_transport_for_all_modes(
         runtime, monkeypatch, family, transport, protocol):
     from test_happ_transports import HYS, VLESS
@@ -724,6 +732,7 @@ def test_wrong_or_malformed_subscription_credentials_fail_closed(runtime, token)
 
 
 @pytest.mark.parametrize("mode", MODES[1:])
+@pytest.mark.family_archive
 def test_protected_device_allows_split_modes_without_downgrading_dns_policy(runtime, mode):
     account_policy.save_account_policies({ADMIN: {"safe_internet_locked": True}})
     before = account_policy.load_account_policies()
@@ -862,6 +871,7 @@ def test_device_label_is_escaped_in_happ_page_and_json_stays_collapsed(runtime):
 
 
 @pytest.mark.parametrize("target_state", ["missing", "invalid"])
+@pytest.mark.family_archive
 def test_missing_or_invalid_central_dns_fails_closed_without_affecting_classic_download(
     runtime, target_state,
 ):
@@ -925,6 +935,7 @@ def test_forged_happ_choice_is_denied_but_classic_creation_remains_available(run
 
 
 @pytest.mark.parametrize("path", ["/admin/happ-pilot", "/add"])
+@pytest.mark.family_archive
 def test_creating_fresh_pilot_marks_only_new_device_and_preserves_existing_profiles(
     runtime, monkeypatch, path,
 ):
@@ -1021,6 +1032,7 @@ def test_public_subscription_is_rate_limited_and_recovers_after_window(runtime):
     assert client.get(subscription()).status_code == 200
 
 
+@pytest.mark.family_archive
 def test_happ_marker_alone_does_not_enable_family_dns_redirect_or_lock_account(runtime):
     selected = set(wireguard._safe_dns_ips(traffic.load_device_meta()))
     assert selected == set()
@@ -1089,6 +1101,7 @@ def test_rollout_allows_approved_owner_and_preserves_classic_export(runtime, mon
     assert browser(None).get(subscription(mode='bundle')).status_code == 404
 
 
+@pytest.mark.family_archive
 def test_family_owner_rollout_exports_three_modes_with_account_dns(runtime, monkeypatch):
     monkeypatch.setitem(app.config, 'HAPP_ROLLOUT_ENABLED', True)
     account_policy.save_account_policies({ADMIN: {'safe_internet_locked': True}})

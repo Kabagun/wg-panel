@@ -6,6 +6,8 @@ import pytest
 
 from wg_panel import core, happ_comparison, happ_pilot, happ_runtime, wireguard
 
+pytestmark = pytest.mark.family_archive
+
 ORDINARY = 'test-admin-ordinary'
 FAMILY = 'test-member-family'
 
