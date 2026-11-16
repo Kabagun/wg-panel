@@ -240,7 +240,8 @@ def test_subscription_presentation_uses_new_trusted_usage_without_collecting_or_
     assert 'support-url' not in response.headers
     announcement = base64.b64decode(response.headers['announce'].removeprefix('base64:')).decode()
     assert '11.2026' in announcement and 'с 15.11' not in announcement
-    assert 'Безлимит' in announcement and '🧠 Умный VPN' in announcement
+    assert 'Безлимит' in announcement and '🧠 AI и список админа' in announcement
+    assert 'Периодически выключайте и включайте VPN' in announcement
     assert len(announcement) <= 200 and 'expire' not in response.headers['subscription-userinfo']
     assert traffic.load_traffic() == before
 

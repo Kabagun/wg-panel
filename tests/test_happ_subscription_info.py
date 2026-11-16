@@ -155,16 +155,17 @@ def test_device_page_only_never_accepts_subscription_links_or_tokens(path):
 def test_utf8_announcement_describes_exact_profile_and_usage_scope(comparison, scope):
     text = announcement(headers(comparison=comparison, usage_scope=scope))
     assert len(text.encode('utf-16-le')) // 2 <= 200
-    assert len(text.splitlines()) == (3 if comparison else 5)
+    assert len(text.splitlines()) == (4 if comparison else 6)
     assert 'AI' in text and 'спис' in text and 'остальное напрямую' in text
     if not comparison:
-        assert '🌐 Всё через VPN: весь интернет' in text
+        assert '🌐 Всё через VPN' in text
         assert '🏡 РБ/РФ напрямую, остальное → VPN' in text
     assert ('6 профилей' in text) is comparison
     assert '11.2026' in text
     assert (' · аккаунт' in text) is (scope == 'account')
     assert 'Безлимит' in text
-    assert 'семейный/обычный DNS' in text if comparison else 'Умный VPN' in text
+    assert 'семейный/обычный DNS' in text if comparison else 'AI и список админа' in text
+    assert text.splitlines()[1].startswith('🔄 Периодически выключайте и включайте VPN')
 
 
 @pytest.mark.parametrize('safe,status', [
@@ -197,7 +198,8 @@ def test_banner_is_bounded_for_every_status_scope_and_month(
                                 comparison_control=control, usage_scope=scope,
                                 usage_started_at=started))
     lines = text.splitlines()
-    assert len(lines) == (3 if comparison else 5)
+    assert len(lines) == (4 if comparison else 6)
+    assert lines[1].startswith('🔄 Периодически выключайте и включайте VPN')
     assert len(text.encode('utf-16-le')) // 2 <= 200
     assert lines[0].startswith('♾️ Безлимит')
     assert '11.2026' in lines[-1]
@@ -209,6 +211,14 @@ def test_banner_is_bounded_for_every_status_scope_and_month(
         assert 'семейный/обычный DNS' in lines[0]
         assert 'Семейная защита' not in lines[0]
     assert ('контроль UDP без QUIC' in text) is control
+
+
+def test_current_device_banner_keeps_full_reconnect_notice_and_traffic():
+    text = announcement(headers())
+    assert text.splitlines()[1] == (
+        '🔄 Периодически выключайте и включайте VPN для обновления настроек.')
+    assert text.splitlines()[-1] == '📊 Трафик 11.2026'
+    assert 'Семейная защита' not in text
 
 
 @pytest.mark.parametrize('field,value', [

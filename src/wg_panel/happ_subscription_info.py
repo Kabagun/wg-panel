@@ -14,6 +14,8 @@ _MONTH = re.compile(r'[0-9]{4}-(?:0[1-9]|1[0-2])')
 _SCOPE = {'device': 'это устройство', 'account': 'все устройства аккаунта',
           'sources': 'устройства подписки'}
 _SCOPE_SHORT = {'device': '', 'account': ' · аккаунт', 'sources': ' · подписка'}
+_RECONNECT_NOTICE = '🔄 Периодически выключайте и включайте VPN для обновления настроек.'
+_RECONNECT_NOTICE_SHORT = '🔄 Периодически выключайте и включайте VPN.'
 _PROFILES = {
     'all': ('🌐 Всё через VPN', 'Весь интернет через VPN'),
     'custom': ('🧠 Умный VPN', 'AI и сервисы из списка → VPN'),
@@ -147,10 +149,27 @@ def build_headers(*, upload_bytes, download_bytes, panel_base_url, device_path,
                            '🌐 Всё через VPN: весь интернет',
                            '🧠 Умный VPN: AI и список админа → VPN, остальное напрямую',
                            '🏡 РБ/РФ напрямую, остальное → VPN'])
-        announce = '\n'.join([status, *explanation, period])
+        notice = _RECONNECT_NOTICE
+        announce = '\n'.join([status, notice, *explanation, period])
+        if len(announce.encode('utf-16-le')) // 2 > 200:
+            explanation = (['🧠 AI и список админа → VPN, остальное напрямую']
+                           if comparison else [
+                               '🌐 Всё через VPN',
+                               '🧠 AI и список админа → VPN, остальное напрямую',
+                               '🏡 РБ/РФ напрямую, остальное → VPN'])
+            announce = '\n'.join([status, notice, *explanation, period])
         if len(announce.encode('utf-16-le')) // 2 > 200:
             period = f'📊 {month_label}{_SCOPE_SHORT[usage_scope]}'
-            announce = '\n'.join([status, *explanation, period])
+            announce = '\n'.join([status, notice, *explanation, period])
+        if len(announce.encode('utf-16-le')) // 2 > 200:
+            notice = _RECONNECT_NOTICE_SHORT
+            announce = '\n'.join([status, notice, *explanation, period])
+        if len(announce.encode('utf-16-le')) // 2 > 200:
+            explanation = (['🧠 AI и список → VPN, остальное напрямую'] if comparison else [
+                '🌐 Всё → VPN',
+                '🧠 AI и список → VPN, остальное напрямую',
+                '🏡 РБ/РФ напрямую, остальное → VPN'])
+            announce = '\n'.join([status, notice, *explanation, period])
         if len(announce.encode('utf-16-le')) // 2 > 200:
             raise ValueError(_ERROR)
         headers = {

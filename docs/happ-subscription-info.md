@@ -7,6 +7,12 @@ Happ subscriptions expose standard presentation metadata alongside their JSON:
 - `announce`: a compact UTF-8/base64 description of three normal routing modes
   or six DNS comparison entries, the measurement period, and unlimited usage.
 
+The second announcement line reminds users to periodically turn VPN off and on
+to apply updated settings. It does not enable automatic reconnects or disconnect
+active users. The banner stays within Happ's 200-character limit; mode wording
+and the footer are compacted first, then a shorter reminder is used if needed.
+Normal device subscriptions retain the full reminder and monthly traffic label.
+
 The period starts when the new presentation counter is first sampled. Earlier
 monthly history is preserved. That history combines legacy WireGuard and modern
 transport columns with different direction conventions, so it is not imported
