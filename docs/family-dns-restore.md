@@ -56,6 +56,6 @@ For each validated exception, generate `server=/example.com/1.1.1.1` and
 branch are the authoritative implementation for exception hierarchy and the
 additional managed lists. Do not reuse private URLs, tokens or SSH keys in Git.
 
-After retirement the legacy DNS endpoint may remain as an unfiltered forwarder
-for already imported clients. Replacing that endpoint or deleting it before all
-clients update would break those profiles. Preserve address compatibility.
+Retirement intentionally removes the old central DNS endpoint and all handlers;
+there is no backward compatibility. Old profiles must be updated or recreated.
+Restoration is a deliberate operator action, not a hidden automatic fallback.
