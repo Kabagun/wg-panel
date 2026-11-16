@@ -6,7 +6,7 @@ from .. import happ_pilot
 from ..account_policy import account_safe_internet_locked, effective_safe_internet
 from ..auth import approved_required
 from ..connection_config import connection_details
-from ..core import _lang, _now, app, load_users
+from ..core import _lang, _now, _wireguard_lock, app, load_users
 from ..i18n import t
 from ..security import csrf_token
 from ..telegram import send_telegram
@@ -88,20 +88,27 @@ def add_device():
             flash(t("flash_add_invalid", _lang()), "error")
         else:
             client_app = selected_client
-            if client_app == 'happ':
-                ok, wg_name, error = happ_pilot.create_pilot_device(username, device)
-            elif client_app == 'wireguard':
-                ok, wg_name, error = create_device(username, device)
-            else:
-                return 'Invalid client', 400
+            # Classic creation is idempotent. Keep the existence snapshot in
+            # the same lifecycle transaction so retries cannot notify twice.
+            with _wireguard_lock:
+                is_new = device not in get_user_devices(username)
+                if client_app == 'happ':
+                    ok, wg_name, error = happ_pilot.create_pilot_device(username, device)
+                elif client_app == 'wireguard':
+                    ok, wg_name, error = create_device(username, device)
+                else:
+                    return 'Invalid client', 400
             if ok:
-                send_telegram(
-                    "📱 *Device added*\n\n"
-                    f"👤 User: `{username}`\n"
-                    f"🔌 Device: `{device}`\n"
-                    f"🕐 Time: {_now()}",
-                    silent=True,
-                )
+                if is_new:
+                    client_label = 'Happ' if client_app == 'happ' else 'WireGuard (WG)'
+                    send_telegram(
+                        "📱 *Device added*\n\n"
+                        f"👤 User: `{username}`\n"
+                        f"🔌 Device: `{device}`\n"
+                        f"🔗 Type: {client_label}\n"
+                        f"🕐 Time: {_now()}",
+                        silent=True,
+                    )
                 return redirect(url_for('view_happ_device' if client_app == 'happ'
                                         else 'view_device', wg_name=wg_name))
             if error == "Device limit reached":

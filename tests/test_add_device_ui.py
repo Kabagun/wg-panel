@@ -1,5 +1,7 @@
 """Two-step connection selection keeps Classic intact and respects Happ availability."""
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from types import SimpleNamespace
 
 import pytest
@@ -143,6 +145,98 @@ def test_eligible_member_can_post_happ_without_administrator_role(runtime):
                                               "client_app": "happ"})
     assert response.status_code == 302 and response.location.endswith("/device/created-happ/happ")
     assert runtime.calls == [("happ", "alice", "phone")]
+
+
+@pytest.mark.parametrize("client_app,label", [("wireguard", "WireGuard (WG)"), ("happ", "Happ")])
+def test_new_device_notice_identifies_selected_client(runtime, monkeypatch, client_app, label):
+    enable_member(runtime)
+    notices = []
+    monkeypatch.setattr(routes, "send_telegram", lambda text, **kw: notices.append((text, kw)))
+    response = browser().post("/add", data={"csrf_token": "synthetic-csrf", "device": "phone",
+                                            "client_app": client_app})
+    assert response.status_code == 302
+    assert len(notices) == 1
+    assert f"🔗 Type: {label}\n" in notices[0][0]
+    assert "🔌 Device: `phone`" in notices[0][0]
+    assert notices[0][1] == {"silent": True}
+
+
+@pytest.mark.parametrize("existing", ["classic", "happ"])
+def test_existing_device_success_does_not_repeat_added_notice(runtime, monkeypatch, existing):
+    notices = []
+    monkeypatch.setattr(routes, "send_telegram", lambda *args, **kw: notices.append(args))
+    monkeypatch.setattr(routes, "create_device", wireguard.create_device)
+    before = traffic.load_device_meta()
+    client = browser()
+    for _ in range(2):
+        response = client.post("/add", data={"csrf_token": "synthetic-csrf", "device": existing,
+                                             "client_app": "wireguard"})
+        assert response.status_code == 302
+        assert response.location.endswith(f"/device/alice-{existing}")
+    assert not notices
+    assert traffic.load_device_meta() == before
+
+
+def _use_real_classic_creation(runtime, monkeypatch):
+    creates = []
+
+    def provision(script, name, _timeout, *args):
+        assert script == "add-client.sh"
+        creates.append(name)
+        (runtime.clients / f"{name}.conf").write_text(
+            "[Interface]\nAddress = 10.0.0.8/32\nDNS = 1.1.1.1, 8.8.8.8\n", encoding="utf-8",
+        )
+        return True, ""
+
+    monkeypatch.setattr(routes, "create_device", wireguard.create_device)
+    monkeypatch.setattr(wireguard, "reconcile_safe_dns", lambda **kwargs: {})
+    monkeypatch.setattr(wireguard, "_run_script", provision)
+    return creates
+
+
+def test_repeated_create_notifies_once_but_real_recreation_notifies_again(runtime, monkeypatch):
+    creates = _use_real_classic_creation(runtime, monkeypatch)
+    notices = []
+    monkeypatch.setattr(routes, "send_telegram", lambda text, **kw: notices.append(text))
+    client = browser()
+    fields = {"csrf_token": "synthetic-csrf", "device": "phone", "client_app": "wireguard"}
+    for _ in range(2):
+        assert client.post("/add", data=fields).status_code == 302
+    assert creates == ["u5-alice-phone"]
+    assert len(notices) == 1
+    # A genuinely removed identity may be created again with the same label.
+    (runtime.clients / "u5-alice-phone.conf").unlink()
+    traffic.remove_device_meta("u5-alice-phone")
+    assert client.post("/add", data=fields).status_code == 302
+    assert creates == ["u5-alice-phone", "u5-alice-phone"]
+    assert len(notices) == 2
+
+
+def test_simultaneous_classic_posts_create_and_notify_once(runtime, monkeypatch):
+    creates = _use_real_classic_creation(runtime, monkeypatch)
+    notices = []
+    monkeypatch.setattr(routes, "send_telegram", lambda text, **kw: notices.append(text))
+    clients = [browser(), browser()]
+    start = Barrier(2)
+
+    def submit(client):
+        start.wait(timeout=5)
+        return client.post("/add", data={"csrf_token": "synthetic-csrf", "device": "phone",
+                                        "client_app": "wireguard"}).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(submit, clients))
+    assert responses == [302, 302]
+    assert creates == ["u5-alice-phone"]
+    assert len(notices) == 1
+
+
+def test_failed_creation_has_no_added_notice(runtime, monkeypatch):
+    notices = []
+    monkeypatch.setattr(routes, "send_telegram", lambda *args, **kw: notices.append(args))
+    monkeypatch.setattr(routes, "create_device", lambda *args: (False, "", "Device limit reached"))
+    assert browser().post("/add", data={"csrf_token": "synthetic-csrf", "device": "phone"}).status_code == 200
+    assert not notices
 
 
 @pytest.mark.parametrize("method", ["GET", "POST"])
