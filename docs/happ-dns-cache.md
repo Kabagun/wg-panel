@@ -1,23 +1,26 @@
-# Account-scoped Happ DNS cache trial
+# Happ DNS cache policy
 
 The normal UDP export forwards application DNS questions to the account's
 resolver. Xray's routing and `ForceIPv4` lookups use a separate internal cache.
 This can require another network lookup for a name the application just resolved.
 
-The private operator policy `data/happ_dns_cache.json` can opt a current account
-identity into sharing the internal cache for A questions:
+The private operator policy `data/happ_dns_cache.json` controls sharing the
+internal cache for A questions. An optional `default` applies to existing and
+future account identities; individual entries take precedence:
 
 ```json
-{"version": 1, "accounts": {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": true}}
+{"version": 1, "default": true, "accounts": {"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": false}}
 ```
 
 The example identity is synthetic. The file is private runtime state and must
 not be committed. Missing policy or an account not listed preserves the existing
-export. Account recreation does not inherit an old identity's setting. Invalid
-policy fails closed. Set the account entry to `false` to return its next export
-to the baseline.
+export unless the global default is enabled. Account recreation does not inherit
+an old identity's override; it follows the global default. Unknown identities
+never inherit the default. Invalid policy fails closed. Set an account entry to
+`false` to return its next export to the baseline. Set `default` to `false` and
+remove individual opt-ins to disable the rollout without changing identities.
 
-The trial changes only the DNS outbound's rules to hijack A questions into the
+The setting changes only the DNS outbound's rules to hijack A questions into the
 existing resolver/cache. AAAA and other types retain raw forwarding. Resolver
 addresses, UDP transport, family filtering, routing, credentials and classic
 WireGuard files are unchanged. Existing TCP DNS trials already use this A path.

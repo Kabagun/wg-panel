@@ -69,6 +69,41 @@ def test_explicit_false_and_policy_updates_are_not_truthy_or_cached(policy_state
     assert happ_dns.client_dns_cache_a('tester') is False
 
 
+def test_global_default_covers_existing_and_new_account_identities(policy_state):
+    path, users = policy_state
+    path.write_text(json.dumps({'version': 1, 'default': True, 'accounts': {}}))
+    assert happ_dns.client_dns_cache_a('tester') is True
+    assert happ_dns.client_dns_cache_a('other') is True
+    users['new'] = {'account_id': ACCOUNT_C}
+    assert happ_dns.client_dns_cache_a('new') is True
+    assert happ_dns.client_dns_cache_a('missing') is False
+    users['invalid'] = {'account_id': 'invalid'}
+    assert happ_dns.client_dns_cache_a('invalid') is False
+
+
+def test_account_override_wins_over_global_default_after_account_rotation(policy_state):
+    path, users = policy_state
+    path.write_text(json.dumps({'version': 1, 'default': True,
+                                'accounts': {ACCOUNT_A: False}}))
+    assert happ_dns.client_dns_cache_a('tester') is False
+    assert happ_dns.client_dns_cache_a('other') is True
+    users['tester']['account_id'] = ACCOUNT_C
+    assert happ_dns.client_dns_cache_a('tester') is True
+    path.write_text(json.dumps({'version': 1, 'default': False,
+                                'accounts': {ACCOUNT_A: True}}))
+    assert happ_dns.client_dns_cache_a('other') is False
+    users['tester']['account_id'] = ACCOUNT_A
+    assert happ_dns.client_dns_cache_a('tester') is True
+
+
+@pytest.mark.parametrize('value', [None, 0, 1, 'true', [], {}])
+def test_global_default_must_be_a_boolean(policy_state, value):
+    path, _ = policy_state
+    path.write_text(json.dumps({'version': 1, 'accounts': {}, 'default': value}))
+    with pytest.raises(ValueError, match=POLICY_ERROR):
+        happ_dns.client_dns_cache_a('tester')
+
+
 @pytest.mark.parametrize('value', [
     [], None, True, 1,
     {}, {'version': 1}, {'accounts': {}},
