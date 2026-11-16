@@ -1,0 +1,17 @@
+apple.com
+cloudflare.com
+github.com
+githubusercontent.com
+google.com
+kinogo.my
+kinogo.net
+kinogo.org
+kinogo1.biz
+r4.rudub.world
+rezka.fi
+rudub.site
+rutracker.net
+rutracker.org
+telegra.ph
+yandex.com
+yandex.ru
