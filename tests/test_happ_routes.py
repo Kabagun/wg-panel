@@ -392,6 +392,21 @@ def test_geosite_trial_appends_only_to_selected_subscription_and_advances_revisi
     assert routing(upstream)['Geoipurl'] == routing(first)['Geoipurl']
     assert browser_client.get(sibling).headers['routing'] == sibling_before.headers['routing']
 
+    ip_state = {**proxy_state, 'github_cdn_ipv4': ['192.0.2.5', '192.0.2.6']}
+    path.write_text(json.dumps(ip_state), encoding='utf-8')
+    fallback = browser_client.get(target)
+    assert routing(fallback) == routing(mirrored)
+    for index in (1, 3):
+        assert {'type': 'field', 'ip': ip_state['github_cdn_ipv4'], 'network': 'tcp',
+                'port': '443', 'outboundTag': 'vpn'} in fallback.get_json()[index]['routing']['rules']
+    for index in (0, 2):
+        assert fallback.get_json()[index] == mirrored.get_json()[index]
+    assert browser_client.get(sibling).data == sibling_before.data
+    for unsafe in (['192.0.2.0/24'], ['2001:db8::1'], ['192.0.2.5', '192.0.2.5']):
+        path.write_text(json.dumps({**ip_state, 'github_cdn_ipv4': unsafe}), encoding='utf-8')
+        assert trial.state() is None
+    path.write_text(json.dumps(ip_state), encoding='utf-8')
+
     happ_pilot.rotate_subscription(PILOT)
     current = browser_client.get(subscription(PILOT, 'bundle'))
     assert current.get_json() == before.get_json()

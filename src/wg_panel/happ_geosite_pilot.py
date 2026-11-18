@@ -4,6 +4,7 @@ import base64
 import copy
 import hashlib
 import hmac
+import ipaddress
 import json
 import re
 from pathlib import Path
@@ -22,7 +23,14 @@ _HEX_ID = re.compile(r'[0-9a-f]{32}')
 _DIGEST = re.compile(r'[0-9a-f]{64}')
 _ROUTING_PREFIX = 'happ://routing/onadd/'
 _STATE_KEYS = {'device', 'nonce_sha256', 'asset_id', 'phase', 'updated_at'}
-_STATE_OPTIONS = {'geoip_sha256', 'github_cdn_via_vpn', 'use_github_geoip'}
+_STATE_OPTIONS = {'geoip_sha256', 'github_cdn_via_vpn', 'use_github_geoip', 'github_cdn_ipv4'}
+
+
+def _valid_cdn_addresses(addresses):
+    return (isinstance(addresses, list) and 0 < len(addresses) <= 8
+            and all(isinstance(address, str) and str(ipaddress.IPv4Address(address)) == address
+                    for address in addresses)
+            and len(set(addresses)) == len(addresses))
 
 
 def state():
@@ -44,6 +52,8 @@ def state():
                                                   or not _DIGEST.fullmatch(record['geoip_sha256'])))
                 or any(record[key] is not True for key in ('github_cdn_via_vpn', 'use_github_geoip') if key in record)
                 or (record.get('use_github_geoip') and not record.get('github_cdn_via_vpn'))
+                or ('github_cdn_ipv4' in record and (not record.get('github_cdn_via_vpn')
+                                                    or not _valid_cdn_addresses(record['github_cdn_ipv4'])))
                 or not isinstance(record['asset_id'], str) or not _HEX_ID.fullmatch(record['asset_id'])
                 or type(record['phase']) is not int or record['phase'] not in (1, 2)
                 or type(record['updated_at']) is not int or record['updated_at'] <= 0):
@@ -81,6 +91,13 @@ def append_profile(device, configs, rules):
         smart['routing']['rules'][index]['domain'].append(GITHUB_RELEASE_CDN)
         configs = [smart if config is prototype else config for config in configs]
         selectors.append(GITHUB_RELEASE_CDN)
+        if 'github_cdn_ipv4' in record:
+            # Native clients may hand Xray only the resolved destination IP.
+            for config in (smart, sample):
+                config['routing']['rules'].insert(index + 1, {
+                    'type': 'field', 'ip': record['github_cdn_ipv4'], 'network': 'tcp',
+                    'port': '443', 'outboundTag': 'vpn',
+                })
     sample['routing']['rules'][index]['domain'] = selectors
     sample['remarks'] = PROFILE_LABEL
     sample['meta'] = {**sample.get('meta', {}), 'serverDescription': 'Тест внешнего файла GeoSite'}
