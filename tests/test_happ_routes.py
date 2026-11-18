@@ -299,6 +299,69 @@ def test_bundle_contains_three_distinct_transport_identities_and_shared_dns(runt
     assert browser().get(f'/device/{PILOT}/happ/bundle/download').get_json() == bundle
 
 
+def test_geosite_trial_appends_only_to_selected_subscription_and_advances_revision(runtime, monkeypatch):
+    from wg_panel import happ_geosite_pilot as trial
+
+    identity = core.load_users()[ADMIN]['account_id']
+    happ_pilot.save_rules(identity, 'ai.example.org\n192.0.2.0/24', 0)
+    export = happ_pilot.exported_bundle
+
+    def synthetic_vless_bundle(*args):
+        configs = export(*args)
+        for config in configs:
+            outbound = next(item for item in config['outbounds'] if item['tag'] == 'vpn')
+            outbound.update(protocol='vless', settings={})
+        return configs
+
+    monkeypatch.setattr(happ_pilot, 'exported_bundle', synthetic_vless_bundle)
+    browser_client = browser(None)
+    target = subscription(PILOT, 'bundle')
+    sibling = subscription(SECOND, 'bundle')
+    before = browser_client.get(target)
+    sibling_before = browser_client.get(sibling)
+    device = wireguard.get_device(PILOT)
+    path = runtime.data / trial.STATE
+    asset_id = 'a' * 32
+    state = {'device': PILOT, 'nonce_sha256': hashlib.sha256(device['happ_subscription_nonce'].encode()).hexdigest(),
+             'asset_id': asset_id, 'phase': 1, 'updated_at': 1795000000}
+    path.write_text(json.dumps(state), encoding='utf-8')
+
+    def routing(response):
+        return json.loads(base64.b64decode(response.headers['routing'].removeprefix('happ://routing/onadd/')))
+
+    first = browser_client.get(target)
+    assert first.status_code == 200
+    sample = first.get_json()[-1]
+    assert first.get_json()[:-1] == before.get_json()
+    assert sample['remarks'] == trial.PROFILE_LABEL
+    assert sample['outbounds'] == before.get_json()[1]['outbounds']
+    assert any(rule.get('domain') == [trial.CATEGORY] and rule.get('outboundTag') == 'vpn'
+               for rule in sample['routing']['rules'])
+    assert any(rule.get('ip') == ['192.0.2.0/24'] for rule in sample['routing']['rules'])
+    assert routing(first) == {**routing(before), 'LastUpdated': '1795000000',
+                              'Geositeurl': f'https://vpn.example.test/happ/assets/geosite.dat?pilot={asset_id}&rev=1'}
+    sibling_after = browser_client.get(sibling)
+    assert sibling_after.data == sibling_before.data
+    assert sibling_after.headers['routing'] == sibling_before.headers['routing']
+
+    second_url = f'/happ/assets/geosite-pilot/{asset_id}/2/geosite.dat'
+    assert browser_client.get(second_url).status_code == 404
+    (runtime.data / trial.SECOND_ASSET).write_bytes(b'synthetic-geosite-v2')
+    path.write_text(json.dumps({**state, 'phase': 2, 'updated_at': state['updated_at'] + 1}), encoding='utf-8')
+    second = browser_client.get(target)
+    assert second.get_json() == first.get_json()
+    assert routing(second)['Name'] == routing(first)['Name']
+    assert routing(second)['LastUpdated'] == '1795000001'
+    assert routing(second)['Geositeurl'] == 'https://vpn.example.test' + second_url
+    assert browser_client.get(second_url).data == b'synthetic-geosite-v2'
+    assert browser_client.get(second_url.replace(asset_id, 'b' * 32)).status_code == 404
+
+    happ_pilot.rotate_subscription(PILOT)
+    current = browser_client.get(subscription(PILOT, 'bundle'))
+    assert current.get_json() == before.get_json()
+    assert routing(current) == routing(before)
+
+
 @pytest.mark.parametrize('family', [False, True])
 @pytest.mark.family_archive
 def test_account_scoped_tcp_dns_bundle_preserves_policy_headers_and_stored_configs(runtime, family):

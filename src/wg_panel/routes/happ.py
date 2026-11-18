@@ -127,17 +127,22 @@ def view_happ_device(wg_name):
 
 def _response(device, mode, rules):
     from ..happ_comparison import export_bundle
+    from ..happ_geosite_pilot import append_profile, apply_routing_header
     from ..happ_subscription_info import subscription_title
     comparison = export_bundle(device) if mode == 'bundle' else None
     config = (comparison['configs'] if comparison else
               happ_pilot.exported_bundle(device, rules) if mode == 'bundle' else
               happ_pilot.exported_config(device, mode, rules, _transport(device)))
+    geosite_trial = None
+    if mode == 'bundle' and comparison is None:
+        config, geosite_trial = append_profile(device, config, rules)
     response = Response(json.dumps(config, ensure_ascii=False, indent=2),
                         content_type='application/json; charset=utf-8')
     response.headers.set('Content-Disposition', 'attachment',
                          filename=f"{device['device']}-{mode}.json")
-    response.headers['routing'] = (happ_pilot.comparison_routing_header(device, config)
-                                   if comparison else happ_pilot.routing_header(device, mode, config))
+    routing = (happ_pilot.comparison_routing_header(device, config)
+               if comparison else happ_pilot.routing_header(device, mode, config))
+    response.headers['routing'] = apply_routing_header(routing, geosite_trial)
     response.headers['profile-title'] = 'base64:' + base64.b64encode(
         subscription_title(mode, comparison=bool(comparison)).encode('utf-8')).decode('ascii')
     response.headers['profile-update-interval'] = '1'
@@ -147,6 +152,18 @@ def _response(device, mode, rules):
     response.headers['tun-type'] = 'default'
     _presentation_headers(response, device, comparison)
     return response
+
+
+@core.app.route('/happ/assets/geosite-pilot/<asset_id>/2/geosite.dat')
+def happ_geosite_pilot_asset(asset_id):
+    from ..happ_geosite_pilot import second_asset
+
+    data = second_asset(asset_id)
+    if data is None:
+        abort(404)
+    return Response(data, content_type='application/octet-stream', headers={
+        'Cache-Control': 'public, no-cache', 'X-Content-Type-Options': 'nosniff',
+    })
 
 
 def _presentation_headers(response, device, comparison):
