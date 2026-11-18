@@ -376,6 +376,22 @@ def test_geosite_trial_appends_only_to_selected_subscription_and_advances_revisi
     geoip_path.write_bytes(b'truncated')
     assert browser_client.get(geoip_url).status_code == 404
 
+    proxy_state = {**state, 'phase': 2, 'updated_at': state['updated_at'] + 2,
+                   'geoip_sha256': digest, 'github_cdn_via_vpn': True}
+    path.write_text(json.dumps(proxy_state), encoding='utf-8')
+    routed = browser_client.get(target)
+    assert routing(routed) == routing(mirrored)
+    for index in (1, 3):
+        assert any(rule.get('outboundTag') == 'vpn' and trial.GITHUB_RELEASE_CDN in rule.get('domain', [])
+                   for rule in routed.get_json()[index]['routing']['rules'])
+    for index in (0, 2):
+        assert routed.get_json()[index] == mirrored.get_json()[index]
+    path.write_text(json.dumps({**proxy_state, 'use_github_geoip': True}), encoding='utf-8')
+    upstream = browser_client.get(target)
+    assert upstream.data == routed.data
+    assert routing(upstream)['Geoipurl'] == routing(first)['Geoipurl']
+    assert browser_client.get(sibling).headers['routing'] == sibling_before.headers['routing']
+
     happ_pilot.rotate_subscription(PILOT)
     current = browser_client.get(subscription(PILOT, 'bundle'))
     assert current.get_json() == before.get_json()
