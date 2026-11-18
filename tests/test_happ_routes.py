@@ -356,6 +356,26 @@ def test_geosite_trial_appends_only_to_selected_subscription_and_advances_revisi
     assert browser_client.get(second_url).data == b'synthetic-geosite-v2'
     assert browser_client.get(second_url.replace(asset_id, 'b' * 32)).status_code == 404
 
+    geoip_path = runtime.data / trial.GEOIP_ASSET
+    geoip_data = b'synthetic-geoip-by-ru'
+    digest = hashlib.sha256(geoip_data).hexdigest()
+    geoip_url = f'/happ/assets/geoip-by-ru/{digest}/geoip.dat'
+    assert browser_client.get(geoip_url).status_code == 404
+    geoip_path.write_bytes(geoip_data)
+    path.write_text(json.dumps({**state, 'phase': 2, 'updated_at': state['updated_at'] + 2,
+                                'geoip_sha256': digest}), encoding='utf-8')
+    mirrored = browser_client.get(target)
+    assert mirrored.data == second.data
+    assert routing(mirrored) == {**routing(second), 'Geoipurl': 'https://vpn.example.test' + geoip_url,
+                                 'LastUpdated': '1795000002'}
+    mirror_response = browser_client.get(geoip_url)
+    assert mirror_response.data == geoip_data
+    assert mirror_response.content_type == 'application/octet-stream'
+    assert browser_client.get(sibling).headers['routing'] == sibling_before.headers['routing']
+    assert browser_client.get(geoip_url.replace(digest, '0' * 64)).status_code == 404
+    geoip_path.write_bytes(b'truncated')
+    assert browser_client.get(geoip_url).status_code == 404
+
     happ_pilot.rotate_subscription(PILOT)
     current = browser_client.get(subscription(PILOT, 'bundle'))
     assert current.get_json() == before.get_json()

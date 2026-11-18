@@ -158,7 +158,17 @@ def _response(device, mode, rules):
 def happ_geosite_pilot_asset(asset_id):
     from ..happ_geosite_pilot import second_asset
 
-    data = second_asset(asset_id)
+    return _happ_geo_asset_response(second_asset(asset_id))
+
+
+@core.app.route('/happ/assets/geoip-by-ru/<digest>/geoip.dat')
+def happ_geosite_pilot_geoip_asset(digest):
+    from ..happ_geosite_pilot import geoip_asset
+
+    return _happ_geo_asset_response(geoip_asset(digest))
+
+
+def _happ_geo_asset_response(data):
     if data is None:
         abort(404)
     return Response(data, content_type='application/octet-stream', headers={
